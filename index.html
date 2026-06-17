@@ -183,7 +183,9 @@ const TOY_EMOJI={'Мишка':'🐻','Мышка':'🐭','Зайка':'🐰','К
 function toyEmoji(type){return TOY_EMOJI[type]||'🧸';}
 function calcMatCost(o){
   // Себестоимость = сумма по всем игрушкам заказа (Даша 250 руб/кг, Света 400 руб/кг)
-  return getItems(o).reduce(function(s,it){return s+calcItemMat(it,o.master);},0);
+  // Архивные заказы могут хранить свою ставку o.varRate (₽/г).
+  var rate=(typeof o.varRate==='number'&&o.varRate>0)?o.varRate:null;
+  return getItems(o).reduce(function(s,it){return s+calcItemMat(it,o.master,rate);},0);
 }
 function calcMargin(o){
   var price=orderTotal(o);
@@ -321,8 +323,8 @@ function orderToyLabel(o){
   return parts.filter(Boolean).join(' + ');
 }
 // \u0421\u0435\u0431\u0435\u0441\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u044c \u043e\u0434\u043d\u043e\u0439 \u043f\u043e\u0437\u0438\u0446\u0438\u0438 (\u0441 \u0443\u0447\u0451\u0442\u043e\u043c \u043a\u043e\u043b-\u0432\u0430)
-function calcItemMat(item,master){
-  var varPerG=master==='\u0421\u0432\u0435\u0442\u0430'?0.40:0.25;
+function calcItemMat(item,master,rate){
+  var varPerG=(typeof rate==='number'&&rate>0)?rate:(master==='\u0421\u0432\u0435\u0442\u0430'?0.40:0.25);
   var cnt=parseInt(item.count)||1;
   return (700+(parseFloat(item.weightG)||0)*varPerG)*cnt;
 }
@@ -1364,7 +1366,11 @@ const SASHA_PCT = 0.20;      // % Александры
 
 function calcCosts(o){
   // Считаем по каждой игрушке отдельно, затем суммируем
-  var varPerG = o.master==='Света' ? VAR_COST_SVETA : VAR_COST_DASHA;
+  // Архивные заказы могут хранить свою ставку расхода по весу (o.varRate, ₽/г).
+  // Новые заказы поля не имеют — считаются по текущим ставкам (250/400 ₽/кг).
+  var varPerG = (typeof o.varRate==='number' && o.varRate>0)
+    ? o.varRate
+    : (o.master==='Света' ? VAR_COST_SVETA : VAR_COST_DASHA);
   var items = getItems(o);
   var fixed=0, variable=0, master=0;
   items.forEach(function(it){
