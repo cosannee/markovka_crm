@@ -225,7 +225,7 @@ let expandedCards=new Set();
 let realRole=null,isPreviewMode=false;
 let orders=[],tasks=[];
 
-const OPENROUTER_KEY='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';
+const OPENROUTER_KEY='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';
 
 const JSONBIN_ID='6a31904fda38895dfecb54fe';
 const JSONBIN_KEY='$2a$10$yDV194UbfbUV7DC2XUUd4OHjsLq37DiuNiZKGjUAwWcGjoz3Z3aXO';
@@ -624,6 +624,11 @@ function tplList(){
   html+='<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">'
     +'<input class="search-inp" id="search-field" style="flex:1;min-width:0" placeholder="Поиск по номеру, клиенту..." oninput="updateSearch(this.value)" value="'+search+'">'
     +'</div>';
+  // Выгрузка для СДЭК — заказы со статусом «Отправка планируется»
+  if(canFinance){
+    var plannedCnt=orders.filter(function(o){return o.status==='planned';}).length;
+    html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center" onclick="openSdekExport()">📦 Выгрузить для СДЭК'+(plannedCnt?' ('+plannedCnt+')':'')+'</button>';
+  }
 
   // Filter bar
   html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;position:relative">';
@@ -962,6 +967,89 @@ function jumpTo(id){
     const el=document.getElementById('c-'+id);
     if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.outline='2px solid var(--accent)';setTimeout(function(){el.style.outline='';},2000);}
   },80);
+}
+// ── Выгрузка для СДЭК (статус «Отправка планируется») ──
+function sdekExportList(){
+  return orders.filter(function(o){return o.status==='planned';})
+    .sort(function(a,b){return (a.num||'').localeCompare(b.num||'');});
+}
+function sdekExportText(){
+  var list=sdekExportList();
+  var now=new Date().toLocaleDateString('ru',{day:'numeric',month:'long'});
+  var lines=['📦 СДЭК · '+list.length+' '+pluralPosylka(list.length)+' · '+now,''];
+  list.forEach(function(o){
+    var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
+    var nak=o.sdekNum?('накл. '+o.sdekNum):'накл. — (нет!)';
+    lines.push(o.num+' · '+(o.client||'—'));
+    if(o.phone)lines.push(o.phone);
+    lines.push(nak+' · '+wt);
+    lines.push('');
+  });
+  return lines.join('\n').trim();
+}
+function pluralPosylka(n){
+  var n10=n%10,n100=n%100;
+  if(n10===1&&n100!==11)return 'посылка';
+  if(n10>=2&&n10<=4&&(n100<10||n100>=20))return 'посылки';
+  return 'посылок';
+}
+function openSdekExport(){
+  var list=sdekExportList();
+  var now=new Date().toLocaleDateString('ru',{day:'numeric',month:'long'});
+  var rows=list.map(function(o){
+    var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
+    var noNak=!o.sdekNum;
+    var nak=noNak?'<span style="color:#c0392b;font-weight:700">накл. — нет!</span>':('накл. '+o.sdekNum);
+    return '<div style="padding:9px 0;border-bottom:1px solid #e8e6cc">'
+      +'<div style="font-size:14px;font-weight:700;color:#3a3020">'+o.num+' · '+(o.client||'—')+'</div>'
+      +(o.phone?'<div style="font-size:13px;color:#635535">'+o.phone+'</div>':'')
+      +'<div style="font-size:12px;color:#7a7570;margin-top:1px">'+nak+' · '+wt+'</div>'
+      +'</div>';
+  }).join('');
+  var content=list.length
+    ? '<div id="sdek-export-content" style="background:#fff;padding:16px;border-radius:12px">'
+        +'<div style="font-family:\'Playfair Display\',serif;font-size:16px;color:#635535;margin-bottom:4px">📦 СДЭК · '+list.length+' '+pluralPosylka(list.length)+'</div>'
+        +'<div style="font-size:11px;color:#b0a882;margin-bottom:8px">'+now+'</div>'
+        +rows
+      +'</div>'
+    : '<div style="text-align:center;padding:24px;color:var(--text3)">Нет заказов со статусом «Отправка планируется»</div>';
+  var el=document.createElement('div');
+  el.id='sdek-export-modal';
+  el.className='modal-bg';
+  el.innerHTML='<div class="modal">'
+    +'<div class="modal-title">Выгрузка для СДЭК</div>'
+    +content
+    +'<div class="modal-actions">'
+    +(list.length?'<button class="btn btn-primary" style="flex:1;justify-content:center" onclick="copySdekText()">📋 Копировать</button>'
+      +'<button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="downloadSdekPng()">🖼 Картинка</button>':'')
+    +'<button class="btn btn-ghost" style="flex:'+(list.length?'0 0 auto':'1')+';justify-content:center" onclick="document.getElementById(\'sdek-export-modal\').remove()">Закрыть</button>'
+    +'</div></div>';
+  document.body.appendChild(el);
+  el.addEventListener('click',function(e){if(e.target===el)el.remove();});
+}
+async function copySdekText(){
+  var txt=sdekExportText();
+  try{await navigator.clipboard.writeText(txt);toast('Скопировано ✓');}
+  catch(e){
+    // запасной способ
+    var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');toast('Скопировано ✓');}catch(e2){toast('Не удалось скопировать');}
+    ta.remove();
+  }
+}
+async function downloadSdekPng(){
+  var node=document.getElementById('sdek-export-content');
+  if(!node){toast('Нет данных');return;}
+  if(typeof html2canvas==='undefined'){toast('html2canvas не загружен');return;}
+  toast('Создаём картинку...');
+  try{
+    var canvas=await html2canvas(node,{backgroundColor:'#ffffff',scale:2,useCORS:true,logging:false});
+    var a=document.createElement('a');
+    a.href=canvas.toDataURL('image/png');
+    a.download='sdek_'+new Date().toISOString().slice(0,10)+'.png';
+    a.click();
+    toast('Картинка сохранена ✓');
+  }catch(e){toast('Ошибка: '+e.message);}
 }
 function toggleMasterOrders(key){
   var el=document.getElementById('mclosed-'+key);
@@ -1943,19 +2031,26 @@ function exportAnalyticsCsv(){
 function tplPayments(){
   var needAdv=orders.filter(function(o){return o.master==='Света'&&o.status==='new'&&!o.advancePaid;});
   var needPost=orders.filter(function(o){return o.master==='Света'&&(o.status==='ready'||o.status==='planned'||o.status==='done')&&!o.postpayPaid;});
-  var advDone=orders.filter(function(o){return o.master==='Света'&&o.advancePaid&&!o.postpayPaid;});
+  var advDone=orders.filter(function(o){return o.master==='Света'&&o.advancePaid&&!o.postpayPaid&&!(o.status==='ready'||o.status==='planned'||o.status==='done');});
   var allDone=orders.filter(function(o){return o.master==='Света'&&o.postpayPaid;});
 
-  var advTotal=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0);
+  // Всего к выплате Свете сейчас = авансы по новым + полный остаток по готовым
+  var grandTotal=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0)
+    +needPost.reduce(function(s,o){return s+remainingPay(o);},0);
 
-  var html='<div class="section-lbl">Аванс Свете (новые) — '+needAdv.length+'</div>';
+  var html='';
+  // Общий итог + кнопка «Выплатить всё»
+  if(grandTotal>0){
+    html+='<div class="card" style="margin-bottom:14px;background:var(--accent-bg);border:none"><div style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'
+      +'<div><div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px">Всего к выплате Свете</div>'
+      +'<div style="font-family:\'Playfair Display\',serif;font-size:24px;color:var(--accent);font-weight:600">'+fmt(grandTotal)+'</div></div>'
+      +'<button class="btn btn-primary" onclick="markAllPayments()">Выплатить всё</button>'
+      +'</div></div>';
+  }
+
+  html+='<div class="section-lbl">Аванс Свете (новые) — '+needAdv.length+'</div>';
   if(!needAdv.length){html+='<div class="empty" style="padding:12px 0"><div style="font-size:20px">✓</div>Все авансы выплачены</div>';}
   else{
-    html+='<div class="card" style="margin-bottom:10px;background:var(--accent-bg);border:none"><div style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'
-      +'<div><div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px">Всего к выплате</div>'
-      +'<div style="font-family:\'Playfair Display\',serif;font-size:24px;color:var(--accent);font-weight:600">'+fmt(advTotal)+'</div></div>'
-      +'<button class="btn btn-primary" onclick="markAllAdvances()">Выплатить все авансы</button>'
-      +'</div></div>';
     needAdv.forEach(function(o){html+=payRow(o,'advance');});
   }
 
@@ -1999,11 +2094,16 @@ function payRow(o,type){
       +'<div class="pay-row"><span style="color:var(--text3)">'+pLbl+'</span><span style="font-weight:700;color:var(--text2)">'+fmt(post)+'</span></div>'
       +'<div style="margin-top:10px">'+btnAdv+'</div>';
   }else if(type==='postpay'){
-    var pLbl2=o.master==='Света'?'Доплата (70%)':'Выплата';
+    var rem=remainingPay(o);
+    var btnPostFull='<button class="btn btn-sm btn-primary" data-id="'+oid+'" data-type="postpay" onclick="markPayBtn(this)">Выплатить '+fmt(rem)+'</button>';
     body='<div class="pay-row"><span style="color:var(--text3)">ЗП итого</span><span style="font-weight:700">'+fmt(total)+'</span></div>'
-      +(o.advancePaid?'<div class="pay-row"><span style="color:var(--text3)">Аванс выплачен</span><span style="color:var(--green)">'+fmt(adv)+' ✓</span></div>':'')
-      +'<div class="pay-row"><span style="color:var(--text3)">'+pLbl2+'</span><span style="font-weight:700;color:var(--accent)">'+fmt(post)+'</span></div>'
-      +'<div style="margin-top:10px">'+btnPost+'</div>';
+      +(o.advancePaid
+        ? '<div class="pay-row"><span style="color:var(--text3)">Аванс выплачен</span><span style="color:var(--green)">'+fmt(adv)+' ✓</span></div>'
+          +'<div class="pay-row"><span style="color:var(--text3)">Доплата (70%)</span><span style="font-weight:700;color:var(--accent)">'+fmt(post)+'</span></div>'
+        : '<div class="pay-row"><span style="color:var(--text3)">Аванс (30%) — не выплачен</span><span style="font-weight:700;color:var(--orange)">'+fmt(adv)+'</span></div>'
+          +'<div class="pay-row"><span style="color:var(--text3)">Доплата (70%)</span><span style="font-weight:700;color:var(--accent)">'+fmt(post)+'</span></div>'
+          +'<div class="pay-row" style="border-top:1px solid var(--border2)"><span style="color:var(--text2);font-weight:700">К выплате (аванс + доплата)</span><span style="font-weight:700;color:var(--accent)">'+fmt(rem)+'</span></div>')
+      +'<div style="margin-top:10px">'+btnPostFull+'</div>';
   }else if(type==='adv-done'){
     body='<div class="pay-row" style="justify-content:space-between">'
       +'<span style="color:var(--green)">Аванс '+fmt(adv)+' выплачен ✓</span>'
@@ -2042,6 +2142,10 @@ function calcPostpay(o){
   if(o.master==='Света') return calcMasterPay(o)-calcAdvance(o);
   return calcMasterPay(o);
 }
+// Остаток к выплате мастеру: невыплаченный аванс + невыплаченная доплата
+function remainingPay(o){
+  return (o.advancePaid?0:calcAdvance(o))+(o.postpayPaid?0:calcPostpay(o));
+}
 
 
 function markPayBtn(el){markPay(el.dataset.id,el.dataset.type);}
@@ -2058,8 +2162,19 @@ async function markPay(id,type){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
   if(type==='advance')o.advancePaid=true;
-  if(type==='postpay')o.postpayPaid=true;
+  // Доплата при готовности закрывает и невыплаченный аванс (иначе он терялся)
+  if(type==='postpay'){o.postpayPaid=true;o.advancePaid=true;}
   await saveOrders(orders);renderTab('payments');toast('Выплата отмечена ✓');
+}
+async function markAllPayments(){
+  var needAdv=orders.filter(function(o){return o.master==='Света'&&o.status==='new'&&!o.advancePaid;});
+  var needPost=orders.filter(function(o){return o.master==='Света'&&(o.status==='ready'||o.status==='planned'||o.status==='done')&&!o.postpayPaid;});
+  var total=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0)+needPost.reduce(function(s,o){return s+remainingPay(o);},0);
+  if(!total){toast('Нечего выплачивать');return;}
+  if(!confirm('Выплатить Свете всё ('+(needAdv.length+needPost.length)+' зак.) на сумму '+fmt(total)+'?'))return;
+  needAdv.forEach(function(o){o.advancePaid=true;});
+  needPost.forEach(function(o){o.advancePaid=true;o.postpayPaid=true;});
+  await saveOrders(orders);renderTab('payments');toast('Выплачено: '+fmt(total)+' ✓');
 }
 async function undoPay(id,type){
   var o=orders.find(function(x){return x.id===id;});
