@@ -190,11 +190,8 @@ function calcMatCost(o){
 function calcMargin(o){
   var price=orderTotal(o);
   if(!price)return null;
-  var mat=calcMatCost(o);
-  var masterPay=calcMasterPay(o);
-  var sashaPay=Math.round((price-mat)*0.20);
-  if(sashaPay<0)sashaPay=0;
-  return price-mat-masterPay-sashaPay;
+  var c=calcCosts(o);
+  return c.profit;
 }
 const STATUSES={
   new:{label:'Новый',cls:'b-new'},
@@ -958,11 +955,21 @@ async function delOrder(id){
   await saveOrders(orders);renderTab(tab);toast('Заказ удалён');
 }
 function jumpTo(id){
-  fStatus='all';fMonth='all';search='';renderTab('list');
+  fStatus='all';fMonth='all';search='';showArchive=false;
+  expandedCards.add(id);
+  renderTab('list');
   setTimeout(function(){
     const el=document.getElementById('c-'+id);
     if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.outline='2px solid var(--accent)';setTimeout(function(){el.style.outline='';},2000);}
   },80);
+}
+function toggleMasterOrders(key){
+  var el=document.getElementById('mclosed-'+key);
+  var arr=document.getElementById('mclosedarr-'+key);
+  if(!el)return;
+  var open=el.style.display!=='none';
+  el.style.display=open?'none':'flex';
+  if(arr)arr.textContent=open?'⌄':'⌃';
 }
 
 function tplCalendar(isMasterView){
@@ -1401,7 +1408,15 @@ function closeModal(){
 const FIXED_COST = 700;           // фиксированные расходы на игрушку
 const VAR_COST_DASHA = 0.25;      // переменные расходы за грамм — Даша (250 руб/кг)
 const VAR_COST_SVETA = 0.40;      // переменные расходы за грамм — Света (400 руб/кг)
-const SASHA_PCT = 0.20;      // % Александры
+const SASHA_PCT = 0.20;           // % Александры
+const NASTYA_PER_TOY = 300;       // Настя (швея одежды на аутсорсе) — 300₽ с каждой игрушки Даши
+const TAX_PCT = 0;                // налог (0 = не учитываем)
+
+// Стоимость Насти: 300₽ за каждую игрушку, сшитую Дашей (у Светы — своя одежда)
+function calcNastya(o){
+  if(o.master!=='Даша')return 0;
+  return NASTYA_PER_TOY*orderQty(o);
+}
 
 function calcCosts(o){
   // Считаем по каждой игрушке отдельно, затем суммируем
@@ -1422,8 +1437,10 @@ function calcCosts(o){
   var price = orderTotal(o);
   var sasha  = Math.round((price - materials) * SASHA_PCT);
   if(sasha < 0) sasha = 0;
-  var profit = price - materials - sasha - master;
-  return {fixed:fixed, variable:variable, materials:materials, master:master, sasha:sasha, profit:profit};
+  var nastya = calcNastya(o);
+  var tax = Math.round(price * TAX_PCT);
+  var profit = price - materials - sasha - master - nastya - tax;
+  return {fixed:fixed, variable:variable, materials:materials, master:master, sasha:sasha, nastya:nastya, tax:tax, profit:profit};
 }
 
 // Период для аналитики
@@ -1452,209 +1469,209 @@ function filterByPeriod(ords, period, customMonth){
   return ords; // all
 }
 
+// ── Период для Финансов ──
+var finPeriod='week';   // 'week' | 'month' | 'custom'
+var finWeekOffset=0;
+var finMonthKey='';
+var finFrom='';
+var finTo='';
+
+function setFinPeriod(p){finPeriod=p;renderTab('stats');}
+function finWeekNav(d){finWeekOffset+=d;renderTab('stats');}
+function setFinMonth(m){finMonthKey=m;renderTab('stats');}
+function setFinFrom(v){finFrom=v;renderTab('stats');}
+function setFinTo(v){finTo=v;renderTab('stats');}
+
+// Срок сдачи заказа (для отнесения «в работе» к периоду)
+function planDate(o){
+  if(o&&o.deliveryDay&&o.month){
+    var p=String(o.month).split('-');
+    return new Date(+p[0],+p[1]-1,parseInt(o.deliveryDay),12,0,0);
+  }
+  return null;
+}
+function getFinanceRange(){
+  if(finPeriod==='week'){
+    var r=getAnalyticsWeekRange(finWeekOffset);
+    r.label=r.start.toLocaleDateString('ru',{day:'numeric',month:'long'})+' – '+r.end.toLocaleDateString('ru',{day:'numeric',month:'long'});
+    return r;
+  }
+  if(finPeriod==='month'){
+    var mk=finMonthKey||(function(){var n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0');})();
+    var p=mk.split('-'),y=+p[0],m=+p[1];
+    return {start:new Date(y,m-1,1,0,0,0,0),end:new Date(y,m,0,23,59,59,999),label:moLbl(mk),monthKey:mk};
+  }
+  if(finPeriod==='custom'&&finFrom&&finTo){
+    var df=new Date(finFrom),dt=new Date(finTo);dt.setHours(23,59,59,999);
+    return {start:df,end:dt,label:df.toLocaleDateString('ru')+' – '+dt.toLocaleDateString('ru')};
+  }
+  return {start:null,end:null,label:'Задайте даты'};
+}
+
 function tplStats(){
-  var periods=[['week','Неделя'],['month','Месяц'],['all','Всё время']];
-  var months=[...new Set(orders.map(function(o){return o.month;}).filter(Boolean))].sort().reverse();
-  var filtered=filterByPeriod(orders,statsPeriod,statsMonthKey);
-  var done=filtered.filter(function(o){return isClosed(o);});
-  var active=filtered.filter(function(o){return !isClosed(o);});
+  // ── ФИНАНСЫ: за период = (в работе по статусу) + (закрытые в периоде) ──
+  var r=getFinanceRange();
+  var openOrders=orders.filter(function(o){return !isClosed(o);});
+  var inRange=function(d){return d&&r.start&&r.end&&d>=r.start&&d<=r.end;};
 
-  // Считаем цифры по завершённым заказам
-  var totalRev=done.reduce(function(s,o){return s+orderTotal(o);},0);
-  var totalMat=done.reduce(function(s,o){var c=calcCosts(o);return s+c.materials;},0);
-  var totalMaster=done.reduce(function(s,o){var c=calcCosts(o);return s+c.master;},0);
-  var totalSasha=done.reduce(function(s,o){var c=calcCosts(o);return s+c.sasha;},0);
-  var totalProfit=done.reduce(function(s,o){var c=calcCosts(o);return s+c.profit;},0);
+  var workGroup=openOrders.filter(function(o){return o.status==='work';});            // в работе — по статусу, всегда видны
+  var closedGroup=(r.start&&r.end)?orders.filter(function(o){return isClosed(o)&&inRange(new Date(closedDate(o)));}):[]; // закрытые за период
+  var combined=workGroup.concat(closedGroup);
 
-  // По активным — выручка ожидаемая
-  var pendingRev=active.reduce(function(s,o){return s+orderTotal(o);},0);
-  var pendingPre=active.reduce(function(s,o){return s+(o.prepaid||0);},0);
-
-  // Alerts
-  var noSdek=orders.filter(function(o){return(o.status==='ready'||o.status==='planned')&&!o.sdekNum;}).length;
-  var noPre=orders.filter(function(o){return o.status!=='done'&&o.status!=='sent'&&o.prepaid===0;}).length;
-  var urgent=orders.filter(function(o){return o.urgent&&o.status!=='done'&&o.status!=='sent';}).length;
+  function sums(list){
+    var rev=list.reduce(function(s,o){return s+orderTotal(o);},0);
+    var pre=list.reduce(function(s,o){return s+(o.prepaid||0);},0);
+    return {
+      rev:rev, pre:pre, rest:Math.max(0,rev-pre), prePct:rev>0?Math.round(pre/rev*100):0,
+      dashaZp:list.filter(function(o){return o.master==='Даша';}).reduce(function(s,o){return s+calcMasterPay(o);},0),
+      svetaZp:list.filter(function(o){return o.master==='Света';}).reduce(function(s,o){return s+calcMasterPay(o);},0),
+      sasha:list.reduce(function(s,o){return s+calcCosts(o).sasha;},0),
+      nastya:list.reduce(function(s,o){return s+calcCosts(o).nastya;},0),
+      profit:list.reduce(function(s,o){return s+calcCosts(o).profit;},0),
+      dashaN:list.filter(function(o){return o.master==='Даша';}).length,
+      svetaN:list.filter(function(o){return o.master==='Света';}).length
+    };
+  }
+  var T=sums(combined);
+  T.margin=T.rev>0?Math.round(T.profit/T.rev*100):0;
 
   var html='';
+  html+='<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Что сейчас в работе + что закрыто за период. Итоги по всем закрытым — во вкладке «Аналитика».</div>';
 
-  // ── ПЛАН НЕДЕЛИ — только заказы "В работе" ──
-  var inWork=orders.filter(function(o){return o.status==='work';});
-  var wRev=inWork.reduce(function(s,o){return s+orderTotal(o);},0);
-  var wPre=inWork.reduce(function(s,o){return s+(o.prepaid||0);},0);
-  var wRest=Math.max(0,wRev-wPre);
-  var wPrePct=wRev>0?Math.round(wPre/wRev*100):0;
-  var wDasha=inWork.filter(function(o){return o.master==='Даша';});
-  var wSveta=inWork.filter(function(o){return o.master==='Света';});
-  var wDashaZp=wDasha.reduce(function(s,o){return s+calcMasterPay(o);},0);
-  var wSvetaZp=wSveta.reduce(function(s,o){return s+calcMasterPay(o);},0);
-  var wMat=inWork.reduce(function(s,o){return s+calcCosts(o).materials;},0);
-  var wSasha=inWork.reduce(function(s,o){return s+calcCosts(o).sasha;},0);
-  var wProfit=inWork.reduce(function(s,o){return s+calcCosts(o).profit;},0);
-  var wMargin=wRev>0?Math.round(wProfit/wRev*100):0;
+  // ── СЕЛЕКТОР ПЕРИОДА ──
+  html+='<div class="filters" style="margin-bottom:10px">';
+  [['week','Неделя'],['month','Месяц'],['custom','Период']].forEach(function(p){
+    html+='<button class="chip '+(finPeriod===p[0]?'active':'')+'" onclick="setFinPeriod(\''+p[0]+'\')">'+p[1]+'</button>';
+  });
+  html+='</div>';
+  if(finPeriod==='week'){
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      +'<button class="btn btn-sm btn-secondary" onclick="finWeekNav(-1)">← Пред.</button>'
+      +'<div style="font-size:12px;color:var(--text2);font-weight:600;text-align:center">'+r.label+'</div>'
+      +'<button class="btn btn-sm btn-secondary" onclick="finWeekNav(1)">След. →</button>'
+      +'</div>';
+  }else if(finPeriod==='month'){
+    var fmonths=[...new Set(orders.map(function(o){return o.month;}).filter(Boolean))].sort().reverse();
+    html+='<div class="filters" style="margin-bottom:12px">';
+    fmonths.forEach(function(m){
+      html+='<button class="chip '+(r.monthKey===m?'active':'')+'" onclick="setFinMonth(\''+m+'\')">'+moLbl(m)+'</button>';
+    });
+    html+='</div>';
+  }else{
+    html+='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:flex-end">'
+      +'<div class="fg" style="margin:0;flex:1"><label>С</label><input type="date" value="'+finFrom+'" onchange="setFinFrom(this.value)"></div>'
+      +'<div class="fg" style="margin:0;flex:1"><label>По</label><input type="date" value="'+finTo+'" onchange="setFinTo(this.value)"></div>'
+      +'</div>';
+  }
 
-  if(inWork.length){
-    html+='<div style="background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
-    html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">📋 План недели · В работе ('+inWork.length+')</div>';
-
-    // Выручка + прогресс-бар
+  // ── ИТОГО ЗА ПЕРИОД ──
+  html+='<div style="background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
+  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">📋 Итого · '+r.label+'  <span style="color:var(--text2)">('+workGroup.length+' в работе + '+closedGroup.length+' закрыто)</span></div>';
+  if(!combined.length){
+    html+='<div style="text-align:center;padding:14px;color:var(--text3);font-size:13px">Нет заказов в этом периоде</div>';
+  }else{
     html+='<div style="margin-bottom:14px">';
     html+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">'
-      +'<span style="font-family:\'Playfair Display\',serif;font-size:22px;color:var(--accent)">'+fmt(wRev)+'</span>'
-      +'<span style="font-size:11px;color:var(--text3)">ожидаемая выручка</span>'
+      +'<span style="font-family:\'Playfair Display\',serif;font-size:22px;color:var(--accent)">'+fmt(T.rev)+'</span>'
+      +'<span style="font-size:11px;color:var(--text3)">выручка периода</span>'
       +'</div>';
     html+='<div style="height:10px;background:var(--bg2);border-radius:5px;overflow:hidden;margin-bottom:6px">'
-      +'<div style="height:100%;width:'+wPrePct+'%;background:var(--green);border-radius:5px;transition:width .3s"></div>'
+      +'<div style="height:100%;width:'+T.prePct+'%;background:var(--green);border-radius:5px;transition:width .3s"></div>'
       +'</div>';
     html+='<div style="display:flex;justify-content:space-between;font-size:12px">'
-      +'<span style="color:var(--green);font-weight:600">✓ Получено: '+fmt(wPre)+' ('+wPrePct+'%)</span>'
-      +'<span style="color:var(--red);font-weight:600">Ждём: '+fmt(wRest)+'</span>'
+      +'<span style="color:var(--green);font-weight:600">✓ Получено: '+fmt(T.pre)+' ('+T.prePct+'%)</span>'
+      +'<span style="color:var(--red);font-weight:600">Ждём: '+fmt(T.rest)+'</span>'
       +'</div>';
     html+='</div>';
-
-    // Маржа + прибыль
     html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">';
     html+='<div style="background:var(--bg);border-radius:10px;padding:10px;text-align:center">'
-      +'<div style="font-size:18px;font-weight:700;color:'+(wMargin>=20?'var(--green)':'var(--orange)')+'">'+wMargin+'%</div>'
-      +'<div style="font-size:10px;color:var(--text3);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Прогноз маржи</div>'
+      +'<div style="font-size:18px;font-weight:700;color:'+(T.margin>=20?'var(--green)':'var(--orange)')+'">'+T.margin+'%</div>'
+      +'<div style="font-size:10px;color:var(--text3);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Маржа</div>'
       +'</div>';
     html+='<div style="background:var(--bg);border-radius:10px;padding:10px;text-align:center">'
-      +'<div style="font-size:18px;font-weight:700;color:'+(wProfit>=0?'var(--green)':'var(--red)')+'">'+fmt(wProfit)+'</div>'
-      +'<div style="font-size:10px;color:var(--text3);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Прогноз прибыли</div>'
+      +'<div style="font-size:18px;font-weight:700;color:'+(T.profit>=0?'var(--green)':'var(--red)')+'">'+fmt(T.profit)+'</div>'
+      +'<div style="font-size:10px;color:var(--text3);margin-top:2px;font-weight:600;text-transform:uppercase;letter-spacing:.3px">Прибыль</div>'
       +'</div>';
     html+='</div>';
-
-    // ЗП мастеров
     html+='<div style="border-top:1px solid var(--border);padding-top:12px">';
-    html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">ЗП мастеров</div>';
+    html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Кто сколько получит за период</div>';
     html+='<div style="display:flex;flex-direction:column;gap:6px">';
-    [['Даша',wDasha.length,wDashaZp,'#8a7a50'],['Света',wSveta.length,wSvetaZp,'#3a8fa3']].forEach(function(r){
+    [['Даша',T.dashaN+' зак.',T.dashaZp,'#8a7a50'],
+     ['Света',T.svetaN+' зак.',T.svetaZp,'#3a8fa3'],
+     ['Настя · одежда','300₽/игр. Даши',T.nastya,'#c06060'],
+     ['Александра','20%',T.sasha,'#6b52a0']].forEach(function(row){
       html+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg);border-radius:8px">'
         +'<div style="display:flex;align-items:center;gap:8px">'
-        +'<div style="width:8px;height:8px;border-radius:50%;background:'+r[3]+'"></div>'
-        +'<span style="font-size:13px;font-weight:600;color:var(--text1)">'+r[0]+'</span>'
-        +'<span style="font-size:11px;color:var(--text3)">'+r[1]+' зак.</span>'
+        +'<div style="width:8px;height:8px;border-radius:50%;background:'+row[3]+'"></div>'
+        +'<span style="font-size:13px;font-weight:600;color:var(--text1)">'+row[0]+'</span>'
+        +'<span style="font-size:11px;color:var(--text3)">'+row[1]+'</span>'
         +'</div>'
-        +'<span style="font-size:13px;font-weight:700;color:var(--accent)">'+fmt(r[2])+'</span>'
+        +'<span style="font-size:13px;font-weight:700;color:var(--accent)">'+fmt(row[2])+'</span>'
         +'</div>';
     });
-    html+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg);border-radius:8px">'
-      +'<div style="display:flex;align-items:center;gap:8px">'
-      +'<div style="width:8px;height:8px;border-radius:50%;background:#6b52a0"></div>'
-      +'<span style="font-size:13px;font-weight:600;color:var(--text1)">Саша</span>'
-      +'<span style="font-size:11px;color:var(--text3)">20%</span>'
-      +'</div>'
-      +'<span style="font-size:13px;font-weight:700;color:var(--accent)">'+fmt(wSasha)+'</span>'
-      +'</div>';
     html+='</div></div>';
-    html+='</div>';
   }
-
-  // Period selector
-  html+='<div class="filters" style="margin-bottom:14px">';
-  periods.forEach(function(p){
-    html+='<button class="chip '+(statsPeriod===p[0]&&!statsMonthKey?'active':'')+'" data-p="'+p[0]+'" onclick="setStatsPeriod(this.dataset.p)">'+p[1]+'</button>';
-  });
-  html+='</div>';
-  if(statsPeriod==='month'){
-    html+='<div class="filters" style="margin-bottom:14px">';
-    months.forEach(function(m){
-      html+='<button class="chip '+(statsMonthKey===m?'active':'')+'" data-m="'+m+'" onclick="setStatsMonth(this.dataset.m)">'+moLbl(m)+'</button>';
-    });
-    html+='</div>';
-  }
-
-  // Alerts
-  if(noSdek>0)html+='<div class="alert alert-orange">'+noSdek+' заказов готовы/планируются без номера СДЭК</div>';
-  if(noPre>0)html+='<div class="alert alert-red">'+noPre+' заказов без предоплаты</div>';
-  if(urgent>0)html+='<div class="alert alert-red">'+urgent+' срочных заказов в работе</div>';
-
-  // Завершённые заказы — P&L
-  html+='<div style="background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
-  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Закрытые заказы ('+done.length+')</div>';
-  html+='<div class="stats-grid" style="margin-bottom:12px">';
-  html+='<div class="stat-card"><div class="stat-val" style="font-size:22px">'+fmt(totalRev)+'</div><div class="stat-lbl">Выручка</div></div>';
-  html+='<div class="stat-card"><div class="stat-val" style="font-size:22px;color:var(--green)">'+fmt(totalProfit)+'</div><div class="stat-lbl">Чистая прибыль</div></div>';
-  html+='</div>';
-  // Расходы breakdown
-  html+='<div style="display:flex;flex-direction:column;gap:6px">';
-  var rows=[
-    ['Материалы',totalMat,'var(--text2)'],
-    ['ЗП мастера',totalMaster,'var(--text2)'],
-    ['ЗП Александры',totalSasha,'var(--text2)'],
-    ['Итого расходов',totalMat+totalMaster+totalSasha,'var(--red)'],
-  ];
-  rows.forEach(function(r){
-    html+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--border)">'
-      +'<span style="color:var(--text3)">'+r[0]+'</span>'
-      +'<span style="font-weight:600;color:'+r[2]+'">'+fmt(r[1])+'</span>'
-      +'</div>';
-  });
-  html+='</div>';
-  // Margin %
-  var margin=totalRev>0?Math.round(totalProfit/totalRev*100):0;
-  html+='<div style="margin-top:12px;padding:10px;background:var(--bg2);border-radius:10px;text-align:center;font-size:13px">'
-    +'Маржинальность: <strong style="color:var(--green)">'+margin+'%</strong>'
-    +'</div>';
   html+='</div>';
 
-  // Активные — ожидаемая выручка
-  html+='<div style="background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
-  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">В работе ('+active.length+')</div>';
-  html+='<div class="stats-grid">';
-  html+='<div class="stat-card"><div class="stat-val" style="font-size:20px;color:var(--orange)">'+fmt(pendingRev)+'</div><div class="stat-lbl">Ожидаемая выручка</div></div>';
-  html+='<div class="stat-card"><div class="stat-val" style="font-size:20px;color:var(--green)">'+fmt(pendingPre)+'</div><div class="stat-lbl">Предоплаты получены</div></div>';
-  html+='<div class="stat-card"><div class="stat-val" style="font-size:20px;color:var(--red)">'+fmt(pendingRev-pendingPre)+'</div><div class="stat-lbl">К получению</div></div>';
-  html+='<div class="stat-card"><div class="stat-val" style="font-size:20px">'+active.length+'</div><div class="stat-lbl">Заказов в работе</div></div>';
-  html+='</div>';
-  html+='</div>';
-
-  // По мастерам
-  html+='<div style="background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
-  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">По мастерам (закрытые)</div>';
-  MASTERS.forEach(function(m){
-    var mos=done.filter(function(o){return o.master===m;});
-    if(!mos.length){html+='<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--text3)">'+m+' — нет закрытых заказов</div>';return;}
-    var mRev=mos.reduce(function(s,o){return s+o.price;},0);
-    var mMaster=mos.reduce(function(s,o){var c=calcCosts(o);return s+c.master;},0);
-    html+='<div style="padding:10px 0;border-bottom:1px solid var(--border)">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:4px">'
-      +'<span style="font-weight:700">'+m+'</span>'
-      +'<span style="color:var(--text3)">'+mos.length+' заказов</span>'
-      +'<span style="color:var(--accent);font-weight:700">'+fmt(mRev)+'</span>'
+  // helper: раскрывающийся список заказов чипами
+  function chipList(key,title,list,bg,fg,withDay){
+    if(!list.length)return '';
+    var st=sums(list);
+    var chips=list.slice().sort(function(a,b){return (planDate(a)||closedDate(a))-(planDate(b)||closedDate(b));}).map(function(o){
+      var tag=withDay&&o.deliveryDay?(' · '+o.deliveryDay):'';
+      return '<span onclick="jumpTo(\''+o.id+'\')" style="cursor:pointer;background:'+bg+';color:'+fg+';font-weight:700;font-size:12px;padding:6px 10px;border-radius:12px;white-space:nowrap">'+o.num+tag+'</span>';
+    }).join('');
+    return '<div style="background:var(--card);border-radius:16px;border:1px solid var(--border);padding:14px 16px;margin-bottom:10px;box-shadow:var(--sh)">'
+      +'<div onclick="toggleMasterOrders(\''+key+'\')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center">'
+      +'<span style="font-size:12px;font-weight:700;color:var(--text2)">'+title+' ('+list.length+')</span>'
+      +'<span style="font-weight:700;color:var(--accent)">'+fmt(st.rev)+' <span id="mclosedarr-'+key+'" style="color:var(--text3)">⌄</span></span>'
       +'</div>'
-      +'<div style="font-size:11px;color:var(--text3)">ЗП начислено: <b style="color:var(--text2)">'+fmt(mMaster)+'</b></div>'
+      +'<div id="mclosed-'+key+'" style="display:none;flex-wrap:wrap;gap:6px;margin-top:10px">'+chips+'</div>'
       +'</div>';
-  });
-  html+='</div>';
+  }
+  html+=chipList('fwork','🛠 В работе',workGroup,'#daeef5','#3a8fa3',true);
+  html+=chipList('fclosed','🔒 Закрыто за период',closedGroup,'#d9f0e3','#2a7a45',false);
 
-  // Заказы по месяцам — сводная таблица
-  if(statsPeriod==='all'&&months.length>1){
-    html+='<div style="background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;box-shadow:var(--sh)">';
-    html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">По месяцам</div>';
-    months.forEach(function(m){
-      var mo=orders.filter(function(o){return o.month===m;});
-      var moDone=mo.filter(function(o){return isClosed(o);});
-      var moRev=moDone.reduce(function(s,o){return s+orderTotal(o);},0);
-      var moProfit=moDone.reduce(function(s,o){return s+calcCosts(o).profit;},0);
-      html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">'
-        +'<span style="font-weight:600;min-width:80px;text-transform:capitalize">'+moLbl(m)+'</span>'
-        +'<span style="color:var(--text3)">'+mo.length+' зак.</span>'
-        +'<span style="color:var(--accent)">'+fmt(moRev)+'</span>'
-        +'<span style="color:var(--green);font-weight:700">'+fmt(moProfit)+'</span>'
-        +'</div>';
-    });
-    html+='</div>';
+  // ── ВСЕГО К ПОЛУЧЕНИЮ (все незакрытые) ──
+  var pendingRev=openOrders.reduce(function(s,o){return s+orderTotal(o);},0);
+  var pendingPre=openOrders.reduce(function(s,o){return s+(o.prepaid||0);},0);
+  html+='<div style="background:var(--bg2);border-radius:12px;padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;font-size:13px">'
+    +'<span style="color:var(--text2);font-weight:600">Всего к получению (все '+openOrders.length+' незакрытых)</span>'
+    +'<span style="font-weight:700;color:var(--red)">'+fmt(pendingRev-pendingPre)+'</span>'
+    +'</div>';
+
+  // ── АЛЕРТЫ (раскрывающиеся, кликабельные) ──
+  var aUrgent=orders.filter(function(o){return o.urgent&&!isClosed(o);});
+  var aNoPre=openOrders.filter(function(o){return (o.prepaid||0)===0;});
+  var aNoSdek=orders.filter(function(o){return(o.status==='ready'||o.status==='planned')&&!o.sdekNum;});
+  function alertBlock(key,bg,fg,label,list){
+    if(!list.length)return '';
+    var chips=list.map(function(o){
+      return '<span onclick="jumpTo(\''+o.id+'\')" style="cursor:pointer;background:#fff;border:1px solid '+fg+'55;color:'+fg+';font-weight:700;font-size:12px;padding:6px 10px;border-radius:12px;white-space:nowrap">'+o.num+'</span>';
+    }).join('');
+    return '<div style="background:'+bg+';border-radius:12px;padding:12px 14px;margin-bottom:8px">'
+      +'<div onclick="toggleMasterOrders(\''+key+'\')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;color:'+fg+'">'
+      +'<span>'+label+' ('+list.length+')</span><span id="mclosedarr-'+key+'">⌄</span></div>'
+      +'<div id="mclosed-'+key+'" style="display:none;flex-wrap:wrap;gap:6px;margin-top:10px">'+chips+'</div>'
+      +'</div>';
+  }
+  var alertsHtml=alertBlock('alurgent','#f5dada','#6e2222','⚡ Срочные не закрыты',aUrgent)
+    +alertBlock('alnopre','#f5dada','#6e2222','Без предоплаты',aNoPre)
+    +alertBlock('alnosdek','#f0efb1','#8a7a30','Готовы/планируются без СДЭК',aNoSdek);
+  if(alertsHtml){
+    html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Требует внимания</div>';
+    html+=alertsHtml;
   }
 
   return html;
 }
-
 function setStatsPeriod(p){statsPeriod=p;statsMonthKey='';renderTab('stats');}
 function setStatsMonth(m){statsMonthKey=m;renderTab('stats');}
 
-// ── Аналитика недели ──
-var analyticsWeekOffset=0; // 0 = текущая неделя, -1 = прошлая и т.д.
-var nastyaPay=0; // ЗП Насти за неделю
+// ── Аналитика (итоги по закрытым заказам) ──
+var analyticsPeriod='week';   // 'week' | 'month' | 'all'
+var analyticsWeekOffset=0;    // смещение недели (0 = текущая)
+var analyticsMonthKey='';     // выбранный месяц 'YYYY-MM' ('' = текущий)
 
 function getAnalyticsWeekRange(offset){
   var now=new Date();
@@ -1664,26 +1681,43 @@ function getAnalyticsWeekRange(offset){
   return{start:mon,end:sun};
 }
 
-function analyticsWeekNav(d){analyticsWeekOffset+=d;renderTab('analytics');}
-function analyticsNastyaInput(val){nastyaPay=parseInt(val)||0;renderTab('analytics');}
+// Диапазон выбранного периода + подпись
+function getAnalyticsRange(){
+  if(analyticsPeriod==='week'){
+    var r=getAnalyticsWeekRange(analyticsWeekOffset);
+    r.label=r.start.toLocaleDateString('ru',{day:'numeric',month:'long'})+' – '+r.end.toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'});
+    return r;
+  }
+  if(analyticsPeriod==='month'){
+    var mk=analyticsMonthKey||(function(){var n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0');})();
+    var p=mk.split('-'),y=+p[0],m=+p[1];
+    return {start:new Date(y,m-1,1,0,0,0,0),end:new Date(y,m,0,23,59,59,999),label:moLbl(mk),monthKey:mk};
+  }
+  return {start:new Date(0),end:new Date(8640000000000000),label:'Всё время'};
+}
 
-function getClosedWeekOrders(){
-  var r=getAnalyticsWeekRange(analyticsWeekOffset);
+function getClosedPeriodOrders(){
+  var r=getAnalyticsRange();
   return orders.filter(function(o){
-    if(!isClosed(o)) return false;            // закрыт = клиент полностью оплатил
-    var d=new Date(closedDate(o));            // дата закрытия (когда нажали «Закрыть»)
+    if(!isClosed(o))return false;
+    var d=new Date(closedDate(o));
     return d>=r.start&&d<=r.end;
   });
 }
+// совместимость со старым именем (используется в экспорте)
+function getClosedWeekOrders(){return getClosedPeriodOrders();}
+
+function analyticsWeekNav(d){analyticsWeekOffset+=d;renderTab('analytics');}
+function setAnalyticsPeriod(p){analyticsPeriod=p;if(p!=='month')analyticsMonthKey='';renderTab('analytics');}
+function setAnalyticsMonth(m){analyticsMonthKey=m;renderTab('analytics');}
 
 function tplWeeklyAnalytics(){
-  var r=getAnalyticsWeekRange(analyticsWeekOffset);
-  var closed=getClosedWeekOrders();
-
+  var r=getAnalyticsRange();
+  var closed=getClosedPeriodOrders();
   var fmt2=function(n){return(Math.round(n)||0).toLocaleString('ru')+' ₽';};
   var pct=function(val,total){return total>0?Math.round(val/total*100):0;};
 
-  // Суммарные показатели (всё через calcCosts — учитывает игрушки и количество)
+  // Суммы — всё через calcCosts (единая формула: материалы, ЗП мастера, ЗП Саши, Настя, прибыль)
   var totalRev=closed.reduce(function(s,o){return s+orderTotal(o);},0);
   var totalWeight=closed.reduce(function(s,o){return s+orderWeight(o);},0);
   var totalFixed=closed.reduce(function(s,o){return s+calcCosts(o).fixed;},0);
@@ -1691,65 +1725,66 @@ function tplWeeklyAnalytics(){
   var totalMaterials=totalFixed+totalVariable;
   var totalMasterPay=closed.reduce(function(s,o){return s+calcCosts(o).master;},0);
   var totalSashaPay=closed.reduce(function(s,o){return s+calcCosts(o).sasha;},0);
-  var totalEmb=closed.reduce(function(s,o){return s+orderEmbCount(o)*400;},0);
-  var totalTax=Math.round(totalRev*0.06);
-  var totalNastya=nastyaPay||0;
-  var totalProfit=totalRev-totalMaterials-totalMasterPay-totalSashaPay-totalTax-totalNastya;
+  var totalNastya=closed.reduce(function(s,o){return s+calcCosts(o).nastya;},0);
+  var totalProfit=closed.reduce(function(s,o){return s+calcCosts(o).profit;},0);
   var avgMargin=totalRev>0?Math.round(totalProfit/totalRev*100):0;
-
-  // Дата диапазон
-  var dateStr=r.start.toLocaleDateString('ru',{day:'numeric',month:'long'})+' – '+r.end.toLocaleDateString('ru',{day:'numeric',month:'long',year:'numeric'});
-  var isCurrentWeek=analyticsWeekOffset===0;
 
   // По мастерам
   var dashaOrders=closed.filter(function(o){return o.master==='Даша';});
   var svetaOrders=closed.filter(function(o){return o.master==='Света';});
   function masterStats(mos){
-    var rev=mos.reduce(function(s,o){return s+orderTotal(o);},0);
-    var wt=mos.reduce(function(s,o){return s+orderWeight(o);},0);
-    var zp=mos.reduce(function(s,o){return s+calcCosts(o).master;},0);
-    var emb=mos.reduce(function(s,o){return s+orderEmbCount(o);},0);
-    var profit=mos.reduce(function(s,o){return s+calcCosts(o).profit;},0);
-    return{count:mos.length,rev:rev,wt:Math.round(wt),zp:zp,emb:emb,profit:profit};
+    return {
+      count:mos.length,
+      rev:mos.reduce(function(s,o){return s+orderTotal(o);},0),
+      wt:Math.round(mos.reduce(function(s,o){return s+orderWeight(o);},0)),
+      zp:mos.reduce(function(s,o){return s+calcCosts(o).master;},0),
+      emb:mos.reduce(function(s,o){return s+orderEmbCount(o);},0),
+      profit:mos.reduce(function(s,o){return s+calcCosts(o).profit;},0)
+    };
   }
-  var dSt=masterStats(dashaOrders);
-  var sSt=masterStats(svetaOrders);
-
-  // Цвета для диаграммы
-  var donutData=[
-    {label:'ЗП мастеров',val:totalMasterPay,color:'#8a7a50'},
-    {label:'Материалы',val:totalMaterials,color:'#a3cdd9'},
-    {label:'ЗП Саши',val:totalSashaPay,color:'#c4b8e0'},
-    {label:'Налог',val:totalTax,color:'#f0c88a'},
-    {label:'ЗП Насти',val:totalNastya,color:'#f5a0a0'},
-    {label:'Чистая прибыль',val:Math.max(0,totalProfit),color:'#6db88a'},
-  ].filter(function(d){return d.val>0;});
+  var dSt=masterStats(dashaOrders),sSt=masterStats(svetaOrders);
 
   var html='<div id="analytics-report" style="background:var(--bg);padding:4px">';
 
-  // Заголовок
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
-    +'<button class="btn btn-sm btn-secondary" onclick="analyticsWeekNav(-1)">← Пред.</button>'
-    +'<div style="text-align:center">'
-    +'<div style="font-family:\'Playfair Display\',serif;font-style:italic;font-size:16px;color:var(--accent)">Аналитика недели</div>'
-    +'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+dateStr+'</div>'
-    +'</div>'
-    +'<button class="btn btn-sm btn-secondary" onclick="analyticsWeekNav(1)"'+(isCurrentWeek?' disabled style="opacity:.4"':'')+'>Вперёд →</button>'
-    +'</div>';
+  // Селектор периода
+  html+='<div class="filters" style="margin-bottom:10px">';
+  [['week','Неделя'],['month','Месяц'],['all','Всё время']].forEach(function(p){
+    html+='<button class="chip '+(analyticsPeriod===p[0]?'active':'')+'" onclick="setAnalyticsPeriod(\''+p[0]+'\')">'+p[1]+'</button>';
+  });
+  html+='</div>';
+
+  // Навигация по неделям / выбор месяца
+  if(analyticsPeriod==='week'){
+    var isCurrentWeek=analyticsWeekOffset===0;
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      +'<button class="btn btn-sm btn-secondary" onclick="analyticsWeekNav(-1)">← Пред.</button>'
+      +'<div style="font-size:12px;color:var(--text2);font-weight:600;text-align:center">'+r.label+'</div>'
+      +'<button class="btn btn-sm btn-secondary" onclick="analyticsWeekNav(1)"'+(isCurrentWeek?' disabled style="opacity:.4"':'')+'>След. →</button>'
+      +'</div>';
+  }else if(analyticsPeriod==='month'){
+    var months=[...new Set(orders.filter(function(o){return isClosed(o);}).map(function(o){var d=new Date(closedDate(o));return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}))].sort().reverse();
+    html+='<div class="filters" style="margin-bottom:12px">';
+    months.forEach(function(m){
+      html+='<button class="chip '+(r.monthKey===m?'active':'')+'" onclick="setAnalyticsMonth(\''+m+'\')">'+moLbl(m)+'</button>';
+    });
+    html+='</div>';
+  }else{
+    html+='<div style="text-align:center;font-size:12px;color:var(--text3);margin-bottom:12px">'+r.label+'</div>';
+  }
 
   if(!closed.length){
-    html+='<div class="empty" style="padding:32px"><div class="empty-icon">📊</div>Нет закрытых заказов за эту неделю</div>';
+    html+='<div class="empty" style="padding:32px"><div class="empty-icon">📊</div>Нет закрытых заказов за период</div>';
     html+='</div>';
     return html;
   }
 
-  // 4 stat cards
+  // 4 карточки
   html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">';
   var cards=[
     {val:fmt2(totalRev),lbl:'Выручка',color:'var(--accent)'},
     {val:fmt2(totalProfit),lbl:'Чистая прибыль',color:totalProfit>=0?'var(--green)':'var(--red)'},
     {val:avgMargin+'%',lbl:'Средняя маржа',color:avgMargin>=20?'var(--green)':'var(--orange)'},
-    {val:Math.round(totalWeight).toLocaleString('ru')+' г',lbl:'Общий вес',color:'var(--blue)'},
+    {val:closed.length+' зак.',lbl:'Закрыто заказов',color:'var(--blue)'},
   ];
   cards.forEach(function(c){
     html+='<div style="background:var(--card);border-radius:14px;border:1px solid var(--border);padding:14px;box-shadow:var(--sh)">'
@@ -1759,20 +1794,17 @@ function tplWeeklyAnalytics(){
   });
   html+='</div>';
 
-  // Структура расходов — горизонтальные бары
+  // Куда уходит выручка — бары (% от выручки)
   html+='<div style="background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
-  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">Структура расходов</div>';
+  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">Куда уходит выручка</div>';
   var barRows=[
+    {label:'Материалы',val:totalMaterials,color:'#9ab06e'},
     {label:'ЗП мастеров',val:totalMasterPay,color:'#8a7a50'},
-    {label:'Расход по весу',val:totalVariable,color:'#3a8fa3'},
-    {label:'ЗП Саши',val:totalSashaPay,color:'#6b52a0'},
-    {label:'Пост. расход',val:totalFixed,color:'#9ab06e'},
-    {label:'Налог (6%)',val:totalTax,color:'#c09048'},
-    {label:'ЗП Насти',val:totalNastya,color:'#c06060'},
+    {label:'ЗП Саши (20%)',val:totalSashaPay,color:'#6b52a0'},
+    {label:'Настя (одежда)',val:totalNastya,color:'#c06060'},
+    {label:'Чистая прибыль',val:Math.max(0,totalProfit),color:'#2a7a45'},
   ];
-  var maxBar=Math.max.apply(null,barRows.map(function(r){return r.val;}));
   barRows.forEach(function(row){
-    var barPct=maxBar>0?Math.round(row.val/maxBar*100):0;
     var revPct=pct(row.val,totalRev);
     html+='<div style="margin-bottom:10px">'
       +'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'
@@ -1780,21 +1812,37 @@ function tplWeeklyAnalytics(){
       +'<span style="color:var(--text3)">'+revPct+'% · '+fmt2(row.val)+'</span>'
       +'</div>'
       +'<div style="height:8px;background:var(--bg2);border-radius:4px;overflow:hidden">'
-      +'<div style="height:100%;width:'+barPct+'%;background:'+row.color+';border-radius:4px;transition:width .3s"></div>'
+      +'<div style="height:100%;width:'+revPct+'%;background:'+row.color+';border-radius:4px"></div>'
       +'</div>'
       +'</div>';
   });
-  // Итоговая прибыль
-  html+='<div style="margin-top:12px;padding:10px 12px;background:var(--green-bg);border-radius:10px;display:flex;justify-content:space-between;align-items:center">'
-    +'<span style="font-size:12px;font-weight:700;color:var(--green)">Чистая прибыль</span>'
-    +'<span style="font-size:14px;font-weight:700;color:var(--green)">'+fmt2(totalProfit)+'</span>'
-    +'</div>';
   html+='</div>';
 
-  // Donut chart (SVG)
-  html+=renderDonutChart(donutData,totalRev);
+  // По мастерам (закрытые) с раскрывающимися чипами
+  html+='<div style="background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
+  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">По мастерам</div>';
+  MASTERS.forEach(function(m){
+    var mos=closed.filter(function(o){return o.master===m;});
+    if(!mos.length){html+='<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--text3)">'+m+' — нет</div>';return;}
+    var mRev=mos.reduce(function(s,o){return s+orderTotal(o);},0);
+    var mZp=mos.reduce(function(s,o){return s+calcCosts(o).master;},0);
+    var key='an'+m.replace(/[^a-zA-Zа-яА-Я0-9]/g,'');
+    var chips=mos.slice().sort(function(a,b){return closedDate(b)-closedDate(a);}).map(function(o){
+      return '<span onclick="jumpTo(\''+o.id+'\')" style="cursor:pointer;background:#daeef5;color:#3a8fa3;font-weight:700;font-size:12px;padding:6px 12px;border-radius:12px;white-space:nowrap">'+o.num+'</span>';
+    }).join('');
+    html+='<div style="padding:10px 0;border-bottom:1px solid var(--border)">'
+      +'<div onclick="toggleMasterOrders(\''+key+'\')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:4px">'
+      +'<span style="font-weight:700">'+m+' <span id="mclosedarr-'+key+'" style="color:var(--text3);font-size:12px">⌄</span></span>'
+      +'<span style="color:var(--text3)">'+mos.length+' '+(mos.length===1?'заказ':'заказов')+'</span>'
+      +'<span style="color:var(--accent);font-weight:700">'+fmt2(mRev)+'</span>'
+      +'</div>'
+      +'<div style="font-size:11px;color:var(--text3)">ЗП начислено: <b style="color:var(--text2)">'+fmt2(mZp)+'</b></div>'
+      +'<div id="mclosed-'+key+'" style="display:none;flex-wrap:wrap;gap:6px;margin-top:8px">'+chips+'</div>'
+      +'</div>';
+  });
+  html+='</div>';
 
-  // Карточки мастеров
+  // Карточки мастеров (детально)
   html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">';
   function masterCard(name,st,color){
     return '<div style="background:var(--card);border-radius:14px;border:1px solid var(--border);padding:14px;box-shadow:var(--sh)">'
@@ -1812,21 +1860,7 @@ function tplWeeklyAnalytics(){
   html+=masterCard('Света',sSt,'#3a8fa3');
   html+='</div>';
 
-  // Карточка Насти
-  html+='<div style="background:var(--card);border-radius:14px;border:1px solid var(--border);padding:14px;margin-bottom:12px;box-shadow:var(--sh)">'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
-    +'<div style="font-size:13px;font-weight:700;color:#c06060">Настя · Упаковщик</div>'
-    +'</div>'
-    +'<div style="display:flex;align-items:center;gap:10px;font-size:12px">'
-    +'<span style="color:var(--text3)">ЗП за неделю:</span>'
-    +'<input type="number" value="'+(nastyaPay||'')+'" placeholder="0" min="0" step="100" '
-    +'oninput="nastyaPay=parseInt(this.value)||0;renderTab(\'analytics\')" '
-    +'style="width:90px;padding:4px 8px;border-radius:8px;border:1px solid var(--border2);font-size:13px;font-family:\'Nunito\',sans-serif;background:var(--bg)">'
-    +'<span style="font-weight:700;color:var(--accent)">'+fmt2(nastyaPay)+'</span>'
-    +'</div>'
-    +'</div>';
-
-  // Кнопки экспорта
+  // Экспорт
   html+='<div style="display:flex;gap:8px;margin-bottom:16px">'
     +'<button class="btn btn-primary" style="flex:1;justify-content:center" onclick="downloadAnalyticsPng()">📷 Скачать PNG</button>'
     +'<button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="exportAnalyticsCsv()">📊 Скачать CSV</button>'
@@ -1875,8 +1909,8 @@ async function downloadAnalyticsPng(){
   if(!el){toast('Нет данных');return;}
   if(typeof html2canvas==='undefined'){toast('html2canvas не загружен');return;}
   toast('Создаём изображение...');
-  var r=getAnalyticsWeekRange(analyticsWeekOffset);
-  var name='analytics_'+r.start.toISOString().slice(0,10)+'.png';
+  var r=getAnalyticsRange();
+  var name='analytics_'+(new Date(r.start.getTime()-r.start.getTimezoneOffset()*60000)).toISOString().slice(0,10)+'.png';
   try{
     var canvas=await html2canvas(el,{backgroundColor:'#f7f7e4',scale:2,useCORS:true,logging:false});
     var a=document.createElement('a');
@@ -1887,20 +1921,20 @@ async function downloadAnalyticsPng(){
 }
 
 function exportAnalyticsCsv(){
-  var r=getAnalyticsWeekRange(analyticsWeekOffset);
-  var closed=getClosedWeekOrders();
+  var closed=getClosedPeriodOrders();
   if(!closed.length){toast('Нет закрытых заказов');return;}
-  var rows=[['Номер','Клиент','Мастер','Статус','Цена','Вес (г)','Кол-во','Вышивка','ЗП мастера','Материалы','Прибыль','Месяц']];
+  var rows=[['Номер','Клиент','Мастер','Цена','Вес (г)','Кол-во','Вышивка','Материалы','ЗП мастера','ЗП Саши','Настя','Прибыль','Дата закрытия']];
   closed.forEach(function(o){
     var c=calcCosts(o);
-    rows.push([o.num,o.client||'',o.master||'',o.status||'',o.price||0,o.weightG||0,o.count||1,o.embCount||0,c.master,c.materials,c.profit,o.month||'']);
+    var d=new Date(closedDate(o));
+    rows.push([o.num,o.client||'',o.master||'',orderTotal(o),orderWeight(o),orderQty(o),orderEmbCount(o),c.materials,c.master,c.sasha,c.nastya,c.profit,d.toLocaleDateString('ru')]);
   });
   var csv=rows.map(function(r){return r.map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
   var bom='﻿';
   var blob=new Blob([bom+csv],{type:'text/csv;charset=utf-8;'});
   var a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download='orders_week_'+r.start.toISOString().slice(0,10)+'.csv';
+  a.download='analytics_'+analyticsPeriod+'.csv';
   a.click();
   toast('CSV сохранён ✓');
 }
