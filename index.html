@@ -322,6 +322,14 @@ function orderToyLabel(o){
   var parts=items.map(function(it){var c=(parseInt(it.count)||1);return(it.toyType||'\u0438\u0433\u0440\u0443\u0448\u043a\u0430')+(c>1?' \u00d7'+c:'');});
   return parts.filter(Boolean).join(' + ');
 }
+// \u0417\u0430\u043a\u0440\u044b\u0442 \u043b\u0438 \u0437\u0430\u043a\u0430\u0437 (\u043a\u043b\u0438\u0435\u043d\u0442 \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e \u043e\u043f\u043b\u0430\u0442\u0438\u043b). \u042f\u0432\u043d\u044b\u0439 \u0444\u043b\u0430\u0433 closed \u0438\u043c\u0435\u0435\u0442 \u043f\u0440\u0438\u043e\u0440\u0438\u0442\u0435\u0442;
+// \u0434\u043b\u044f \u0441\u0442\u0430\u0440\u044b\u0445 \u0437\u0430\u043a\u0430\u0437\u043e\u0432 \u0431\u0435\u0437 \u0444\u043b\u0430\u0433\u0430 \u2014 \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u044f\u0435\u043c \u043f\u043e \u0441\u0442\u0430\u0442\u0443\u0441\u0443+\u043f\u043e\u043b\u043d\u043e\u0439 \u043e\u043f\u043b\u0430\u0442\u0435.
+function isClosed(o){
+  if(typeof o.closed==='boolean')return o.closed;
+  var tot=orderTotal(o);
+  return (o.status==='done'||o.status==='sent') && tot>0 && (parseFloat(o.prepaid)||0)>=tot;
+}
+function closedDate(o){return o.closedAt||o.created;}
 // \u0421\u0435\u0431\u0435\u0441\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u044c \u043e\u0434\u043d\u043e\u0439 \u043f\u043e\u0437\u0438\u0446\u0438\u0438 (\u0441 \u0443\u0447\u0451\u0442\u043e\u043c \u043a\u043e\u043b-\u0432\u0430)
 function calcItemMat(item,master,rate){
   var varPerG=(typeof rate==='number'&&rate>0)?rate:(master==='\u0421\u0432\u0435\u0442\u0430'?0.40:0.25);
@@ -743,11 +751,12 @@ function toggleCard(id){
 function orderCard(o){
   var st=STATUSES[o.status]||STATUSES.new;
   var src=SOURCES[o.source]||{label:o.source||'—',cls:'b-wait'};
-  var paid=o.price>0&&o.prepaid>=o.price;
+  var oTotal=orderTotal(o);
+  var paid=oTotal>0&&(o.prepaid||0)>=oTotal;
   var canFinance=role==='manager'||role==='director';
   var canEdit=(role==='manager'||role==='director')&&!isPreviewMode;
   var moStr=moLbl(o.month);
-  var rest=Math.max(0,(o.price||0)-(o.prepaid||0));
+  var rest=Math.max(0,oTotal-(o.prepaid||0));
   var margin=canFinance?calcMargin(o):null;
   var isExpanded=expandedCards.has(o.id);
   var oItems=getItems(o);
@@ -756,7 +765,9 @@ function orderCard(o){
   var oPrice=orderTotal(o);
 
   // Badges
+  var closed=isClosed(o);
   var badges='<span class="badge '+st.cls+'">'+st.label+'</span>';
+  if(closed)badges+=' <span class="badge" style="background:#d9f0e3;color:#2a7a45">🔒 Закрыт</span>';
   if(o.urgent)badges+=' <span class="badge b-urgent">Срочно</span>';
   if(paid)badges+=' <span class="badge b-paid">Оплачен</span>';
   else if(o.prepaid>0)badges+=' <span class="badge b-part">Предоплата</span>';
@@ -880,6 +891,10 @@ function orderCard(o){
   html+='</select></div>';
   if(canEdit){
     if(!o.sdek)html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="markSdek(this.dataset.oid)">СДЭК ✓</button>';
+    if(closed)
+      html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="reopenOrder(this.dataset.oid)">🔓 Открыть</button>';
+    else
+      html+='<button class="btn btn-sm btn-green" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="closeOrder(this.dataset.oid)">🔒 Закрыть заказ</button>';
     html+='<button class="btn btn-sm btn-secondary" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="openEdit(this.dataset.oid)">✏️ Изменить</button>';
     html+='<button style="background:none;border:none;color:#c8a0a0;font-size:12px;cursor:pointer;margin-top:14px;margin-left:auto" data-oid="'+o.id+'" onclick="delOrder(this.dataset.oid)">Удалить</button>';
   }
@@ -895,10 +910,34 @@ async function setStatus(id,val){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
   o.status=val;
-  if(val==='sent'){o.closedAt=Date.now();}
+  if(val==='sent'&&!o.closedAt){o.closedAt=Date.now();}
   await saveOrders(orders);
   renderTab(tab);
   toast('Статус: '+(STATUSES[val]||{label:val}).label);
+}
+// Закрыть заказ: клиент полностью оплатил. Ставим флаг closed, дату закрытия и полную оплату.
+// Выплата мастеру (Свете) — отдельно, во вкладке «Выплаты».
+async function closeOrder(id){
+  var o=orders.find(function(x){return x.id===id;});
+  if(!o)return;
+  var tot=orderTotal(o);
+  if(!confirm('Закрыть заказ '+o.num+'?\nОплата будет проставлена полной ('+fmt(tot)+') и заказ отметится как закрытый.'))return;
+  o.closed=true;
+  o.closedAt=Date.now();
+  o.prepaid=tot; // полная оплата от клиента
+  await saveOrders(orders);
+  renderTab(tab);
+  toast('Заказ '+o.num+' закрыт ✓');
+}
+async function reopenOrder(id){
+  var o=orders.find(function(x){return x.id===id;});
+  if(!o)return;
+  if(!confirm('Открыть заказ '+o.num+' заново? Метка закрытия снимется (сумма оплаты останется как есть).'))return;
+  o.closed=false;
+  delete o.closedAt;
+  await saveOrders(orders);
+  renderTab(tab);
+  toast('Заказ '+o.num+' открыт');
 }
 async function markSdek(id){
   const o=orders.find(function(x){return x.id===id;});
@@ -1403,7 +1442,8 @@ function filterByPeriod(ords, period, customMonth){
   var now=new Date();
   if(period==='week'){
     var r=getWeekRange();
-    return ords.filter(function(o){var d=new Date(o.created);return d>=r.start&&d<=r.end;});
+    // закрытые заказы относим к дате закрытия, открытые — к дате создания
+    return ords.filter(function(o){var d=new Date(isClosed(o)?closedDate(o):o.created);return d>=r.start&&d<=r.end;});
   }
   if(period==='month'){
     var curMo=customMonth||(now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0'));
@@ -1416,19 +1456,19 @@ function tplStats(){
   var periods=[['week','Неделя'],['month','Месяц'],['all','Всё время']];
   var months=[...new Set(orders.map(function(o){return o.month;}).filter(Boolean))].sort().reverse();
   var filtered=filterByPeriod(orders,statsPeriod,statsMonthKey);
-  var done=filtered.filter(function(o){return o.status==='done'||o.status==='sent';});
-  var active=filtered.filter(function(o){return o.status!=='done'&&o.status!=='sent';});
+  var done=filtered.filter(function(o){return isClosed(o);});
+  var active=filtered.filter(function(o){return !isClosed(o);});
 
   // Считаем цифры по завершённым заказам
-  var totalRev=done.reduce(function(s,o){return s+o.price;},0);
+  var totalRev=done.reduce(function(s,o){return s+orderTotal(o);},0);
   var totalMat=done.reduce(function(s,o){var c=calcCosts(o);return s+c.materials;},0);
   var totalMaster=done.reduce(function(s,o){var c=calcCosts(o);return s+c.master;},0);
   var totalSasha=done.reduce(function(s,o){var c=calcCosts(o);return s+c.sasha;},0);
   var totalProfit=done.reduce(function(s,o){var c=calcCosts(o);return s+c.profit;},0);
 
   // По активным — выручка ожидаемая
-  var pendingRev=active.reduce(function(s,o){return s+o.price;},0);
-  var pendingPre=active.reduce(function(s,o){return s+o.prepaid;},0);
+  var pendingRev=active.reduce(function(s,o){return s+orderTotal(o);},0);
+  var pendingPre=active.reduce(function(s,o){return s+(o.prepaid||0);},0);
 
   // Alerts
   var noSdek=orders.filter(function(o){return(o.status==='ready'||o.status==='planned')&&!o.sdekNum;}).length;
@@ -1593,8 +1633,8 @@ function tplStats(){
     html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">По месяцам</div>';
     months.forEach(function(m){
       var mo=orders.filter(function(o){return o.month===m;});
-      var moDone=mo.filter(function(o){return o.status==='done'||o.status==='sent';});
-      var moRev=moDone.reduce(function(s,o){return s+o.price;},0);
+      var moDone=mo.filter(function(o){return isClosed(o);});
+      var moRev=moDone.reduce(function(s,o){return s+orderTotal(o);},0);
       var moProfit=moDone.reduce(function(s,o){return s+calcCosts(o).profit;},0);
       html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">'
         +'<span style="font-weight:600;min-width:80px;text-transform:capitalize">'+moLbl(m)+'</span>'
@@ -1630,11 +1670,8 @@ function analyticsNastyaInput(val){nastyaPay=parseInt(val)||0;renderTab('analyti
 function getClosedWeekOrders(){
   var r=getAnalyticsWeekRange(analyticsWeekOffset);
   return orders.filter(function(o){
-    if(!o.postpayPaid) return false;
-    var st=o.status;
-    if(st!=='ready'&&st!=='planned'&&st!=='sent'&&st!=='done') return false;
-    // Используем дату последнего обновления или дату создания
-    var d=new Date(o.closedAt||o.updated||o.created);
+    if(!isClosed(o)) return false;            // закрыт = клиент полностью оплатил
+    var d=new Date(closedDate(o));            // дата закрытия (когда нажали «Закрыть»)
     return d>=r.start&&d<=r.end;
   });
 }
@@ -2053,7 +2090,8 @@ function tplSvetaFinance(){
   var sfTo=window.svetaTo||'';
 
   function inPeriod(o){
-    var d=new Date(o.created);
+    // закрытые заказы относим к дате закрытия, открытые — к дате создания
+    var d=new Date(isClosed(o)?closedDate(o):o.created);
     if(sf==='week'){
       var ws=new Date(now);ws.setDate(now.getDate()-now.getDay()+1);ws.setHours(0,0,0,0);
       return d>=ws;
@@ -2072,8 +2110,8 @@ function tplSvetaFinance(){
   var totalPending=myOrders.reduce(function(s,o){
     return s+(!o.advancePaid?calcAdvance(o):0)+(!o.postpayPaid?calcPostpay(o):0);
   },0);
-  var inWork=myOrders.filter(function(o){return o.status==='work'||o.status==='new';}).length;
-  var done=myOrders.filter(function(o){return o.advancePaid&&o.postpayPaid;}).length;
+  var inWork=myOrders.filter(function(o){return !isClosed(o)&&(o.status==='work'||o.status==='new');}).length;
+  var done=myOrders.filter(function(o){return isClosed(o);}).length;
 
   var html='<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">';
   [{id:'week',label:'Неделя'},{id:'all',label:'Всё время'},{id:'custom',label:'Период'}].forEach(function(p){
@@ -2108,6 +2146,7 @@ function tplSvetaFinance(){
       +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
       +'<span style="font-family:serif;font-size:14px;color:var(--accent);font-weight:600">'+o.num+'</span>'
       +'<span class="badge '+(STATUSES[o.status]||STATUSES.new).cls+'">'+(STATUSES[o.status]||STATUSES.new).label+'</span>'
+      +(isClosed(o)?' <span class="badge" style="background:#d9f0e3;color:#2a7a45">🔒 Закрыт</span>':'')
       +'</div>'
       +'<div style="font-size:12px;color:var(--text3);margin-bottom:8px">'+orderToyLabel(o)+' · '+wInfo+' · '+moLbl(o.month)+'</div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:12px">'
