@@ -2274,29 +2274,30 @@ function tplMaster(){
 }
 
 function tplTasks(){
-  // Видимость: Саша(Александра) и Даша видят ВСЕ задачи; Света — только адресованные ей (свои)
-  const myName=role==='master'?masterName:null;
-  const visible=myName?tasks.filter(function(t){return t.to===myName||t.from===myName;}):tasks;
+  // Видимость: личные задачи (to=мое имя) видны только мне; остальное видят только Саша/Даша
+  const me=myTaskName();
+  const visible=tasks.filter(function(t){
+    if(t.to===me) return true; // личные видны только мне
+    return role!=='master'; // остальное видят только Саша/Даша
+  });
   const open=visible.filter(function(t){return!t.done;}).sort(function(a,b){return b.created-a.created;});
   const done=visible.filter(function(t){return t.done;}).sort(function(a,b){return b.created-a.created;}).slice(0,15);
-  const fromName=role==='master'?'Света':role==='director'?'Даша':'Александра';
   // Куда можно назначить задачу
   var toList;
+  var other=me==='Александра'?'Даша':(me==='Даша'?'Александра':'Света');
   if(role==='master'){
-    toList=[['Александра','Александра'],['Даша','Даша']]; // Света может написать только нам
+    toList=[['Мне','Мне (только я вижу)'],['Александра','Александра'],['Даша','Даша']];
   }else{
-    // Саша/Даша: друг другу, Свете, либо «Александра и Даша» (общая, Света её не видит)
-    var other=fromName==='Александра'?'Даша':'Александра';
-    toList=[[other,other],['Света','Света'],['all','Александра и Даша']];
+    toList=[['Мне','Мне (только я вижу)'],[other,other],['Света','Света'],['all','Александра и Даша']];
   }
   // выбранный получатель (по умолчанию — первый допустимый)
   var allowed=toList.map(function(p){return p[0];});
   if(allowed.indexOf(window.taskTo)<0)window.taskTo=allowed[0];
   var chips=toList.map(function(p){
-    var c=personColor(p[0]);
+    var c=personPastelColor(p[0]);
     var active=window.taskTo===p[0];
     return '<button type="button" data-to="'+p[0]+'" data-color="'+c+'" onclick="selectTaskTo(this)" '
-      +'style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;cursor:pointer;white-space:nowrap;border:1.5px solid '+c+';background:'+(active?c:c+'14')+';color:'+(active?'#fff':c)+'">'+p[1]+'</button>';
+      +'style="font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;cursor:pointer;white-space:nowrap;border:1.5px solid '+c+';background:'+(active?c:c+'26')+';color:'+(active?'#fff':c)+'">'+p[1]+'</button>';
   }).join('');
 
   let html='<div class="form-section" style="margin-bottom:12px;padding:12px 14px">'
@@ -2307,7 +2308,7 @@ function tplTasks(){
     +'</div>'
     +'</div>';
 
-  if(open.length===0&&done.length===0){html+='<div class="empty"><div class="empty-icon">✅</div>Задач нет</div>';}
+  if(open.length===0&&done.length===0){html+='<div class="empty" style="text-align:center;padding:24px 14px;color:var(--text3);font-size:13px">Задач нет</div>';}
   if(open.length>0){
     html+='<div class="section-lbl">Открытые · '+open.length+'</div>';
     open.forEach(function(t){html+=taskCard(t);});
@@ -2321,6 +2322,9 @@ function tplTasks(){
 
 function personColor(name){
   return {'Александра':'#6b52a0','Даша':'#8a7a50','Света':'#3a8fa3','all':'#635535'}[name]||'#635535';
+}
+function personPastelColor(name){
+  return {'Мне':'#c9a96a','Александра':'#b89fd0','Даша':'#c5a872','Света':'#8dc6e0','all':'#a89880'}[name]||'#a89880';
 }
 // Имя текущего пользователя в системе задач
 function myTaskName(){return role==='master'?masterName:(role==='manager'?'Александра':'Даша');}
@@ -2348,9 +2352,11 @@ function selectTaskTo(btn){
   });
 }
 function taskCard(t){
-  const canAct=(role==='manager'||role==='director')||(role==='master'&&t.to===masterName);
+  const me=myTaskName();
+  const isPersonal=t.to===me&&t.from===me;
+  const canAct=(role==='manager'||role==='director')||(role==='master'&&t.to===masterName)||(isPersonal);
   const dt=new Date(t.created).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-  const toLabel=t.to==='all'?'Александра и Даша':t.to;
+  var toLabel=t.to==='all'?'Александра и Даша':isPersonal?'Мне':t.to;
   const toColor=personColor(t.to);
   // Чекбокс выполнения (можно снять обратно)
   var check=(canAct&&!isPreviewMode)
@@ -2376,8 +2382,9 @@ function taskCard(t){
 async function addTask(){
   const text=v('task-text');
   if(!text){toast('Напишите задачу');return;}
-  const fromName=role==='master'?'Света':role==='director'?'Даша':'Александра';
-  const to=window.taskTo||(role==='master'?'Даша':'Александра');
+  const fromName=myTaskName();
+  var to=window.taskTo||(role==='master'?'Даша':'Александра');
+  if(to==='Мне') to=fromName; // личные задачи — сохраняем с именем текущего
   const t={id:uid(),from:fromName,to:to,text:text,done:false,created:Date.now()};
   tasks.unshift(t);
   await saveTasks(tasks);
