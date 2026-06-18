@@ -225,7 +225,7 @@ let expandedCards=new Set();
 let realRole=null,isPreviewMode=false;
 let orders=[],tasks=[];
 
-const OPENROUTER_KEY='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';
+const OPENROUTER_PROXY='https://openrouter-proxy.zaytsevalexandara.workers.dev';
 
 const JSONBIN_ID='6a31904fda38895dfecb54fe';
 const JSONBIN_KEY='$2a$10$yDV194UbfbUV7DC2XUUd4OHjsLq37DiuNiZKGjUAwWcGjoz3Z3aXO';
@@ -1200,13 +1200,10 @@ async function parseOrderWithAI(){
     +'  } ]\n'
     +'}\nЕсли игрушка одна — в массиве items будет один элемент.\n\nСообщение:\n'+text;
   try{
-    var r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+    var r=await fetch(OPENROUTER_PROXY,{
       method:'POST',
       headers:{
         'Content-Type':'application/json',
-        'Authorization':'Bearer '+OPENROUTER_KEY,
-        'HTTP-Referer':'https://markovka.netlify.app',
-        'X-Title':'Markovka'
       },
       body:JSON.stringify({
         model:'google/gemini-2.5-flash',
