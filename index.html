@@ -221,6 +221,7 @@ const PASSWORDS={
   'sveta2024':   {role:'master',  name:'Света',      label:'Мастер',      masterName:'Света'},
 };
 let role=null,masterName=null,tab='list',myTodos=[],fStatus='all',fMonth='all',fMaster='all',fUrgent=false,fSort='date',search='',calDate=new Date(),showArchive=false;
+const VALID_SORTS=['date','date_asc','deadline','margin'];
 let expandedCards=new Set();
 let realRole=null,isPreviewMode=false;
 let orders=[],tasks=[];
@@ -592,18 +593,29 @@ function renderTab(t){
 function moLbl(m){if(!m)return'';const[y,mo]=m.split('-');return new Date(y,mo-1).toLocaleString('ru',{month:'long',year:'numeric'});}
 
 function getFilteredOrders(){
-  var statusOrder={new:0,work:1,ready:2,sent:3,done:4};
+  var hasSearch=!!search;
   return orders.filter(function(o){
+    var isArchived=o.status==='archived';
+    // Поиск показывает всё. Без поиска: обычный режим скрывает архив, режим архива показывает только архив.
+    if(!hasSearch){
+      if(!showArchive&&isArchived)return false;
+      if(showArchive&&!isArchived)return false;
+    }
     if(fStatus!=='all'&&o.status!==fStatus)return false;
     if(fUrgent&&!o.urgent)return false;
     if(fMonth!=='all'&&o.month!==fMonth)return false;
     if(fMaster!=='all'&&o.master!==fMaster)return false;
-    if(search){var q=search.toLowerCase();if(!o.num.toLowerCase().includes(q)&&!(o.client||'').toLowerCase().includes(q)&&!(o.toys||'').toLowerCase().includes(q))return false;}
+    if(hasSearch){var q=search.toLowerCase();if(!o.num.toLowerCase().includes(q)&&!(o.client||'').toLowerCase().includes(q)&&!(o.toys||'').toLowerCase().includes(q))return false;}
     return true;
   }).sort(function(a,b){
     if(fSort==='date')return b.created-a.created;
-    if(fSort==='deadline'){var da=a.deliveryDay||99,db=b.deliveryDay||99;return da-db;}
-    if(fSort==='status')return (statusOrder[a.status]||0)-(statusOrder[b.status]||0);
+    if(fSort==='date_asc')return a.created-b.created;
+    if(fSort==='deadline'){
+      var ma=a.month||'9999-99',mb=b.month||'9999-99';
+      if(ma!==mb)return ma<mb?-1:1;
+      var da=a.deliveryDay||99,db=b.deliveryDay||99;
+      return da-db;
+    }
     if(fSort==='margin'){var ma=calcMargin(a)||0,mb=calcMargin(b)||0;return mb-ma;}
     return b.created-a.created;
   });
@@ -618,7 +630,8 @@ function tplList(){
   var statusLabel=fStatus==='all'?'Статусы':(STATUSES[fStatus]?STATUSES[fStatus].label:'Статусы');
   var monthLabel=fMonth==='all'?'Месяц':moLbl(fMonth);
   var masterLabel=fMaster==='all'?'Мастер':fMaster;
-  var sortLabels={date:'Дата',deadline:'Срок',status:'Статус',margin:'Маржа'};
+  var sortLabels={date:'Сначала новые',date_asc:'Сначала старые',deadline:'Срок',margin:'Маржа'};
+  var archCnt=orders.filter(function(o){return o.status==='archived';}).length;
 
   var html='';
   html+='<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">'
@@ -632,7 +645,7 @@ function tplList(){
 
   // Filter bar
   html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;position:relative">';
-  html+='<button class="chip'+(showArchive?' active':'')+'" onclick="showArchive=!showArchive;renderTab(\'list\')" style="display:inline-flex;align-items:center;gap:4px">'+(showArchive?'← Список':'📦 Архив')+'</button>';
+  html+='<button class="chip'+(showArchive?' active':'')+'" onclick="showArchive=!showArchive;renderTab(\'list\')" style="display:inline-flex;align-items:center;gap:4px">'+(showArchive?'← Список':'📦 Архив'+(archCnt?' ('+archCnt+')':''))+'</button>';
 
   // Status filter
   var sAct=fStatus!=='all'||fUrgent;
@@ -679,7 +692,8 @@ function tplList(){
   html+='</div></div>';
 
   html+='</div>';
-  html+='<div style="font-size:12px;color:var(--text3);margin-bottom:10px">Найдено заказов: '+list.length+'</div>';
+  var listLbl=showArchive?'Архивных заказов':search?'Найдено':('Активных заказов');
+  html+='<div style="font-size:12px;color:var(--text3);margin-bottom:10px">'+listLbl+': '+list.length+'</div>';
   html+='<div id="list-cards">';
   if(!list.length){html+='<div class="empty"><div class="empty-icon">🧸</div>Заказов не найдено</div>';}
   else{list.forEach(function(o){html+=orderCard(o);});}
