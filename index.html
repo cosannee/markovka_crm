@@ -1000,11 +1000,13 @@ function openSdekExport(){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
     var noNak=!o.sdekNum;
     var nak=noNak?'<span style="color:#c0392b;font-weight:700">накл. — нет!</span>':('накл. '+o.sdekNum);
-    return '<div style="padding:9px 0;border-bottom:1px solid #e8e6cc">'
+    return '<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #e8e6cc;cursor:pointer">'
+      +'<input type="checkbox" class="sdek-chk" data-oid="'+o.id+'" checked style="margin-top:3px;width:16px;height:16px;accent-color:#635535;flex-shrink:0">'
+      +'<div style="flex:1">'
       +'<div style="font-size:14px;font-weight:700;color:#3a3020">'+o.num+' · '+(o.client||'—')+'</div>'
       +(o.phone?'<div style="font-size:13px;color:#635535">'+o.phone+'</div>':'')
       +'<div style="font-size:12px;color:#7a7570;margin-top:1px">'+nak+' · '+wt+'</div>'
-      +'</div>';
+      +'</div></label>';
   }).join('');
   var content=list.length
     ? '<div id="sdek-export-content" style="background:#fff;padding:16px;border-radius:12px">'
@@ -1019,13 +1021,30 @@ function openSdekExport(){
   el.innerHTML='<div class="modal">'
     +'<div class="modal-title">Выгрузка для СДЭК</div>'
     +content
-    +'<div class="modal-actions">'
+    +(list.length
+      ? '<button class="btn btn-green btn-full" style="margin-top:12px;justify-content:center;font-size:13px" onclick="markSdekSent()">✅ Отправлены</button>'
+      : '')
+    +'<div class="modal-actions" style="margin-top:8px">'
     +(list.length?'<button class="btn btn-primary" style="flex:1;justify-content:center" onclick="copySdekText()">📋 Копировать</button>'
       +'<button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="downloadSdekPng()">🖼 Картинка</button>':'')
     +'<button class="btn btn-ghost" style="flex:'+(list.length?'0 0 auto':'1')+';justify-content:center" onclick="document.getElementById(\'sdek-export-modal\').remove()">Закрыть</button>'
     +'</div></div>';
   document.body.appendChild(el);
   el.addEventListener('click',function(e){if(e.target===el)el.remove();});
+}
+async function markSdekSent(){
+  var checked=[].slice.call(document.querySelectorAll('.sdek-chk:checked')).map(function(cb){return cb.dataset.oid;});
+  if(!checked.length){toast('Выберите хотя бы один заказ');return;}
+  var names=[];
+  checked.forEach(function(id){
+    var o=orders.find(function(x){return x.id===id;});
+    if(o){o.status='sent';if(!o.closedAt)o.closedAt=Date.now();names.push(o.num);}
+  });
+  await saveOrders(orders);
+  var modal=document.getElementById('sdek-export-modal');
+  if(modal)modal.remove();
+  renderTab(tab);
+  toast('Отправлены: '+names.join(', ')+' ✓');
 }
 async function copySdekText(){
   var txt=sdekExportText();
