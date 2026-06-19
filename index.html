@@ -1709,9 +1709,9 @@ function tplStats(){
   var openOrders=orders.filter(function(o){return !isClosed(o);});
   var inRange=function(d){return d&&r.start&&r.end&&d>=r.start&&d<=r.end;};
 
-  // Активные = все незакрытые, кроме архива (новый, в работе, готов, отправка планируется, отправлен).
-  // За них мы ещё ждём деньги — их остаток должен попадать в «Ждём».
-  var workGroup=openOrders.filter(function(o){return o.status!=='archived';});
+  // «Ждём оплату» = только заказы в активной работе: в работе / готов / планируется отправка.
+  // «Новые» ещё не взяты в работу, «отправлен» — уже закрытый цикл.
+  var workGroup=openOrders.filter(function(o){return o.status==='work'||o.status==='ready'||o.status==='planned';});
   var closedGroup=(r.start&&r.end)?orders.filter(function(o){return isClosed(o)&&inRange(new Date(closedDate(o)));}):[]; // закрытые за период
   var combined=workGroup.concat(closedGroup);
 
