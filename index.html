@@ -1519,10 +1519,10 @@ async function addOrder(){
     notes:[],created:Date.now()
   };
   orders.unshift(o);
-  // Мгновенно показываем результат, сохраняем в фоне
-  toast('Заказ '+o.num+' добавлен');
   renderTab('list');
-  saveOrders(orders);
+  toast('Сохраняем заказ '+o.num+'...');
+  await saveOrders(orders);
+  toast('✅ Заказ '+o.num+' добавлен');
 }
 
 function openEdit(id){
