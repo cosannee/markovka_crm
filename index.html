@@ -89,6 +89,10 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text1);fon
 .fg input,.fg select,.fg textarea{padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-family:'Nunito',sans-serif;font-size:13px;color:var(--text1);outline:none;transition:border-color .15s;width:100%}
 .fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--accent)}
 .fg textarea{resize:vertical;min-height:60px}
+/* Убираем стрелки-спиннеры у числовых полей (мешают и меняют значение при прокрутке) */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield;appearance:textfield}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
 .span2{grid-column:span 2}
 .checkbox-row{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:6px 0}
@@ -225,6 +229,7 @@ const VALID_SORTS=['date','date_asc','deadline','margin'];
 let expandedCards=new Set();
 let realRole=null,isPreviewMode=false;
 let orders=[],tasks=[];
+let cloudOrderCount=0;  // сколько заказов мы считаем в облаке (для стража массового стирания)
 
 const OPENROUTER_PROXY='https://openrouter-proxy.zaytsevalexandara.workers.dev';
 
@@ -261,6 +266,7 @@ async function loadData(force){
     const data=await r.json();
     lastSyncTime=Date.now();
     cloudLoadOk=true;                       // облако успешно прочитано
+    cloudOrderCount=Array.isArray(data.orders)?data.orders.length:0;
     try{localStorage.setItem('markovka_data',JSON.stringify(data));}catch(e){}
     return data;
   }catch(e){
@@ -271,7 +277,31 @@ async function loadData(force){
     syncInProgress=false;
   }
 }
-async function saveData(ords,tsks){
+// Локальные резервные копии: храним 5 последних снимков данных в localStorage.
+// Позволяет откатиться, если данные случайно повредились/стёрлись.
+function pushBackup(payload){
+  try{
+    var arr=JSON.parse(localStorage.getItem('markovka_backups')||'[]');
+    arr.push({ts:Date.now(),n:(payload.orders||[]).length,data:payload});
+    while(arr.length>5)arr.shift();
+    localStorage.setItem('markovka_backups',JSON.stringify(arr));
+  }catch(e){}
+}
+// Откат к последней резервной копии (вызывается из консоли или кнопкой при ЧП)
+async function restoreBackup(idx){
+  try{
+    var arr=JSON.parse(localStorage.getItem('markovka_backups')||'[]');
+    if(!arr.length){toast('Нет резервных копий');return;}
+    var b=arr[(typeof idx==='number')?idx:arr.length-1];
+    if(!confirm('Восстановить копию от '+new Date(b.ts).toLocaleString('ru')+' ('+b.n+' заказов)? Текущие данные в облаке будут заменены.'))return;
+    orders=b.data.orders||[];tasks=b.data.tasks||[];
+    await saveData(orders,tasks,true);  // skipGuard — это осознанное восстановление
+    renderTabs();renderTab(tab);
+    toast('Восстановлено: '+b.n+' заказов');
+  }catch(e){toast('Ошибка восстановления');}
+}
+
+async function saveData(ords,tsks,skipGuard){
   // ЗАЩИТА ОТ ПОТЕРИ ДАННЫХ: не пишем в облако, пока ни разу его не прочитали.
   // Иначе пустой/тестовый локальный набор может затереть реальные данные в JsonBin.
   if(!cloudLoadOk){
@@ -280,13 +310,40 @@ async function saveData(ords,tsks){
     toast('⚠️ Нет связи с облаком — изменения сохранены только локально');
     return;
   }
+  // СТРАЖ МАССОВОГО СТИРАНИЯ: лишний запрос-чтение делаем ТОЛЬКО когда заказов
+  // становится меньше, чем мы знаем по облаку (реальный риск потери). При обычных
+  // правках/смене статуса/добавлении заказов чтения нет — сохранение быстрое.
+  if(!skipGuard && Array.isArray(ords) && ords.length<cloudOrderCount && cloudOrderCount>=5){
+    try{
+      const chk=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY,'X-Bin-Meta':'false'}});
+      if(chk.ok){
+        const cloud=await chk.json();
+        const cloudN=Array.isArray(cloud.orders)?cloud.orders.length:0;
+        const newN=Array.isArray(ords)?ords.length:0;
+        if(cloudN>=5 && newN<cloudN-1){
+          const lost=cloudN-newN;
+          if(!confirm('⚠️ ВНИМАНИЕ: в облаке '+cloudN+' заказов, а сохраняется '+newN+' (исчезает '+lost+').\n\nЭто похоже на случайную потерю данных. Сохранить ВСЁ РАВНО?')){
+            // Откатываем локальное состояние к облаку, чтобы не терять реальные данные
+            orders=cloud.orders||orders;tasks=cloud.tasks||tasks;
+            cloudOrderCount=orders.length;
+            try{localStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks}));}catch(e){}
+            renderTabs();renderTab(tab);
+            toast('Сохранение отменено — данные из облака восстановлены');
+            return;
+          }
+        }
+      }
+    }catch(e){/* если страж не смог прочитать облако — не блокируем, чтобы не терять правки */}
+  }
   const payload={orders:ords,tasks:tsks};
+  pushBackup(payload);  // снимок перед записью
   // Локальная копия считается свежей сразу после сохранения — повторное чтение не требуется
   try{localStorage.setItem('markovka_data',JSON.stringify(payload));lastSyncTime=Date.now();}catch(e){}
   try{
     console.log("JsonBin sync");
     const r=await fetch(JSONBIN_URL,{method:'PUT',headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Bin-Meta':'false'},body:JSON.stringify(payload)});
     if(!r.ok)throw new Error('HTTP '+r.status);
+    cloudOrderCount=Array.isArray(ords)?ords.length:cloudOrderCount;  // облако теперь содержит столько заказов
   }catch(e){console.warn('save error',e);toast('⚠️ Не удалось сохранить в облако');}
 }
 async function saveOrders(ords){orders=ords;await saveData(ords,tasks);}
@@ -548,9 +605,18 @@ function renderTabs(){
     ];
   bar.innerHTML=all.map(function(t){
     var badge='';
+    var _badgeTpl=function(n){return '<span style="position:absolute;top:3px;left:calc(50% + 5px);background:#d33;color:#fff;font-size:9px;font-weight:700;line-height:1;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;box-shadow:0 1px 3px rgba(0,0,0,.2)">+'+n+'</span>';};
     if(t.id==='todos'){
       var cnt=unreadTaskCount();
-      if(cnt>0)badge='<span style="position:absolute;top:3px;left:calc(50% + 5px);background:#d33;color:#fff;font-size:9px;font-weight:700;line-height:1;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;box-shadow:0 1px 3px rgba(0,0,0,.2)">+'+cnt+'</span>';
+      if(cnt>0)badge=_badgeTpl(cnt);
+    }
+    if(t.id==='list'||t.id==='master'){
+      var ocnt=unreadOrderCount();
+      if(ocnt>0)badge=_badgeTpl(ocnt);
+    }
+    if(t.id==='payments'){
+      var pcnt=unreadPaymentCount();
+      if(pcnt>0)badge=_badgeTpl(pcnt);
     }
     return '<button class="tab '+(tab===t.id?'active':'')+'" style="position:relative" onclick="renderTab(\''+t.id+'\')">'
       +badge
@@ -574,7 +640,9 @@ function updateSearch(val){
 
 function renderTab(t){
   tab=t;
-  if(t==='todos')markTasksSeen();  // открыли задачи — обнуляем счётчик новых
+  if(t==='todos')markTasksSeen();
+  if(t==='list'||t==='master')markOrdersSeen();
+  if(t==='payments')markPaymentsSeen();
   renderTabs();
   const m=document.getElementById('main');
   if(t==='list'){m.innerHTML=tplList();return;}
@@ -922,14 +990,16 @@ function orderCard(o){
 }
 
 
-async function setStatus(id,val){
+function setStatus(id,val){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
   o.status=val;
   if(val==='sent'&&!o.closedAt){o.closedAt=Date.now();}
-  await saveOrders(orders);
+  // Сначала мгновенно обновляем интерфейс и показываем уведомление,
+  // затем сохраняем в облако в фоне — пользователь не ждёт сеть.
   renderTab(tab);
   toast('Статус: '+(STATUSES[val]||{label:val}).label);
+  saveOrders(orders);
 }
 // Закрыть заказ: клиент полностью оплатил. Ставим флаг closed, дату закрытия и полную оплату.
 // Выплата мастеру (Свете) — отдельно, во вкладке «Выплаты».
@@ -1006,6 +1076,12 @@ function pluralPosylka(n){
   if(n10===1&&n100!==11)return 'посылка';
   if(n10>=2&&n10<=4&&(n100<10||n100>=20))return 'посылки';
   return 'посылок';
+}
+function pluralZakaz(n){
+  var n10=n%10,n100=n%100;
+  if(n10===1&&n100!==11)return 'заказ';
+  if(n10>=2&&n10<=4&&(n100<10||n100>=20))return 'заказа';
+  return 'заказов';
 }
 function openSdekExport(){
   var list=sdekExportList();
@@ -1443,9 +1519,10 @@ async function addOrder(){
     notes:[],created:Date.now()
   };
   orders.unshift(o);
-  await saveOrders(orders);
+  // Мгновенно показываем результат, сохраняем в фоне
   toast('Заказ '+o.num+' добавлен');
   renderTab('list');
+  saveOrders(orders);
 }
 
 function openEdit(id){
@@ -1627,14 +1704,21 @@ function getFinanceRange(){
 }
 
 function tplStats(){
-  // ── ФИНАНСЫ: за период = (в работе по статусу) + (закрытые в периоде) ──
+  // ── ФИНАНСЫ: за период = (все активные заказы) + (закрытые в периоде) ──
   var r=getFinanceRange();
   var openOrders=orders.filter(function(o){return !isClosed(o);});
   var inRange=function(d){return d&&r.start&&r.end&&d>=r.start&&d<=r.end;};
 
-  var workGroup=openOrders.filter(function(o){return o.status==='work';});            // в работе — по статусу, всегда видны
+  // Активные = все незакрытые, кроме архива (новый, в работе, готов, отправка планируется, отправлен).
+  // За них мы ещё ждём деньги — их остаток должен попадать в «Ждём».
+  var workGroup=openOrders.filter(function(o){return o.status!=='archived';});
   var closedGroup=(r.start&&r.end)?orders.filter(function(o){return isClosed(o)&&inRange(new Date(closedDate(o)));}):[]; // закрытые за период
   var combined=workGroup.concat(closedGroup);
+
+  // Неприкасаемая «касса будущих заказов»: предоплаты по заказам, которые ещё не сделаны
+  // (статусы «Новый» и «В работе»). Эти деньги нельзя тратить — они за невыполненные заказы.
+  var futureGroup=orders.filter(function(o){return (o.status==='new'||o.status==='work')&&!isClosed(o);});
+  var futurePrepaid=futureGroup.reduce(function(s,o){return s+(parseFloat(o.prepaid)||0);},0);
 
   function sums(list){
     var rev=list.reduce(function(s,o){return s+orderTotal(o);},0);
@@ -1682,9 +1766,21 @@ function tplStats(){
       +'</div>';
   }
 
+  // ── КАССА БУДУЩИХ ЗАКАЗОВ (неприкасаемо) ──
+  html+='<div style="background:linear-gradient(135deg,#f0efb1,#e5e4b0);border-radius:16px;border:1px solid var(--border2);padding:16px;margin-bottom:12px;box-shadow:var(--sh)">'
+    +'<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">'
+    +'<div>'
+    +'<div style="font-family:\'Playfair Display\',serif;font-size:24px;color:var(--accent);font-weight:600">'+fmt(futurePrepaid)+'</div>'
+    +'<div style="font-size:11px;color:var(--text2);margin-top:2px;font-weight:600">🔒 Предоплаты за будущие заказы</div>'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--text3);text-align:right">'+futureGroup.length+' '+pluralZakaz(futureGroup.length)+'<br>не выполнено</div>'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.4">Эти деньги уже получены, но заказы ещё не сделаны — сумма неприкасаема.</div>'
+    +'</div>';
+
   // ── ИТОГО ЗА ПЕРИОД ──
   html+='<div style="background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
-  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">📋 Итого · '+r.label+'  <span style="color:var(--text2)">('+workGroup.length+' в работе + '+closedGroup.length+' закрыто)</span></div>';
+  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">📋 Итого · '+r.label+'  <span style="color:var(--text2)">('+workGroup.length+' активных + '+closedGroup.length+' закрыто)</span></div>';
   if(!combined.length){
     html+='<div style="text-align:center;padding:14px;color:var(--text3);font-size:13px">Нет заказов в этом периоде</div>';
   }else{
@@ -2225,11 +2321,12 @@ async function updateDeliveryDay(id,val){
 }
 
 function setStatusMasterEl(el){setStatusMaster(el.dataset.oid,el.value);}
-async function setStatusMaster(id,newStatus){
+function setStatusMaster(id,newStatus){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
   o.status=newStatus;
-  await saveOrders(orders);renderTab(tab);toast((STATUSES[newStatus]||{label:newStatus}).label);
+  renderTab(tab);toast((STATUSES[newStatus]||{label:newStatus}).label);
+  saveOrders(orders);  // сохранение в фоне
 }
 
 function setMasterFilter(st,mo){
@@ -2420,7 +2517,11 @@ function tplMaster(){
     +'</div>';
   var statusLblM=fStatus==='all'?'Статусы':(STATUSES[fStatus]?STATUSES[fStatus].label:'Статусы');
   var monthLblM=fMonth==='all'?'Месяц':moLbl(fMonth);
+  var doneList=myBase.filter(function(o){return o.status==='sent'||o.status==='done'||o.status==='archived';});
+
   html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;position:relative">';
+  // Архив — все выполненные заказы мастера
+  html+='<button class="chip'+(showArchive?' active':'')+'" onclick="showArchive=!showArchive;renderTab(\'master\')" style="display:inline-flex;align-items:center;gap:4px">'+(showArchive?'← К работе':'📦 Архив'+(doneList.length?' ('+doneList.length+')':''))+'</button>';
   // Status dropdown
   html+='<div class="dropdown" style="position:relative">'
     +'<button class="chip'+(fStatus!=='all'?' active':'')+'" data-drop="drop-mstatus" style="display:inline-flex;align-items:center;gap:4px">'+statusLblM+' ▾</button>'
@@ -2440,6 +2541,41 @@ function tplMaster(){
   });
   html+='</div></div>';
   html+='</div>';
+
+  // ── РЕЖИМ АРХИВА: все выполненные заказы мастера, помечены «Выполнен» ──
+  if(showArchive){
+    var arch=doneList.filter(function(o){return fMonth==='all'||o.month===fMonth;})
+      .sort(function(a,b){return (b.month||'').localeCompare(a.month||'')||((b.created||0)-(a.created||0));});
+    if(!arch.length){html+='<div class="empty"><div class="empty-icon">📦</div>Архив пуст</div>';return html;}
+    arch.forEach(function(o){
+      var aItems=getItems(o);
+      var params='';
+      aItems.forEach(function(it,idx){
+        var gl=it.gender?({boy:'Мальчик',girl:'Девочка'}[it.gender]||it.gender):'';
+        params+='<div style="'+(idx?'margin-top:6px;':'')+'font-size:12px;font-weight:700;color:var(--accent)">'+(it.toyType||'Игрушка')+(((parseInt(it.count)||1)>1)?' ×'+it.count:'')+'</div>';
+        var line=[];
+        if(it.weightG)line.push(it.weightG+'г');
+        if(it.heightCm)line.push(it.heightCm+' см');
+        if(it.embCount)line.push('вышивка ×'+it.embCount+(it.embText?' «'+it.embText+'»':''));
+        if(line.length)params+='<div style="font-size:12px;color:var(--text3)">'+line.join(' · ')+'</div>';
+        if(gl)params+='<div style="font-size:12px;color:var(--text3)">Пол: '+gl+'</div>';
+        if(it.clothes)params+='<div style="font-size:12px;color:var(--text3)">Одежда: '+it.clothes+'</div>';
+        if(it.comment)params+='<div style="font-size:12px;color:var(--orange);font-style:italic">💬 '+it.comment+'</div>';
+      });
+      if(o.comment)params+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:4px">'+o.comment+'</div>';
+      html+='<div class="card" style="margin-bottom:8px;opacity:.85">'
+        +'<div style="padding:12px 14px">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
+        +'<span class="card-num">'+o.num+'</span>'
+        +'<span class="badge b-done">✓ Выполнен</span></div>'
+        +'<div style="font-size:14px;font-weight:700">'+orderToyLabel(o)+'</div>'
+        +'<div style="font-size:12px;color:var(--text3);margin-top:2px">'+orderQty(o)+' шт. · '+moLbl(o.month)+(o.deliveryDay?' · сдан '+o.deliveryDay+'-го':'')+'</div>'
+        +'<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">'+params+'</div>'
+        +'</div></div>';
+    });
+    return html;
+  }
+
   if(!filtered.length){html+='<div class="empty"><div class="empty-icon">🎉</div>Нет заказов</div>';return html;}
   filtered.forEach(function(o){
     var st=STATUSES[o.status]||STATUSES.new;
@@ -2566,6 +2702,33 @@ function unreadTaskCount(){
 function markTasksSeen(){
   try{localStorage.setItem('tasks_seen_'+myTaskName(),Date.now());}catch(e){}
 }
+function unreadOrderCount(){
+  if(!role)return 0;
+  var key='orders_seen_'+role+(role==='master'?'_'+masterName:'');
+  var seen=0;try{seen=parseInt(localStorage.getItem(key))||0;}catch(e){}
+  return orders.filter(function(o){
+    if(o.status==='archived'||o.status==='done'||o.status==='sent')return false;
+    if(o.status!=='new')return false;
+    if(role==='master'&&o.master!==masterName)return false;
+    return (o.created||0)>seen;
+  }).length;
+}
+function markOrdersSeen(){
+  if(!role)return;
+  var key='orders_seen_'+role+(role==='master'?'_'+masterName:'');
+  try{localStorage.setItem(key,Date.now());}catch(e){}
+}
+function unreadPaymentCount(){
+  if(role!=='director')return 0;
+  var key='payments_seen';
+  var seen=0;try{seen=parseInt(localStorage.getItem(key))||0;}catch(e){}
+  var needAdv=orders.filter(function(o){return o.master==='Света'&&o.status==='new'&&!o.advancePaid&&(o.created||0)>seen;});
+  var needPost=orders.filter(function(o){return o.master==='Света'&&(o.status==='ready'||o.status==='planned'||o.status==='done')&&!o.postpayPaid&&(o.created||0)>seen;});
+  return needAdv.length+needPost.length;
+}
+function markPaymentsSeen(){
+  try{localStorage.setItem('payments_seen',Date.now());}catch(e){}
+}
 function selectTaskTo(btn){
   window.taskTo=btn.dataset.to;
   var wrap=btn.parentElement;
@@ -2666,6 +2829,13 @@ document.addEventListener('click',function(e){
 });
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
+
+// Прокрутка колёсиком/тачпадом над числовым полем НЕ должна менять его значение:
+// снимаем фокус с поля, чтобы прокручивалась страница, а не цифры.
+document.addEventListener('wheel',function(e){
+  var a=document.activeElement;
+  if(a&&a.tagName==='INPUT'&&a.type==='number'&&a===e.target){a.blur();}
+},{passive:true});
 
 // Netlify version - password login only
 window.addEventListener('load',function(){
