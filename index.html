@@ -233,12 +233,23 @@ let cloudOrderCount=0;  // сколько заказов мы считаем в 
 
 const OPENROUTER_PROXY='https://openrouter-proxy.zaytsevalexandara.workers.dev';
 
+// ── СТАРОЕ ХРАНИЛИЩЕ JsonBin (оставлено только для разовой миграции) ──
 const JSONBIN_ID='6a31904fda38895dfecb54fe';
 const JSONBIN_KEY='$2a$10$yDV194UbfbUV7DC2XUUd4OHjsLq37DiuNiZKGjUAwWcGjoz3Z3aXO';
 const JSONBIN_URL='https://api.jsonbin.io/v3/b/'+JSONBIN_ID;
 
-// ── Параметры синхронизации (оптимизация лимитов JsonBin) ──
-const SYNC_INTERVAL=120000;  // интервал автосинхронизации, мс (2 мин)
+// ── SUPABASE (основное хранилище) ──
+// Запись идёт по отдельным строкам (заказам/задачам), поэтому правки разных
+// людей не затирают друг друга — в отличие от JsonBin, где писался весь файл целиком.
+const SB_URL='https://xcthayifpkqfjwdvvcvh.supabase.co';
+const SB_KEY='sb_publishable_iLKu1GyvYIpLIwEnLlLIXg_uVHbuLhT';
+function sbHeaders(){return {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};}
+// Снимок последнего синхронизированного состояния (id -> JSON) для диффа при сохранении
+let _sbSnap={orders:{},tasks:{}};
+function sbBuildSnap(arr){var m={};(arr||[]).forEach(function(it){if(it&&it.id)m[it.id]=JSON.stringify(it);});return m;}
+
+// ── Параметры синхронизации ──
+const SYNC_INTERVAL=30000;   // интервал автосинхронизации, мс (30 сек)
 const IDLE_LIMIT=180000;     // после 3 мин без действий опрос приостанавливается
 let lastSyncTime=0;          // время последней успешной синхронизации с JsonBin
 let syncInProgress=false;    // защита от одновременных запросов чтения
@@ -260,13 +271,18 @@ async function loadData(force){
   if(syncInProgress)return readCache();
   syncInProgress=true;
   try{
-    console.log("JsonBin sync");
-    const r=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY,'X-Bin-Meta':'false'}});
-    if(!r.ok)throw new Error('fail');
-    const data=await r.json();
+    console.log("Supabase sync");
+    const ord=await sbSelectTable('orders');
+    const tsk=await sbSelectTable('tasks');
+    // Сортируем по дате создания (новые сверху) — порядок в БД произвольный
+    ord.sort(function(a,b){return (b.created||0)-(a.created||0);});
+    tsk.sort(function(a,b){return (b.created||0)-(a.created||0);});
+    const data={orders:ord,tasks:tsk};
     lastSyncTime=Date.now();
     cloudLoadOk=true;                       // облако успешно прочитано
-    cloudOrderCount=Array.isArray(data.orders)?data.orders.length:0;
+    cloudOrderCount=ord.length;
+    _sbSnap.orders=sbBuildSnap(ord);
+    _sbSnap.tasks=sbBuildSnap(tsk);
     try{localStorage.setItem('markovka_data',JSON.stringify(data));}catch(e){}
     return data;
   }catch(e){
@@ -276,6 +292,13 @@ async function loadData(force){
   }finally{
     syncInProgress=false;
   }
+}
+// Чтение одной таблицы Supabase → массив объектов (data-поле каждой строки)
+async function sbSelectTable(table){
+  const r=await fetch(SB_URL+'/rest/v1/'+table+'?select=id,data',{headers:sbHeaders()});
+  if(!r.ok)throw new Error('select '+table+' '+r.status);
+  const rows=await r.json();
+  return rows.map(function(row){return row.data;}).filter(Boolean);
 }
 // Локальные резервные копии: храним 5 последних снимков данных в localStorage.
 // Позволяет откатиться, если данные случайно повредились/стёрлись.
@@ -315,22 +338,20 @@ async function saveData(ords,tsks,skipGuard){
   // правках/смене статуса/добавлении заказов чтения нет — сохранение быстрое.
   if(!skipGuard && Array.isArray(ords) && ords.length<cloudOrderCount && cloudOrderCount>=5){
     try{
-      const chk=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY,'X-Bin-Meta':'false'}});
-      if(chk.ok){
-        const cloud=await chk.json();
-        const cloudN=Array.isArray(cloud.orders)?cloud.orders.length:0;
-        const newN=Array.isArray(ords)?ords.length:0;
-        if(cloudN>=5 && newN<cloudN-1){
-          const lost=cloudN-newN;
-          if(!confirm('⚠️ ВНИМАНИЕ: в облаке '+cloudN+' заказов, а сохраняется '+newN+' (исчезает '+lost+').\n\nЭто похоже на случайную потерю данных. Сохранить ВСЁ РАВНО?')){
-            // Откатываем локальное состояние к облаку, чтобы не терять реальные данные
-            orders=cloud.orders||orders;tasks=cloud.tasks||tasks;
-            cloudOrderCount=orders.length;
-            try{localStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks}));}catch(e){}
-            renderTabs();renderTab(tab);
-            toast('Сохранение отменено — данные из облака восстановлены');
-            return;
-          }
+      const cloud=await sbSelectTable('orders');
+      const cloudN=cloud.length;
+      const newN=Array.isArray(ords)?ords.length:0;
+      if(cloudN>=5 && newN<cloudN-1){
+        const lost=cloudN-newN;
+        if(!confirm('⚠️ ВНИМАНИЕ: в облаке '+cloudN+' заказов, а сохраняется '+newN+' (исчезает '+lost+').\n\nЭто похоже на случайную потерю данных. Сохранить ВСЁ РАВНО?')){
+          // Откатываем локальное состояние к облаку, чтобы не терять реальные данные
+          cloud.sort(function(a,b){return (b.created||0)-(a.created||0);});
+          orders=cloud;cloudOrderCount=orders.length;
+          _sbSnap.orders=sbBuildSnap(cloud);
+          try{localStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks}));}catch(e){}
+          renderTabs();renderTab(tab);
+          toast('Сохранение отменено — данные из облака восстановлены');
+          return;
         }
       }
     }catch(e){/* если страж не смог прочитать облако — не блокируем, чтобы не терять правки */}
@@ -340,14 +361,74 @@ async function saveData(ords,tsks,skipGuard){
   // Локальная копия считается свежей сразу после сохранения — повторное чтение не требуется
   try{localStorage.setItem('markovka_data',JSON.stringify(payload));lastSyncTime=Date.now();}catch(e){}
   try{
-    console.log("JsonBin sync");
-    const r=await fetch(JSONBIN_URL,{method:'PUT',headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY,'X-Bin-Meta':'false'},body:JSON.stringify(payload)});
-    if(!r.ok)throw new Error('HTTP '+r.status);
+    console.log("Supabase sync");
+    await sbSyncTable('orders',ords);
+    await sbSyncTable('tasks',tsks);
     cloudOrderCount=Array.isArray(ords)?ords.length:cloudOrderCount;  // облако теперь содержит столько заказов
   }catch(e){console.warn('save error',e);toast('⚠️ Не удалось сохранить в облако');}
 }
+// Дифф-синхронизация одной таблицы: пишем только изменённые/новые строки и удаляем исчезнувшие.
+// Благодаря этому правки разных людей по разным заказам не затирают друг друга.
+async function sbSyncTable(table,arr){
+  arr=Array.isArray(arr)?arr:[];
+  const snap=_sbSnap[table]||{};
+  const cur={},toUpsert=[];
+  arr.forEach(function(it){
+    if(!it||!it.id)return;
+    const js=JSON.stringify(it);
+    cur[it.id]=js;
+    if(snap[it.id]!==js)toUpsert.push({id:it.id,data:it});
+  });
+  const toDelete=Object.keys(snap).filter(function(id){return !(id in cur);});
+  if(toUpsert.length){
+    const r=await fetch(SB_URL+'/rest/v1/'+table,{
+      method:'POST',
+      headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
+      body:JSON.stringify(toUpsert)
+    });
+    if(!r.ok)throw new Error('upsert '+table+' '+r.status);
+  }
+  if(toDelete.length){
+    const list=toDelete.map(function(id){return '"'+id+'"';}).join(',');
+    const r=await fetch(SB_URL+'/rest/v1/'+table+'?id=in.('+encodeURIComponent(list)+')',{
+      method:'DELETE',
+      headers:Object.assign({},sbHeaders(),{'Prefer':'return=minimal'})
+    });
+    if(!r.ok)throw new Error('delete '+table+' '+r.status);
+  }
+  _sbSnap[table]=cur;
+}
 async function saveOrders(ords){orders=ords;await saveData(ords,tasks);}
 async function saveTasks(tsks){tasks=tsks;await saveData(orders,tsks);}
+
+// ── РАЗОВАЯ МИГРАЦИЯ JsonBin → Supabase ──
+// Вызывается один раз из консоли браузера: migrateFromJsonBin()
+async function migrateFromJsonBin(){
+  try{
+    const r=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY,'X-Bin-Meta':'false'}});
+    if(!r.ok)throw new Error('JsonBin '+r.status);
+    const data=await r.json();
+    const o=Array.isArray(data.orders)?data.orders:[];
+    const t=Array.isArray(data.tasks)?data.tasks:[];
+    if(!confirm('Перенести в Supabase: '+o.length+' заказов и '+t.length+' задач?\nСуществующие строки с такими же id будут обновлены.'))return;
+    // Гарантируем id у каждой записи
+    o.forEach(function(x){if(!x.id)x.id=uid();});
+    t.forEach(function(x){if(!x.id)x.id=uid();});
+    const upsert=async function(table,arr){
+      if(!arr.length)return;
+      const res=await fetch(SB_URL+'/rest/v1/'+table,{
+        method:'POST',
+        headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
+        body:JSON.stringify(arr.map(function(x){return {id:x.id,data:x};}))
+      });
+      if(!res.ok)throw new Error('upsert '+table+' '+res.status);
+    };
+    await upsert('orders',o);
+    await upsert('tasks',t);
+    alert('✅ Миграция завершена: '+o.length+' заказов, '+t.length+' задач перенесены в Supabase.');
+    location.reload();
+  }catch(e){alert('Ошибка миграции: '+e.message);console.error(e);}
+}
 
 function uid(){return '_'+Math.random().toString(36).substr(2,9)}
 function fmt(n){return(Math.round(n)||0).toLocaleString('ru')+' \u20bd'}
