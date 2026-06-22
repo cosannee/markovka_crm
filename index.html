@@ -2394,6 +2394,16 @@ async function undoPay(id,type){
 
 
 function updateDeliveryDayEl(el){updateDeliveryDay(el.dataset.oid,el.value);}
+function updateDeliveryMonthEl(el){updateDeliveryMonth(el.dataset.oid,el.value);}
+async function updateDeliveryMonth(id,val){
+  var o=orders.find(function(x){return x.id===id;});
+  if(!o)return;
+  o.month=val||'';
+  o.deliveryDay=clampDay(o.deliveryDay,o.month);  // не даём дню выйти за границы нового месяца
+  await saveOrders(orders);
+  if(tab==='master')renderTab('master');
+  toast('Месяц сдачи обновлён');
+}
 async function updateDeliveryDay(id,val){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
@@ -2697,11 +2707,14 @@ function tplMaster(){
       +(o.urgent?'<span class="badge b-urgent">⚡ Срочно</span>':'')+'</div>'
       +'<div style="font-size:15px;font-weight:700">'+orderToyLabel(o)+'</div>'
       +'<div style="font-size:12px;color:var(--text3);margin-top:2px">'+orderQty(o)+' шт. · '+moLbl(o.month)+'</div>'
-      +'<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text3)">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text3);flex-wrap:wrap">'
       +'<span>Сдать:</span>'
-      +'<input type="number" min="1" max="31" value="'+(o.deliveryDay||'')+'" placeholder="день" '
+      +'<input type="number" min="1" max="'+maxDay(o.month)+'" value="'+(o.deliveryDay||'')+'" placeholder="день" '
       +'style="width:54px;padding:3px 6px;border-radius:6px;border:1px solid var(--border2);font-size:12px;background:var(--bg)" '
-      +'data-oid="'+o.id+'" onchange="updateDeliveryDayEl(this)">-го числа</div>'
+      +'data-oid="'+o.id+'" onchange="updateDeliveryDayEl(this)">-го'
+      +'<input type="month" value="'+(o.month||'')+'" '
+      +'style="padding:3px 6px;border-radius:6px;border:1px solid var(--border2);font-size:12px;background:var(--bg)" '
+      +'data-oid="'+o.id+'" onchange="updateDeliveryMonthEl(this)"></div>'
       +advWarn+'</div>'
       +paramsM
       +'<div class="card-foot"><span></span>'
