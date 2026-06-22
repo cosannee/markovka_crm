@@ -1126,7 +1126,11 @@ async function delOrder(id){
 }
 function jumpTo(id){
   if(role==='master'){
-    // Света: переходим в её вкладку, фильтр не трогаем — там только её заказы
+    // Света: переходим в её вкладку и показываем именно нужный заказ
+    var ord=orders.find(function(x){return x.id===id;});
+    fStatus='all';fMonth='all';
+    // если заказ уже завершён — открываем архив, иначе обычный список
+    showArchive=!!(ord&&(ord.status==='sent'||ord.status==='done'||ord.status==='archived'));
     expandedCards.add(id);
     renderTab('master');
     setTimeout(function(){
@@ -2664,7 +2668,7 @@ function tplMaster(){
         if(it.comment)params+='<div style="font-size:12px;color:var(--orange);font-style:italic">💬 '+it.comment+'</div>';
       });
       if(o.comment)params+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:4px">'+o.comment+'</div>';
-      html+='<div class="card" style="margin-bottom:8px;opacity:.85">'
+      html+='<div class="card" id="c-'+o.id+'" style="margin-bottom:8px;opacity:.85">'
         +'<div style="padding:12px 14px">'
         +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
         +'<span class="card-num">'+o.num+'</span>'
@@ -2710,7 +2714,7 @@ function tplMaster(){
     });
     if(o.comment)paramsM+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
     paramsM+='</div>';
-    html+='<div class="card '+(o.urgent?'urgent':'')+'" style="margin-bottom:10px">'
+    html+='<div class="card '+(o.urgent?'urgent':'')+'" id="c-'+o.id+'" style="margin-bottom:10px">'
       +'<div style="padding:12px 14px">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
       +'<span class="card-num">'+o.num+'</span><span class="badge '+st.cls+'">'+st.label+'</span>'
