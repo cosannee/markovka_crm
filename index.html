@@ -549,7 +549,7 @@ async function login(r,userName,userLabel,mName){
   document.getElementById('btn-switch-role').style.display=r==='manager'?'inline-flex':'none';
   document.getElementById('h-preview-badge').style.display='none';
   tab=r==='master'?'master':'list';
-  if(r==='master')fStatus='new'; else fStatus='all';
+  fStatus='all';
   // 1) Сначала показываем данные из локального кэша (быстрое открытие)
   const cached=readCache();
   if(cached&&Array.isArray(cached.orders)){
@@ -656,7 +656,7 @@ function switchPreview(r,name,label,mName){
     document.getElementById('h-preview-badge').textContent='👁 просмотр';
   }
   tab=r==='master'?'master':'list';
-  if(r==='master')fStatus='new'; else fStatus='all';
+  fStatus='all';
   renderTabs();renderTab(tab);
 }
 
@@ -775,7 +775,7 @@ function tplList(){
   var months=[...new Set(orders.map(function(o){return o.month;}))].sort();
   var list=getFilteredOrders();
   var canFinance=role==='manager'||role==='director';
-  var scol={new:'#3a8fa3',work:'#8a7a30',ready:'#2a7a45',sent:'#6b52a0',done:'#7a7570'};
+  var scol={new:'#3a8fa3',work:'#8a7a30',ready:'#2a7a45',nextweek:'#a0522d',planned:'#635535',sent:'#6b52a0',done:'#7a7570',archived:'#b0a882'};
 
   var statusLabel=fStatus==='all'?'Статусы':(STATUSES[fStatus]?STATUSES[fStatus].label:'Статусы');
   var monthLabel=fMonth==='all'?'Месяц':moLbl(fMonth);
@@ -953,16 +953,17 @@ function orderCard(o){
   html+='<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">';
   html+='<span style="font-family:serif;font-style:italic;font-size:16px;color:var(--accent);font-weight:600;white-space:nowrap">'+o.num+'</span>';
   if(canFinance&&o.client)html+='<span style="font-size:13px;font-weight:600;color:var(--text1)">'+o.client+'</span>';
+  var toyLbl=orderToyLabel(o);
   html+='</div>';
-  // Инфо строка
+  // Инфо строка — игрушка первой, потом вес/рост/мастер/месяц
   var info=[];
-  info.push(orderToyLabel(o));
+  if(toyLbl)info.push('<span style="font-size:11px;font-weight:700;color:var(--accent2);background:var(--accent-bg);padding:1px 7px;border-radius:7px">'+toyLbl+'</span>');
   if(wt)info.push(wt+'г');
   if(ht)info.push(ht+' см');
   if(o.master)info.push(o.master);
   info.push(moStr);
   if(o.deliveryDay)info.push('до '+o.deliveryDay+'-го');
-  html+='<div style="font-size:12px;color:var(--text3);margin-top:3px">'+info.join(' · ')+'</div>';
+  html+='<div style="font-size:12px;color:var(--text3);margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">'+info.join('<span style="color:var(--border2)"> · </span>')+'</div>';
   html+='</div>';
   // Стрелка
   var noteCount=(o.notes||[]).length;
@@ -993,7 +994,9 @@ function orderCard(o){
   html+='<div style="padding:12px 16px;border-right:1px solid var(--border)">';
   html+='<div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Параметры</div>';
   oItems.forEach(function(it,idx){
-    if(oItems.length>1)html+='<div style="font-size:11px;font-weight:700;color:var(--accent);margin:'+(idx?'8':'0')+'px 0 4px">'+(it.toyType||'Игрушка')+(((parseInt(it.count)||1)>1)?' ×'+it.count:'')+'</div>';
+    // Для каждой игрушки — всегда показываем название (жирным для одной, акцентом для нескольких)
+    if(oItems.length>1){html+='<div style="font-size:11px;font-weight:700;color:var(--accent);margin:'+(idx?'8':'0')+'px 0 4px">'+(it.toyType||'Игрушка')+(((parseInt(it.count)||1)>1)?' ×'+it.count:'')+'</div>';}
+    else{html+='<div style="font-size:13px;font-weight:700;color:var(--text1);margin-bottom:6px">'+(it.toyType||'Игрушка')+(((parseInt(it.count)||1)>1)?' ×'+it.count:'')+'</div>';}
     if(it.weightG)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Вес: </span>'+it.weightG+' г</div>';
     if(it.heightCm)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Рост: </span>'+it.heightCm+' см</div>';
     if(oItems.length===1)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Кол-во: </span>'+(it.count||1)+' шт.</div>';
@@ -1163,11 +1166,14 @@ function sdekExportText(){
   var list=sdekExportList();
   var now=new Date().toLocaleDateString('ru',{day:'numeric',month:'long'});
   var lines=['📦 СДЭК · '+list.length+' '+pluralPosylka(list.length)+' · '+now,''];
+  var isMasterCopy=role==='master';
   list.forEach(function(o){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
     var nak=o.sdekNum?('накл. '+o.sdekNum):'накл. — (нет!)';
-    lines.push(o.num+' · '+(o.client||'—'));
-    if(o.phone)lines.push(o.phone);
+    var toy=orderToyLabel(o);
+    lines.push(o.num+(isMasterCopy?'':(' · '+(o.client||'—'))));
+    if(toy)lines.push(toy);
+    if(!isMasterCopy&&o.phone)lines.push(o.phone);
     lines.push(nak+' · '+wt);
     lines.push('');
   });
@@ -1188,15 +1194,18 @@ function pluralZakaz(n){
 function openSdekExport(){
   var list=sdekExportList();
   var now=new Date().toLocaleDateString('ru',{day:'numeric',month:'long'});
+  var isMaster=role==='master';
   var rows=list.map(function(o){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
     var noNak=!o.sdekNum;
     var nak=noNak?'<span style="color:#c0392b;font-weight:700">накл. — нет!</span>':('накл. '+o.sdekNum);
+    var toy=orderToyLabel(o);
     return '<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #e8e6cc;cursor:pointer">'
       +'<input type="checkbox" class="sdek-chk" data-oid="'+o.id+'" checked style="margin-top:3px;width:16px;height:16px;accent-color:#635535;flex-shrink:0">'
       +'<div style="flex:1">'
-      +'<div style="font-size:14px;font-weight:700;color:#3a3020">'+o.num+' · '+(o.client||'—')+'</div>'
-      +(o.phone?'<div style="font-size:13px;color:#635535">'+o.phone+'</div>':'')
+      +'<div style="font-size:14px;font-weight:700;color:#3a3020">'+o.num+(isMaster?'':(' · '+(o.client||'—')))+'</div>'
+      +(toy?'<div style="font-size:12px;font-weight:700;color:#635535;background:#f0efb1;display:inline-block;padding:2px 8px;border-radius:6px;margin:2px 0">'+toy+'</div>':'')
+      +((!isMaster&&o.phone)?'<div style="font-size:13px;color:#635535">'+o.phone+'</div>':'')
       +'<div style="font-size:12px;color:#7a7570;margin-top:1px">'+nak+' · '+wt+'</div>'
       +'</div></label>';
   }).join('');
@@ -2483,58 +2492,122 @@ async function updateShipDate(id,val){
 function tplSvetaFinance(){
   var now=new Date();
   var sf=window.svetaPeriod||'week';
-  var sfFrom=window.svetaFrom||'';
-  var sfTo=window.svetaTo||'';
+  var svetaWkOff=window.svetaWkOff||0;
+  var svetaMon=window.svetaMon||'';
 
-  function inPeriod(o){
-    // закрытые заказы относим к дате закрытия, открытые — к дате создания
-    var d=new Date(isClosed(o)?closedDate(o):o.created);
-    if(sf==='week'){
-      var ws=new Date(now);ws.setDate(now.getDate()-now.getDay()+1);ws.setHours(0,0,0,0);
-      return d>=ws;
-    }
-    if(sf==='custom'&&sfFrom&&sfTo){
-      var df=new Date(sfFrom),dt=new Date(sfTo);dt.setHours(23,59,59);
-      return d>=df&&d<=dt;
-    }
-    return true;
+  // ── Вычисляем диапазон ──
+  var rangeStart=null,rangeEnd=null,rangeLabel='';
+  if(sf==='week'){
+    // Понедельник текущей/смещённой недели
+    var ws=new Date(now);
+    ws.setDate(now.getDate()-((now.getDay()||7)-1)+svetaWkOff*7);
+    ws.setHours(0,0,0,0);
+    var we=new Date(ws);we.setDate(ws.getDate()+6);we.setHours(23,59,59,999);
+    rangeStart=ws;rangeEnd=we;
+    var opts={day:'numeric',month:'short'};
+    rangeLabel=ws.toLocaleDateString('ru',opts)+' – '+we.toLocaleDateString('ru',opts);
+  } else if(sf==='month'&&svetaMon){
+    var p=svetaMon.split('-').map(Number);
+    rangeStart=new Date(p[0],p[1]-1,1,0,0,0,0);
+    rangeEnd=new Date(p[0],p[1],0,23,59,59,999);
+    rangeLabel=moLbl(svetaMon);
   }
 
-  var myOrders=orders.filter(function(o){return o.master==='Света'&&inPeriod(o);});
+  function inPeriod(o){
+    if(!rangeStart)return true; // «Всё время»
+    var d=new Date(isClosed(o)?closedDate(o):o.created);
+    return d>=rangeStart&&d<=rangeEnd;
+  }
+
+  var myAll=orders.filter(function(o){return o.master==='Света';});
+  var myOrders=myAll.filter(inPeriod);
+
+  // «В работе» — всегда все активные заказы Светы, не зависит от выбранного периода
+  var inWork=myAll.filter(function(o){return !isClosed(o)&&o.status!=='archived';}).length;
+  var done=myOrders.filter(function(o){return isClosed(o);}).length;
+
   var totalGot=myOrders.reduce(function(s,o){
     return s+(o.advancePaid?calcAdvance(o):0)+(o.postpayPaid?calcPostpay(o):0);
   },0);
   var totalPending=myOrders.reduce(function(s,o){
     return s+(!o.advancePaid?calcAdvance(o):0)+(!o.postpayPaid?calcPostpay(o):0);
   },0);
-  var inWork=myOrders.filter(function(o){return !isClosed(o)&&(o.status==='work'||o.status==='new');}).length;
-  var done=myOrders.filter(function(o){return isClosed(o);}).length;
 
-  var html='<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">';
-  [{id:'week',label:'Неделя'},{id:'all',label:'Всё время'},{id:'custom',label:'Период'}].forEach(function(p){
+  // ── Переключатели периода ──
+  var html='<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">';
+  [{id:'week',label:'Неделя'},{id:'month',label:'Месяц'},{id:'all',label:'Всё время'}].forEach(function(p){
     var isAct=sf===p.id;
-    html+='<button class="chip'+(isAct?' active':'')+'" onclick="window.svetaPeriod=\''+p.id+'\';renderTab(\'finance\')" style="'+(isAct?'background:var(--accent);color:#fff':'')+'">'+p.label+'</button>';
+    html+='<button class="chip'+(isAct?' active':'')+'" onclick="window.svetaPeriod=\''+p.id+'\';window.svetaWkOff=0;renderTab(\'finance\')">'+p.label+'</button>';
   });
   html+='</div>';
 
-  if(sf==='custom'){
-    html+='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">'
-      +'<div class="fg" style="margin:0;flex:1"><label>С</label><input type="date" value="'+sfFrom+'" oninput="window.svetaFrom=this.value;renderTab(\'finance\')"></div>'
-      +'<div class="fg" style="margin:0;flex:1"><label>По</label><input type="date" value="'+sfTo+'" oninput="window.svetaTo=this.value;renderTab(\'finance\')"></div>'
+  // Навигация по неделям
+  if(sf==='week'){
+    var isCurrentWeek=svetaWkOff===0;
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      +'<button class="btn btn-sm btn-secondary" onclick="window.svetaWkOff='+(svetaWkOff-1)+';renderTab(\'finance\')">← Пред.</button>'
+      +'<div style="font-size:12px;color:var(--text2);font-weight:600;text-align:center">'+rangeLabel+(isCurrentWeek?' <span style="font-size:10px;color:var(--text3)">(эта неделя)</span>':'')+'</div>'
+      +'<button class="btn btn-sm btn-secondary" '+(isCurrentWeek?'disabled style="opacity:.4"':' onclick="window.svetaWkOff='+(svetaWkOff+1)+';renderTab(\'finance\')"')+'>След. →</button>'
       +'</div>';
   }
 
+  // Выбор месяца
+  if(sf==='month'){
+    var months=[...new Set(myAll.map(function(o){return o.month;}).filter(Boolean))].sort().reverse();
+    if(!svetaMon&&months.length)svetaMon=window.svetaMon=months[0];
+    html+='<div class="filters" style="margin-bottom:12px">';
+    months.forEach(function(m){
+      html+='<button class="chip'+(svetaMon===m?' active':'')+'" onclick="window.svetaMon=\''+m+'\';renderTab(\'finance\')">'+moLbl(m)+'</button>';
+    });
+    html+='</div>';
+  }
+
+  // ── Карточки итогов ──
   html+='<div class="stats-grid" style="margin-bottom:12px">'
-    +'<div class="stat-card"><div class="stat-val" style="color:var(--green)">'+fmt(totalGot)+'</div><div class="stat-lbl">Всего получено</div></div>'
-    +'<div class="stat-card"><div class="stat-val" style="color:var(--orange)">'+fmt(totalPending)+'</div><div class="stat-lbl">Ожидается поступлений</div></div>'
+    +'<div class="stat-card"><div class="stat-val" style="color:var(--green)">'+fmt(totalGot)+'</div><div class="stat-lbl">Получено'+(rangeLabel?' за период':'')+'</div></div>'
+    +'<div class="stat-card"><div class="stat-val" style="color:var(--orange)">'+fmt(totalPending)+'</div><div class="stat-lbl">Ожидается</div></div>'
     +'</div>';
 
+  // ── Раскрывающиеся группы заказов ──
+  var inWorkOrds=myAll.filter(function(o){return !isClosed(o)&&o.status!=='archived';});
+  var closedOrds=myOrders.filter(function(o){return isClosed(o);});
+  var sfwOpen=window.svetaFwOpen||{};
+
+  function ordMiniRow(o){
+    var toy=orderToyLabel(o);
+    var mo=moLbl(o.month);
+    return '<div onclick="jumpTo(\''+o.id+'\')" style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);cursor:pointer" onmouseenter="this.style.background=\'var(--accent-bg)\'" onmouseleave="this.style.background=\'\'">'
+      +'<span style="font-family:serif;font-weight:700;color:var(--accent);font-size:13px;min-width:44px">'+o.num+'</span>'
+      +(toy?'<span style="font-size:11px;font-weight:700;color:var(--accent2);background:var(--accent-bg);padding:1px 6px;border-radius:6px">'+toy+'</span>':'')
+      +'<span style="font-size:12px;color:var(--text3);flex:1">'+mo+'</span>'
+      +'<span class="badge '+(STATUSES[o.status]||STATUSES.new).cls+'" style="font-size:10px">'+(STATUSES[o.status]||STATUSES.new).label+'</span>'
+      +'</div>';
+  }
+
   html+='<div style="background:var(--card);border-radius:12px;border:1px solid var(--border);padding:14px;margin-bottom:12px;box-shadow:var(--sh)">';
-  html+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">В работе</span><span style="font-weight:700">'+inWork+' заказов</span></div>';
-  html+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0"><span style="color:var(--text3)">Полностью закрыто</span><span style="font-weight:700;color:var(--green)">'+done+' заказов</span></div>';
+  // В работе сейчас
+  html+='<div onclick="window.svetaFwOpen=window.svetaFwOpen||{};window.svetaFwOpen.work=!window.svetaFwOpen.work;renderTab(\'finance\')" style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--border);cursor:pointer;user-select:none">'
+    +'<span style="color:var(--text3)">В работе сейчас</span>'
+    +'<span style="font-weight:700">'+inWork+' '+pluralZakaz(inWork)+(inWork?' '+(sfwOpen.work?'▴':'▾'):'')+'</span>'
+    +'</div>';
+  if(sfwOpen.work&&inWorkOrds.length){
+    html+='<div style="padding:0 2px">';
+    inWorkOrds.sort(function(a,b){return (a.num||'').localeCompare(b.num||'');}).forEach(function(o){html+=ordMiniRow(o);});
+    html+='</div>';
+  }
+  // Закрыто за период
+  html+='<div onclick="window.svetaFwOpen=window.svetaFwOpen||{};window.svetaFwOpen.closed=!window.svetaFwOpen.closed;renderTab(\'finance\')" style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;cursor:pointer;user-select:none;margin-top:'+(sfwOpen.work&&inWorkOrds.length?'0':'4px')+'">'
+    +'<span style="color:var(--text3)">Закрыто за период</span>'
+    +'<span style="font-weight:700;color:var(--green)">'+done+' '+pluralZakaz(done)+(done?' '+(sfwOpen.closed?'▴':'▾'):'')+'</span>'
+    +'</div>';
+  if(sfwOpen.closed&&closedOrds.length){
+    html+='<div style="padding:0 2px">';
+    closedOrds.sort(function(a,b){return (a.num||'').localeCompare(b.num||'');}).forEach(function(o){html+=ordMiniRow(o);});
+    html+='</div>';
+  }
   html+='</div>';
 
-  html+='<div class="section-lbl">История заказов</div>';
+  html+='<div class="section-lbl">История заказов'+(rangeLabel?' · '+rangeLabel:'')+'</div>';
   if(!myOrders.length){html+='<div class="empty"><div class="empty-icon">🧸</div>Нет заказов за период</div>';}
   myOrders.slice().sort(function(a,b){return b.created-a.created;}).forEach(function(o){
     var total=calcMasterPay(o),adv=calcAdvance(o),post=calcPostpay(o);
@@ -2630,13 +2703,8 @@ function tplMaster(){
     if(fMonth!=='all'&&o.month!==fMonth)return false;
     return o.status!=='done'&&o.status!=='sent';
   }).sort(function(a,b){var r={work:0,ready:1,new:2};return(r[a.status]||3)-(r[b.status]||3);});
-  var inW=myBase.filter(function(o){return o.status==='work';}).length;
-  var rdy=myBase.filter(function(o){return o.status==='ready';}).length;
   var sdekCnt=myBase.filter(function(o){return o.status==='planned';}).length;
-  var html='<div class="stats-grid" style="margin-bottom:10px">'
-    +'<div class="stat-card"><div class="stat-val">'+inW+'</div><div class="stat-lbl">В работе</div></div>'
-    +'<div class="stat-card"><div class="stat-val">'+rdy+'</div><div class="stat-lbl">Готовы</div></div>'
-    +'</div>';
+  var html='';
   // Кнопка СДЭК для мастера (только свои заказы «отправка планируется»)
   if(sdekCnt>0){
     html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center" onclick="openSdekExport()">📦 Выгрузить для СДЭК ('+sdekCnt+')</button>';
@@ -2739,8 +2807,9 @@ function tplMaster(){
       +'<div style="padding:12px 14px">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
       +'<span class="card-num">'+o.num+'</span><span class="badge '+st.cls+'">'+st.label+'</span>'
-      +(o.urgent?'<span class="badge b-urgent">⚡ Срочно</span>':'')+'</div>'
-      +'<div style="font-size:15px;font-weight:700">'+orderToyLabel(o)+'</div>'
+      +(o.urgent?'<span class="badge b-urgent">⚡ Срочно</span>':'')
+      +(orderToyLabel(o)?'<span style="font-size:11px;font-weight:700;color:var(--accent2);background:var(--accent-bg);padding:2px 8px;border-radius:8px">'+orderToyLabel(o)+'</span>':'')
+      +'</div>'
       +'<div style="font-size:12px;color:var(--text3);margin-top:2px">'+orderQty(o)+' шт. · '+moLbl(o.month)+'</div>'
       +'<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text3);flex-wrap:wrap">'
       +'<span>Сдать:</span>'
