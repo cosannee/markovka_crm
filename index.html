@@ -201,6 +201,7 @@ const STATUSES={
   new:{label:'Новый',cls:'b-new'},
   work:{label:'В работе',cls:'b-work'},
   ready:{label:'Готов',cls:'b-ready'},
+  nextweek:{label:'След. неделя',cls:'b-sdek'},
   planned:{label:'Отправка планируется',cls:'b-sdek'},
   sent:{label:'Отправлен',cls:'b-sent'},
   done:{label:'Доставлен',cls:'b-done'},
@@ -786,10 +787,12 @@ function tplList(){
   html+='<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">'
     +'<input class="search-inp" id="search-field" style="flex:1;min-width:0" placeholder="Поиск по номеру, клиенту..." oninput="updateSearch(this.value)" value="'+search+'">'
     +'</div>';
-  // Выгрузка для СДЭК — заказы со статусом «Отправка планируется»
+  // Кнопки действий для менеджера/директора
   if(canFinance){
-    var plannedCnt=orders.filter(function(o){return o.status==='planned';}).length;
-    html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center" onclick="openSdekExport()">📦 Выгрузить для СДЭК'+(plannedCnt?' ('+plannedCnt+')':'')+'</button>';
+    var plannedCnt=orders.filter(function(o){return o.status==='planned'&&o.master==='Даша';}).length;
+    var nwCnt=orders.filter(function(o){return o.status==='nextweek';}).length;
+    if(plannedCnt)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:8px;justify-content:center" onclick="openSdekExport()">📦 Выгрузить для СДЭК ('+plannedCnt+')</button>';
+    if(nwCnt)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center;background:var(--blue-bg);color:var(--blue);border-color:var(--blue)" onclick="moveNextWeekToWork()">▶ Перевести «След. неделю» в работу ('+nwCnt+')</button>';
   }
 
   // Filter bar
@@ -1148,9 +1151,13 @@ function jumpTo(id){
   },80);
 }
 // ── Выгрузка для СДЭК (статус «Отправка планируется») ──
+// Фильтруем по мастеру: Света видит только свои, остальные — только Дашины (sdek=true)
 function sdekExportList(){
-  return orders.filter(function(o){return o.status==='planned';})
-    .sort(function(a,b){return (a.num||'').localeCompare(b.num||'');});
+  return orders.filter(function(o){
+    if(o.status!=='planned')return false;
+    if(role==='master')return o.master===masterName;
+    return o.master==='Даша';
+  }).sort(function(a,b){return (a.num||'').localeCompare(b.num||'');});
 }
 function sdekExportText(){
   var list=sdekExportList();
@@ -1216,6 +1223,15 @@ function openSdekExport(){
     +'</div></div>';
   document.body.appendChild(el);
   el.addEventListener('click',function(e){if(e.target===el)el.remove();});
+}
+async function moveNextWeekToWork(){
+  var nwOrders=orders.filter(function(o){return o.status==='nextweek';});
+  if(!nwOrders.length){toast('Нет заказов «След. неделя»');return;}
+  if(!confirm('Перевести '+nwOrders.length+' '+pluralZakaz(nwOrders.length)+' из «След. неделя» в «В работе»?'))return;
+  nwOrders.forEach(function(o){o.status='work';});
+  await saveOrders(orders);
+  renderTab(tab);
+  toast('Переведено в работу: '+nwOrders.map(function(o){return o.num;}).join(', '));
 }
 async function markSdekSent(){
   var checked=[].slice.call(document.querySelectorAll('.sdek-chk:checked')).map(function(cb){return cb.dataset.oid;});
@@ -2616,10 +2632,15 @@ function tplMaster(){
   }).sort(function(a,b){var r={work:0,ready:1,new:2};return(r[a.status]||3)-(r[b.status]||3);});
   var inW=myBase.filter(function(o){return o.status==='work';}).length;
   var rdy=myBase.filter(function(o){return o.status==='ready';}).length;
+  var sdekCnt=myBase.filter(function(o){return o.status==='planned';}).length;
   var html='<div class="stats-grid" style="margin-bottom:10px">'
     +'<div class="stat-card"><div class="stat-val">'+inW+'</div><div class="stat-lbl">В работе</div></div>'
     +'<div class="stat-card"><div class="stat-val">'+rdy+'</div><div class="stat-lbl">Готовы</div></div>'
     +'</div>';
+  // Кнопка СДЭК для мастера (только свои заказы «отправка планируется»)
+  if(sdekCnt>0){
+    html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center" onclick="openSdekExport()">📦 Выгрузить для СДЭК ('+sdekCnt+')</button>';
+  }
   var statusLblM=fStatus==='all'?'Статусы':(STATUSES[fStatus]?STATUSES[fStatus].label:'Статусы');
   var monthLblM=fMonth==='all'?'Месяц':moLbl(fMonth);
   var doneList=myBase.filter(function(o){return o.status==='sent'||o.status==='done'||o.status==='archived';});
@@ -2632,7 +2653,7 @@ function tplMaster(){
     +'<button class="chip'+(fStatus!=='all'?' active':'')+'" data-drop="drop-mstatus" style="display:inline-flex;align-items:center;gap:4px">'+statusLblM+' ▾</button>'
     +'<div id="drop-mstatus" style="display:none;position:absolute;top:110%;left:0;background:var(--card);border:1.5px solid var(--border);border-radius:12px;box-shadow:var(--sh2);z-index:100;min-width:180px;padding:6px">'
     +'<div class="drop-item'+(fStatus==='all'?' drop-active':'')+'" data-act="mstatus" data-val="all">Все статусы</div>';
-  [['new','Новые'],['work','В работе'],['ready','Готов'],['planned','Отправка планируется']].forEach(function(p){
+  [['new','Новые'],['work','В работе'],['ready','Готов'],['nextweek','След. неделя'],['planned','Отправка планируется']].forEach(function(p){
     html+='<div class="drop-item'+(fStatus===p[0]?' drop-active':'')+'" data-act="mstatus" data-val="'+p[0]+'">'+p[1]+'</div>';
   });
   html+='</div></div>';
