@@ -199,9 +199,9 @@ function calcMargin(o){
 }
 const STATUSES={
   new:{label:'Новый',cls:'b-new'},
+  nextweek:{label:'След. неделя',cls:'b-sdek'},
   work:{label:'В работе',cls:'b-work'},
   ready:{label:'Готов',cls:'b-ready'},
-  nextweek:{label:'След. неделя',cls:'b-sdek'},
   planned:{label:'Отправка планируется',cls:'b-sdek'},
   sent:{label:'Отправлен',cls:'b-sent'},
   done:{label:'Доставлен',cls:'b-done'},
@@ -1159,8 +1159,7 @@ function sdekExportList(){
   return orders.filter(function(o){
     if(o.status!=='planned')return false;
     if(role==='master')return o.master===masterName;
-    if(role==='director')return o.master==='Даша';
-    return true; // менеджер (COO) видит все
+    return true; // руководитель и COO видят все планируемые отправки
   }).sort(function(a,b){return (a.num||'').localeCompare(b.num||'');});
 }
 function sdekExportText(){
@@ -2708,6 +2707,23 @@ function tplMaster(){
   }).sort(function(a,b){var r={work:0,ready:1,new:2};return(r[a.status]||3)-(r[b.status]||3);});
   var sdekCnt=myBase.filter(function(o){return o.status==='planned';}).length;
   var html='';
+  // Инструкция по статусам (раскрывающаяся)
+  var hOpen=window.svetaHelpOpen;
+  html+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;box-shadow:var(--sh)">'
+    +'<div onclick="window.svetaHelpOpen=!window.svetaHelpOpen;renderTab(\'master\')" style="display:flex;justify-content:space-between;align-items:center;padding:11px 14px;cursor:pointer;user-select:none">'
+    +'<span style="font-size:13px;font-weight:700;color:var(--accent)">ℹ️ Как работать со статусами</span>'
+    +'<span style="color:var(--text3)">'+(hOpen?'▴':'▾')+'</span></div>';
+  if(hOpen){
+    html+='<div style="padding:0 14px 12px;font-size:12px;color:var(--text2);line-height:1.6">'
+      +'<div><b>1. Новый</b> — заказ только поступил, ещё не начат.</div>'
+      +'<div><b>2. След. неделя</b> — планируете взять на следующей неделе.</div>'
+      +'<div><b>3. В работе</b> — шьёте прямо сейчас.</div>'
+      +'<div><b>4. Готов</b> — игрушка готова, можно отправлять.</div>'
+      +'<div><b>5. Отправлен</b> — посылка передана в СДЭК и уехала.</div>'
+      +'<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);color:var(--text3)">Статус <b>«Отправка планируется»</b> ставит Александра — после того как сделает накладную СДЭК. Вам его выбирать не нужно.</div>'
+      +'</div>';
+  }
+  html+='</div>';
   // Кнопка СДЭК для мастера (только свои заказы «отправка планируется»)
   if(sdekCnt>0){
     html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center" onclick="openSdekExport()">📦 Выгрузить для СДЭК ('+sdekCnt+')</button>';
@@ -2724,7 +2740,7 @@ function tplMaster(){
     +'<button class="chip'+(fStatus!=='all'?' active':'')+'" data-drop="drop-mstatus" style="display:inline-flex;align-items:center;gap:4px">'+statusLblM+' ▾</button>'
     +'<div id="drop-mstatus" style="display:none;position:absolute;top:110%;left:0;background:var(--card);border:1.5px solid var(--border);border-radius:12px;box-shadow:var(--sh2);z-index:100;min-width:180px;padding:6px">'
     +'<div class="drop-item'+(fStatus==='all'?' drop-active':'')+'" data-act="mstatus" data-val="all">Все статусы</div>';
-  [['new','Новые'],['work','В работе'],['ready','Готов'],['nextweek','След. неделя'],['planned','Отправка планируется']].forEach(function(p){
+  [['new','Новые'],['nextweek','След. неделя'],['work','В работе'],['ready','Готов'],['planned','Отправка планируется']].forEach(function(p){
     html+='<div class="drop-item'+(fStatus===p[0]?' drop-active':'')+'" data-act="mstatus" data-val="'+p[0]+'">'+p[1]+'</div>';
   });
   html+='</div></div>';
@@ -2828,7 +2844,12 @@ function tplMaster(){
       +'<div style="display:flex;flex-direction:column;gap:2px">'
       +'<span style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Статус</span>'
       +'<select class="st-select" data-oid="'+o.id+'" onchange="setStatusMasterEl(this)">'
-      +Object.keys(STATUSES).map(function(k){return'<option value="'+k+'"'+(o.status===k?' selected':'')+'>'+STATUSES[k].label+'</option>';}).join('')
+      +(function(){
+        var allowed=['new','nextweek','work','ready','sent'];
+        // если текущий статус выставлен Александрой (planned/done/archived) — показываем его, но без выбора
+        if(allowed.indexOf(o.status)<0)allowed=[o.status].concat(allowed);
+        return allowed.map(function(k){return'<option value="'+k+'"'+(o.status===k?' selected':'')+'>'+(STATUSES[k]||{label:k}).label+'</option>';}).join('');
+      })()
       +'</select></div></div></div>';
   });
   return html;
