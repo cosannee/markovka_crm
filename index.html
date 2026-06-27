@@ -2186,7 +2186,9 @@ function tplWeeklyAnalytics(){
     var mToys=mos.reduce(function(s,o){return s+orderQty(o);},0);
     var key='an'+m.replace(/[^a-zA-Zа-яА-Я0-9]/g,'');
     var chips=mos.slice().sort(function(a,b){return closedDate(b)-closedDate(a);}).map(function(o){
-      return '<span onclick="jumpTo(\''+o.id+'\')" style="cursor:pointer;background:#daeef5;color:#3a8fa3;font-weight:700;font-size:12px;padding:6px 12px;border-radius:12px;white-space:nowrap">'+o.num+'</span>';
+      var qty=orderQty(o);
+      var qtyTag=qty>1?'<span style="background:#3a8fa3;color:#fff;font-size:10px;padding:1px 5px;border-radius:8px;margin-left:5px">×'+qty+'</span>':'';
+      return '<span onclick="jumpTo(\''+o.id+'\')" style="cursor:pointer;background:#daeef5;color:#3a8fa3;font-weight:700;font-size:12px;padding:6px 12px;border-radius:12px;white-space:nowrap">'+o.num+qtyTag+'</span>';
     }).join('');
     html+='<div style="padding:10px 0;border-bottom:1px solid var(--border)">'
       +'<div onclick="toggleMasterOrders(\''+key+'\')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:4px">'
