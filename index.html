@@ -477,7 +477,22 @@ function calcItemMat(item,master,rate){
 function calcItemMasterPay(item,master){
   var cnt=parseInt(item.count)||1;
   if(master==='\u0421\u0432\u0435\u0442\u0430')return calcZpSveta(item.weightG,item.embCount)*cnt;
+  if(master==='\u0414\u0430\u0448\u0430')return calcZpDarya(item.weightG,item.embCount)*cnt;
   return (2500+(parseInt(item.embCount)||0)*400)*cnt;
+}
+// \u0417\u041f \u0414\u0430\u0440\u044c\u0438 \u2014 \u0442\u0435 \u0436\u0435 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438, \u0447\u0442\u043e \u0443 \u0421\u0432\u0435\u0442\u044b, \u043d\u043e +300 \u20bd \u043a \u0431\u0430\u0437\u043e\u0432\u043e\u0439 \u0441\u0442\u0430\u0432\u043a\u0435 \u043a\u0430\u0436\u0434\u043e\u0439 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438
+function calcZpDarya(weightG,embCount){
+  var w=parseFloat(weightG)||0;
+  var base;
+  if(w<1900)base=2300;
+  else if(w<2500)base=2500;
+  else if(w<3000)base=2700;
+  else if(w<3400)base=2800;
+  else if(w<3800)base=2900;
+  else if(w<4400)base=3100;
+  else if(w<=5500)base=3400;
+  else base=Math.floor((1800+w*0.3)/100)*100;
+  return base+300+(parseInt(embCount)||0)*400;
 }
 
 function seedOrders(){
@@ -1726,6 +1741,7 @@ const VAR_COST_SVETA = 0.40;      // переменные расходы за г
 const SASHA_PCT = 0.20;           // % Александры
 const NASTYA_PER_TOY = 300;       // Настя (швея одежды на аутсорсе) — 300₽ с каждой игрушки Даши
 const TAX_PCT = 0;                // налог (0 = не учитываем)
+const DARYA_DIVIDEND_PCT = 0.10;  // дивиденды Дарьи как автора проекта — 10% от чистой прибыли
 
 // Стоимость Насти: 300₽ за каждую игрушку, сшитую Дашей (у Светы — своя одежда)
 function calcNastya(o){
@@ -2061,7 +2077,10 @@ function tplWeeklyAnalytics(){
   var totalSashaPay=closed.reduce(function(s,o){return s+calcCosts(o).sasha;},0);
   var totalNastya=closed.reduce(function(s,o){return s+calcCosts(o).nastya;},0);
   var totalProfit=closed.reduce(function(s,o){return s+calcCosts(o).profit;},0);
-  var avgMargin=totalRev>0?Math.round(totalProfit/totalRev*100):0;
+  // Дивиденды Дарьи (автор проекта) — 10% от чистой прибыли; чистая прибыль после дивидендов
+  var totalDividend=Math.round(Math.max(0,totalProfit)*DARYA_DIVIDEND_PCT);
+  var netAfterDiv=totalProfit-totalDividend;
+  var avgMargin=totalRev>0?Math.round(netAfterDiv/totalRev*100):0;
 
   // По мастерам
   var dashaOrders=closed.filter(function(o){return o.master==='Даша';});
@@ -2069,6 +2088,7 @@ function tplWeeklyAnalytics(){
   function masterStats(mos){
     return {
       count:mos.length,
+      toys:mos.reduce(function(s,o){return s+orderQty(o);},0),
       rev:mos.reduce(function(s,o){return s+orderTotal(o);},0),
       wt:Math.round(mos.reduce(function(s,o){return s+orderWeight(o);},0)),
       zp:mos.reduce(function(s,o){return s+calcCosts(o).master;},0),
@@ -2116,8 +2136,8 @@ function tplWeeklyAnalytics(){
   html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">';
   var cards=[
     {val:fmt2(totalRev),lbl:'Выручка',color:'var(--accent)'},
-    {val:fmt2(totalProfit),lbl:'Чистая прибыль',color:totalProfit>=0?'var(--green)':'var(--red)'},
-    {val:avgMargin+'%',lbl:'Средняя маржа',color:avgMargin>=20?'var(--green)':'var(--orange)'},
+    {val:fmt2(netAfterDiv),lbl:'Чистая прибыль (после дивид.)',color:netAfterDiv>=0?'var(--green)':'var(--red)'},
+    {val:fmt2(totalDividend),lbl:'Дивиденды Даши (10%)',color:'#b5894e'},
     {val:closed.length+' зак.',lbl:'Закрыто заказов',color:'var(--blue)'},
   ];
   cards.forEach(function(c){
@@ -2136,7 +2156,8 @@ function tplWeeklyAnalytics(){
     {label:'ЗП мастеров',val:totalMasterPay,color:'#8a7a50'},
     {label:'ЗП Саши (20%)',val:totalSashaPay,color:'#6b52a0'},
     {label:'Настя (одежда)',val:totalNastya,color:'#c06060'},
-    {label:'Чистая прибыль',val:Math.max(0,totalProfit),color:'#2a7a45'},
+    {label:'Дивиденды Даши (10%)',val:totalDividend,color:'#b5894e'},
+    {label:'Чистая прибыль (после дивид.)',val:Math.max(0,netAfterDiv),color:'#2a7a45'},
   ];
   barRows.forEach(function(row){
     var revPct=pct(row.val,totalRev);
@@ -2160,6 +2181,7 @@ function tplWeeklyAnalytics(){
     if(!mos.length){html+='<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--text3)">'+m+' — нет</div>';return;}
     var mRev=mos.reduce(function(s,o){return s+orderTotal(o);},0);
     var mZp=mos.reduce(function(s,o){return s+calcCosts(o).master;},0);
+    var mToys=mos.reduce(function(s,o){return s+orderQty(o);},0);
     var key='an'+m.replace(/[^a-zA-Zа-яА-Я0-9]/g,'');
     var chips=mos.slice().sort(function(a,b){return closedDate(b)-closedDate(a);}).map(function(o){
       return '<span onclick="jumpTo(\''+o.id+'\')" style="cursor:pointer;background:#daeef5;color:#3a8fa3;font-weight:700;font-size:12px;padding:6px 12px;border-radius:12px;white-space:nowrap">'+o.num+'</span>';
@@ -2170,7 +2192,7 @@ function tplWeeklyAnalytics(){
       +'<span style="color:var(--text3)">'+mos.length+' '+(mos.length===1?'заказ':'заказов')+'</span>'
       +'<span style="color:var(--accent);font-weight:700">'+fmt2(mRev)+'</span>'
       +'</div>'
-      +'<div style="font-size:11px;color:var(--text3)">ЗП начислено: <b style="color:var(--text2)">'+fmt2(mZp)+'</b></div>'
+      +'<div style="font-size:11px;color:var(--text3)">Игрушек: <b style="color:var(--text2)">'+mToys+' шт.</b> · ЗП начислено: <b style="color:var(--text2)">'+fmt2(mZp)+'</b></div>'
       +'<div id="mclosed-'+key+'" style="display:none;flex-wrap:wrap;gap:6px;margin-top:8px">'+chips+'</div>'
       +'</div>';
   });
@@ -2183,6 +2205,7 @@ function tplWeeklyAnalytics(){
       +'<div style="font-size:13px;font-weight:700;color:'+color+';margin-bottom:10px;border-bottom:2px solid '+color+'30;padding-bottom:6px">'+name+'</div>'
       +'<div style="font-size:11px;display:flex;flex-direction:column;gap:5px">'
       +'<div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Заказов</span><span style="font-weight:700">'+st.count+'</span></div>'
+      +'<div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Игрушек, шт.</span><span style="font-weight:700">'+st.toys+'</span></div>'
       +'<div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Выручка</span><span style="font-weight:700">'+fmt2(st.rev)+'</span></div>'
       +'<div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Вес</span><span style="font-weight:700">'+st.wt.toLocaleString('ru')+' г</span></div>'
       +'<div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">ЗП</span><span style="font-weight:700;color:var(--accent)">'+fmt2(st.zp)+'</span></div>'
@@ -2263,6 +2286,13 @@ function exportAnalyticsCsv(){
     var d=new Date(closedDate(o));
     rows.push([o.num,o.client||'',o.master||'',orderTotal(o),orderWeight(o),orderQty(o),orderEmbCount(o),c.materials,c.master,c.sasha,c.nastya,c.profit,d.toLocaleDateString('ru')]);
   });
+  // Итоговая строка с дивидендами Дарьи и чистой прибылью после них
+  var totProfit=closed.reduce(function(s,o){return s+calcCosts(o).profit;},0);
+  var totDiv=Math.round(Math.max(0,totProfit)*DARYA_DIVIDEND_PCT);
+  rows.push([]);
+  rows.push(['ИТОГО прибыль до дивидендов','','','','','','','','','','',totProfit,'']);
+  rows.push(['Дивиденды Даши (10%)','','','','','','','','','','',totDiv,'']);
+  rows.push(['Чистая прибыль после дивидендов','','','','','','','','','','',totProfit-totDiv,'']);
   var csv=rows.map(function(r){return r.map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
   var bom='﻿';
   var blob=new Blob([bom+csv],{type:'text/csv;charset=utf-8;'});
