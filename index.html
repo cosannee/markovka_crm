@@ -789,7 +789,7 @@ function tplList(){
     +'</div>';
   // Кнопки действий для менеджера/директора
   if(canFinance){
-    var plannedCnt=orders.filter(function(o){return o.status==='planned'&&o.master==='Даша';}).length;
+    var plannedCnt=sdekExportList().length;
     var nwCnt=orders.filter(function(o){return o.status==='nextweek';}).length;
     if(plannedCnt)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:8px;justify-content:center" onclick="openSdekExport()">📦 Выгрузить для СДЭК ('+plannedCnt+')</button>';
     if(nwCnt)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center;background:var(--blue-bg);color:var(--blue);border-color:var(--blue)" onclick="moveNextWeekToWork()">▶ Перевести «След. неделю» в работу ('+nwCnt+')</button>';
@@ -1159,7 +1159,8 @@ function sdekExportList(){
   return orders.filter(function(o){
     if(o.status!=='planned')return false;
     if(role==='master')return o.master===masterName;
-    return o.master==='Даша';
+    if(role==='director')return o.master==='Даша';
+    return true; // менеджер (COO) видит все
   }).sort(function(a,b){return (a.num||'').localeCompare(b.num||'');});
 }
 function sdekExportText(){
@@ -2522,14 +2523,18 @@ function tplSvetaFinance(){
   var myAll=orders.filter(function(o){return o.master==='Света';});
   var myOrders=myAll.filter(inPeriod);
 
-  // «В работе» — всегда все активные заказы Светы, не зависит от выбранного периода
-  var inWork=myAll.filter(function(o){return !isClosed(o)&&o.status!=='archived';}).length;
+  // «В работе» — только статус 'work', без учёта периода
+  var inWorkOrds=myAll.filter(function(o){return o.status==='work';});
+  var inWork=inWorkOrds.length;
   var done=myOrders.filter(function(o){return isClosed(o);}).length;
+  var closedOrds=myOrders.filter(function(o){return isClosed(o);});
 
   var totalGot=myOrders.reduce(function(s,o){
     return s+(o.advancePaid?calcAdvance(o):0)+(o.postpayPaid?calcPostpay(o):0);
   },0);
-  var totalPending=myOrders.reduce(function(s,o){
+  // «Ожидается» — невыплаченное по всем заказам в работе/готов/планируется (без фильтра по периоду)
+  var pendingOrds=myAll.filter(function(o){return o.status==='work'||o.status==='ready'||o.status==='planned';});
+  var totalPending=pendingOrds.reduce(function(s,o){
     return s+(!o.advancePaid?calcAdvance(o):0)+(!o.postpayPaid?calcPostpay(o):0);
   },0);
 
@@ -2569,8 +2574,6 @@ function tplSvetaFinance(){
     +'</div>';
 
   // ── Раскрывающиеся группы заказов ──
-  var inWorkOrds=myAll.filter(function(o){return !isClosed(o)&&o.status!=='archived';});
-  var closedOrds=myOrders.filter(function(o){return isClosed(o);});
   var sfwOpen=window.svetaFwOpen||{};
 
   function ordMiniRow(o){
