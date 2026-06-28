@@ -2299,7 +2299,9 @@ function exportAnalyticsCsv(){
 
 
 function tplPayments(){
-  var needAdv=orders.filter(function(o){return o.master==='Света'&&o.status==='new'&&!o.advancePaid;});
+  // Аванс можно выплачивать пока заказ ещё в процессе (новый / след. неделя / в работе)
+  var advStatuses=['new','nextweek','work'];
+  var needAdv=orders.filter(function(o){return o.master==='Света'&&advStatuses.indexOf(o.status)>=0&&!o.advancePaid;});
   var needPost=orders.filter(function(o){return o.master==='Света'&&(o.status==='ready'||o.status==='planned'||o.status==='done')&&!o.postpayPaid;});
   var advDone=orders.filter(function(o){return o.master==='Света'&&o.advancePaid&&!o.postpayPaid&&!(o.status==='ready'||o.status==='planned'||o.status==='done');});
   var allDone=orders.filter(function(o){return o.master==='Света'&&o.postpayPaid;});
@@ -2437,7 +2439,7 @@ async function markPay(id,type){
   await saveOrders(orders);renderTab('payments');toast('Выплата отмечена ✓');
 }
 async function markAllPayments(){
-  var needAdv=orders.filter(function(o){return o.master==='Света'&&o.status==='new'&&!o.advancePaid;});
+  var needAdv=orders.filter(function(o){return o.master==='Света'&&['new','nextweek','work'].indexOf(o.status)>=0&&!o.advancePaid;});
   var needPost=orders.filter(function(o){return o.master==='Света'&&(o.status==='ready'||o.status==='planned'||o.status==='done')&&!o.postpayPaid;});
   var total=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0)+needPost.reduce(function(s,o){return s+remainingPay(o);},0);
   if(!total){toast('Нечего выплачивать');return;}
@@ -2971,7 +2973,7 @@ function unreadPaymentCount(){
   if(role!=='director')return 0;
   var key='payments_seen';
   var seen=0;try{seen=parseInt(localStorage.getItem(key))||0;}catch(e){}
-  var needAdv=orders.filter(function(o){return o.master==='Света'&&o.status==='new'&&!o.advancePaid&&(o.created||0)>seen;});
+  var needAdv=orders.filter(function(o){return o.master==='Света'&&['new','nextweek','work'].indexOf(o.status)>=0&&!o.advancePaid&&(o.created||0)>seen;});
   var needPost=orders.filter(function(o){return o.master==='Света'&&(o.status==='ready'||o.status==='planned'||o.status==='done')&&!o.postpayPaid&&(o.created||0)>seen;});
   return needAdv.length+needPost.length;
 }
