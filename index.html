@@ -1733,7 +1733,7 @@ const VAR_COST_SVETA = 0.40;      // переменные расходы за г
 const SASHA_PCT = 0.20;           // % Александры
 const NASTYA_PER_TOY = 300;       // Настя (швея одежды на аутсорсе) — 300₽ с каждой игрушки Даши
 const TAX_PCT = 0;                // налог (0 = не учитываем)
-const DARYA_DIVIDEND_PCT = 0.10;  // дивиденды Дарьи как автора проекта — 10% от чистой прибыли
+const DARYA_DIVIDEND_PCT = 0.05;  // дивиденды Дарьи как автора проекта — 5% от чистой прибыли
 
 // Стоимость Насти: 300₽ за каждую игрушку, сшитую Дашей (у Светы — своя одежда)
 function calcNastya(o){
@@ -2129,7 +2129,7 @@ function tplWeeklyAnalytics(){
   var cards=[
     {val:fmt2(totalRev),lbl:'Выручка',color:'var(--accent)'},
     {val:fmt2(netAfterDiv),lbl:'Чистая прибыль (после дивид.)',color:netAfterDiv>=0?'var(--green)':'var(--red)'},
-    {val:fmt2(totalDividend),lbl:'Дивиденды Даши (10%)',color:'#b5894e'},
+    {val:fmt2(totalDividend),lbl:'Дивиденды Даши (5%)',color:'#b5894e'},
     {val:closed.length+' зак.',lbl:'Закрыто заказов',color:'var(--blue)'},
   ];
   cards.forEach(function(c){
@@ -2148,7 +2148,7 @@ function tplWeeklyAnalytics(){
     {label:'ЗП мастеров',val:totalMasterPay,color:'#8a7a50'},
     {label:'ЗП Саши (20%)',val:totalSashaPay,color:'#6b52a0'},
     {label:'Настя (одежда)',val:totalNastya,color:'#c06060'},
-    {label:'Дивиденды Даши (10%)',val:totalDividend,color:'#b5894e'},
+    {label:'Дивиденды Даши (5%)',val:totalDividend,color:'#b5894e'},
     {label:'Чистая прибыль (после дивид.)',val:Math.max(0,netAfterDiv),color:'#2a7a45'},
   ];
   barRows.forEach(function(row){
@@ -2285,7 +2285,7 @@ function exportAnalyticsCsv(){
   var totDiv=Math.round(Math.max(0,totProfit)*DARYA_DIVIDEND_PCT);
   rows.push([]);
   rows.push(['ИТОГО прибыль до дивидендов','','','','','','','','','','',totProfit,'']);
-  rows.push(['Дивиденды Даши (10%)','','','','','','','','','','',totDiv,'']);
+  rows.push(['Дивиденды Даши (5%)','','','','','','','','','','',totDiv,'']);
   rows.push(['Чистая прибыль после дивидендов','','','','','','','','','','',totProfit-totDiv,'']);
   var csv=rows.map(function(r){return r.map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
   var bom='﻿';
