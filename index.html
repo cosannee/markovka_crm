@@ -433,6 +433,22 @@ async function migrateFromJsonBin(){
 
 function uid(){return '_'+Math.random().toString(36).substr(2,9)}
 function fmt(n){return(Math.round(n)||0).toLocaleString('ru')+' \u20bd'}
+// Instagram: \u043d\u0438\u043a \u0438\u043b\u0438 \u0441\u0441\u044b\u043b\u043a\u0430 -> {url, handle}
+function igInfo(raw){
+  var s=(raw||'').trim();
+  if(!s)return null;
+  var url,handle;
+  if(/^https?:\/\//i.test(s)){
+    url=s;
+    var m=s.replace(/\/+$/,'').match(/instagram\.com\/([^\/?#]+)/i);
+    handle=m?'@'+m[1]:s.replace(/^https?:\/\//i,'');
+  } else {
+    var nick=s.replace(/^@/,'').replace(/\/+$/,'');
+    url='https://instagram.com/'+nick;
+    handle='@'+nick;
+  }
+  return {url:url,handle:handle};
+}
 
 // \u2500\u2500 \u0418\u0413\u0420\u0423\u0428\u041a\u0418 \u0412 \u0417\u0410\u041a\u0410\u0417\u0415 (\u043c\u0443\u043b\u044c\u0442\u0438\u043f\u043e\u0437\u0438\u0446\u0438\u043e\u043d\u043d\u043e\u0441\u0442\u044c) \u2500\u2500
 // \u0421\u0442\u0430\u0440\u044b\u0435 \u0437\u0430\u043a\u0430\u0437\u044b (\u0431\u0435\u0437 items) \u0447\u0438\u0442\u0430\u044e\u0442\u0441\u044f \u043a\u0430\u043a \u043e\u0434\u043d\u0430 \u0438\u0433\u0440\u0443\u0448\u043a\u0430 \u0438\u0437 \u043f\u043b\u043e\u0441\u043a\u0438\u0445 \u043f\u043e\u043b\u0435\u0439.
@@ -959,6 +975,8 @@ function orderCard(o){
   html+='<span style="font-family:serif;font-style:italic;font-size:16px;color:var(--accent);font-weight:600;white-space:nowrap">'+o.num+'</span>';
   if(canFinance&&o.client)html+='<span style="font-size:13px;font-weight:600;color:var(--text1)">'+o.client+'</span>';
   var toyLbl=orderToyLabel(o);
+  var ig=canFinance?igInfo(o.instagram):null;
+  if(ig)html+='<a href="'+ig.url+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:12px;font-weight:600;color:#c13584;text-decoration:none;white-space:nowrap;display:inline-flex;align-items:center;gap:3px">📷 '+ig.handle+'</a>';
   html+='</div>';
   // Инфо строка — игрушка первой, потом вес/рост/мастер/месяц
   var info=[];
@@ -1044,6 +1062,10 @@ function orderCard(o){
           +'<span style="font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+row[1]+'</span>'
           +'<button class="btn btn-sm btn-ghost" style="font-size:10px;flex-shrink:0" data-val="'+row[1]+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div>';
       });
+      var igC=igInfo(o.instagram);
+      if(igC)html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
+        +'<a href="'+igC.url+'" target="_blank" rel="noopener" style="font-size:12px;color:#c13584;font-weight:600;text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📷 '+igC.handle+'</a>'
+        +'<button class="btn btn-sm btn-ghost" style="font-size:10px;flex-shrink:0" data-val="'+igC.url+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div>';
       html+='<div style="display:flex;align-items:center;gap:8px;margin-top:4px">'
         +'<input type="text" placeholder="Номер накладной СДЭК" value="'+trackNum+'" '
         +'style="flex:1;padding:7px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:12px;background:var(--bg)" '
@@ -1397,11 +1419,12 @@ async function parseOrderWithAI(){
     +'  "client": "имя клиента или пустая строка",\n'
     +'  "phone": "телефон или пустая строка",\n'
     +'  "address": "город и адрес или пустая строка",\n'
+    +'  "instagram": "ссылка на профиль Instagram или ник (@nickname / instagram.com/...) если есть в тексте, иначе пустая строка",\n'
     +'  "prepaid": число или null,\n'
     +'  "urgent": true или false,\n'
     +'  "source": "whatsapp, telegram или max — угадай по контексту или оставь whatsapp",\n'
     +'  "comment": "общие пожелания к заказу КРОМЕ одежды и вышивки, или пустая строка",\n'
-    +'  "master": "Даша или Света или пустая строка",\n'
+    +'  "master": "Даша или Света или пустая строка. ВАЖНО: если в тексте есть пометка «мастер проекта» (или «мастер: проект»), это ВСЕГДА означает заказ для Светы",\n'
     +'  "month": "месяц производства в формате YYYY-MM, определи из текста (к августу = '+currentYearMonth+'-08, в сентябре = '+currentYearMonth+'-09 и т.д.) или пустая строка если не упоминается",\n'
     +'  "items": [ {\n'
     +'    "toyType": "один из: Мишка, Мышка, Зайка, Котик",\n'
@@ -1415,7 +1438,12 @@ async function parseOrderWithAI(){
     +'    "gender": "boy, girl или пустая строка — определи по контексту (мальчик/сын/он/его = boy, девочка/дочь/она/её = girl)",\n'
     +'    "comment": "важные детали именно по этой игрушке (например: шкурка потемнее, особый оттенок) или пустая строка"\n'
     +'  } ]\n'
-    +'}\nЕсли игрушка одна — в массиве items будет один элемент.\n\nСообщение:\n'+text;
+    +'}\nЕсли игрушка одна — в массиве items будет один элемент.\n'
+    +'\nИГНОРИРУЙ шаблонные фразы об оплате — это НЕ данные заказа:\n'
+    +'— реквизиты для оплаты (карта Сбер, СБП, «получатель Дарья Андреевна», номер +79776516579) — этот телефон НИКОГДА не бери в поле phone;\n'
+    +'— фразу про отправку чека в чат;\n'
+    +'— фразу «оплата при получении» — не пиши её в comment и не влияй на prepaid.\n'
+    +'\nСообщение:\n'+text;
   try{
     var r=await fetch(OPENROUTER_PROXY,{
       method:'POST',
@@ -1436,8 +1464,14 @@ async function parseOrderWithAI(){
     // Поля заказа
     if(parsed.orderNum)document.getElementById('fnum').value=parsed.orderNum;
     if(parsed.client)document.getElementById('fc').value=parsed.client;
+    // Реквизиты для оплаты — не заказчик: этот номер не фиксируем
+    if(parsed.phone&&/79776516579/.test(parsed.phone.replace(/\D/g,'')))parsed.phone='';
+    if(parsed.comment)parsed.comment=parsed.comment.replace(/оплата\s*при\s*получении/ig,'').trim();
     if(parsed.phone)document.getElementById('fp').value=parsed.phone;
     if(parsed.address)document.getElementById('fa').value=parsed.address;
+    if(parsed.instagram){var igEl=document.getElementById('fig');if(igEl)igEl.value=parsed.instagram;}
+    // «мастер проекта» = заказ Свете (страховка на случай, если ИИ не распознал)
+    if(/мастер\s*проект/i.test(text))parsed.master='Света';
     if(parsed.prepaid)document.getElementById('fpre').value=parsed.prepaid;
     if(parsed.urgent)document.getElementById('fur').checked=true;
     if(parsed.source){var ss=document.getElementById('fsrc');for(var i=0;i<ss.options.length;i++){if(ss.options[i].value===parsed.source){ss.selectedIndex=i;break;}}}
@@ -1569,6 +1603,7 @@ function tplAdd(){
     +'<div class="fg span2"><label>Имя клиента</label><input id="fc" placeholder="Анна Петрова"></div>'
     +'<div class="fg"><label>Телефон</label><input id="fp" type="tel" placeholder="+7 900 000-00-00"></div>'
     +'<div class="fg"><label>Город и адрес</label><input id="fa" placeholder="Москва, ул. Ленина 1"></div>'
+    +'<div class="fg span2"><label>Instagram (ник или ссылка)</label><input id="fig" placeholder="@nickname или instagram.com/..."></div>'
     +'<div class="fg"><label>Мастер</label><select id="fmas" onchange="previewMasterPay()">'+MASTERS.map(function(m){return'<option>'+m+'</option>';}).join('')+'</select></div>'
     +'<div class="fg"><label>Источник</label><select id="fsrc">'+Object.keys(SOURCES).map(function(k){return'<option value="'+k+'">'+SOURCES[k].label+'</option>';}).join('')+'</select></div>'
     +'<div class="fg"><label>Статус</label><select id="fst">'+Object.keys(STATUSES).map(function(k){return'<option value="'+k+'">'+STATUSES[k].label+'</option>';}).join('')+'</select></div>'
@@ -1628,7 +1663,7 @@ async function addOrder(){
   if(!items.length||!items.some(function(it){return it.toyType;})){toast('Добавьте хотя бы одну игрушку');return;}
   const first=items[0]||{};
   const o={
-    id:uid(),num:num,client:c,phone:v('fp'),address:v('fa'),
+    id:uid(),num:num,client:c,phone:v('fp'),address:v('fa'),instagram:v('fig'),
     items:items,
     // Агрегаты для совместимости/отображения
     toyType:orderToyLabel({items:items}),toys:orderToyLabel({items:items}),
@@ -1668,6 +1703,7 @@ function openEdit(id){
     +'<div class="fg span2"><label>Клиент</label><input id="ec" value="'+esc(o.client)+'"></div>'
     +'<div class="fg"><label>Телефон</label><input id="ep" value="'+esc(o.phone)+'"></div>'
     +'<div class="fg"><label>Адрес</label><input id="ea" value="'+esc(o.address)+'"></div>'
+    +'<div class="fg span2"><label>Instagram (ник или ссылка)</label><input id="eig" value="'+esc(o.instagram)+'" placeholder="@nickname или instagram.com/..."></div>'
     +'<div class="fg"><label>Мастер</label><select id="emas">'+masOpts+'</select></div>'
     +'<div class="fg"><label>Источник</label><select id="esrc">'+srcOpts+'</select></div>'
     +'<div class="fg"><label>Статус</label><select id="est">'+stOpts+'</select></div>'
@@ -1701,7 +1737,7 @@ async function saveEdit(id){
   const items=readItemsFrom('edit-items-container');
   if(!items.length||!items.some(function(it){return it.toyType;})){toast('Добавьте хотя бы одну игрушку');return;}
   const first=items[0]||{};
-  o.num=newNum;o.client=v('ec');o.phone=v('ep');o.address=v('ea');
+  o.num=newNum;o.client=v('ec');o.phone=v('ep');o.address=v('ea');o.instagram=v('eig');
   o.items=items;
   // Агрегаты для совместимости/отображения
   o.toyType=orderToyLabel({items:items});o.toys=o.toyType;
