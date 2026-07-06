@@ -1094,6 +1094,12 @@ function orderCard(o){
     html+='</div>';
   }
 
+  // Готовые сообщения клиенту по статусу
+  if(canFinance){
+    if(o.status==='ready')html+=clientMsgBox('💬 Сообщение о доплате',payMsgText(o));
+    else if(o.status==='planned')html+=clientMsgBox('💬 Сообщение об отправке',shipMsgText(o));
+  }
+
   // Статус + действия
   html+='<div style="padding:12px 16px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">';
   html+='<div style="display:flex;flex-direction:column;gap:2px">'
@@ -2475,6 +2481,33 @@ function calcPostpay(o){
 // Остаток к выплате мастеру: невыплаченный аванс + невыплаченная доплата
 function remainingPay(o){
   return (o.advancePaid?0:calcAdvance(o))+(o.postpayPaid?0:calcPostpay(o));
+}
+// Сообщение клиенту при статусе «Готов» — реквизиты для доплаты
+function payMsgText(o){
+  var rest=Math.max(0,orderTotal(o)-(o.prepaid||0));
+  return 'К доплате '+rest.toLocaleString('ru')+'₽,\n\n'
+    +'Оплатить можно на карту Сбер по номеру телефона ниже, получатель Дарья Андреевна С. К СБП подключён.\n\n'
+    +'+79776516579';
+}
+// Сообщение клиенту при статусе «Отправка планируется» — по гендеру/количеству
+function shipMsgText(o){
+  var qty=orderQty(o);
+  var noun,verb,go;
+  if(qty>1){noun='Ваши малыши';verb='готовы';go='отправятся';}
+  else{
+    var g=(getItems(o)[0]||{}).gender;
+    if(g==='girl'){noun='Ваша малышка';verb='готова';}
+    else{noun='Ваш малыш';verb='готов';}
+    go='отправится';
+  }
+  return noun+' '+verb+' и скоро '+go+' к вам! 🧸';
+}
+function clientMsgBox(title,text){
+  return '<div style="padding:12px 16px;border-bottom:1px solid var(--border)">'
+    +'<div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">'+title+'</div>'
+    +'<textarea readonly onclick="this.select()" style="width:100%;box-sizing:border-box;min-height:70px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:12px;background:var(--bg);color:var(--text1);resize:vertical;font-family:inherit;line-height:1.5">'+esc(text)+'</textarea>'
+    +'<button class="btn btn-sm btn-secondary" style="margin-top:6px;font-size:11px" data-val="'+esc(text)+'" onclick="copyField(this.dataset.val,this)">📋 Копировать сообщение</button>'
+    +'</div>';
 }
 
 
