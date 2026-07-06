@@ -1097,7 +1097,7 @@ function orderCard(o){
   // Готовые сообщения клиенту по статусу
   if(canFinance){
     if(o.status==='ready')html+=clientMsgBox('💬 Сообщение о доплате',payMsgText(o));
-    else if(o.status==='planned')html+=clientMsgBox('💬 Сообщение об отправке',shipMsgText(o));
+    else if(o.status==='sent')html+=clientMsgBox('💬 Сообщение об отправке',shipMsgText(o));
   }
 
   // Статус + действия
@@ -2489,18 +2489,19 @@ function payMsgText(o){
     +'Оплатить можно на карту Сбер по номеру телефона ниже, получатель Дарья Андреевна С. К СБП подключён.\n\n'
     +'+79776516579';
 }
-// Сообщение клиенту при статусе «Отправка планируется» — по гендеру/количеству
+// Сообщение клиенту при статусе «Отправлен» — по гендеру/количеству + ссылка на отслеживание
 function shipMsgText(o){
   var qty=orderQty(o);
-  var noun,verb,go;
-  if(qty>1){noun='Ваши малыши';verb='готовы';go='отправятся';}
+  var subj;
+  if(qty>1)subj='Ваши малыши были отправлены';
   else{
     var g=(getItems(o)[0]||{}).gender;
-    if(g==='girl'){noun='Ваша малышка';verb='готова';}
-    else{noun='Ваш малыш';verb='готов';}
-    go='отправится';
+    if(g==='girl')subj='Ваша малышка была отправлена';
+    else subj='Ваш малыш был отправлен';
   }
-  return noun+' '+verb+' и скоро '+go+' к вам! 🧸';
+  var link=o.sdekNum?('https://my.cdek.ru/m/lkfl/order/'+o.sdekNum):'https://my.cdek.ru/m/lkfl/order/';
+  return 'Здравствуйте! '+subj+', направляю ссылку на отслеживание:\n'+link+'\n\n'
+    +'Благодарю вас за терпение и доверие, будем рады обратной связи по получению! Хорошего дня 💫';
 }
 function clientMsgBox(title,text){
   return '<div style="padding:12px 16px;border-bottom:1px solid var(--border)">'
