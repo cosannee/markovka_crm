@@ -483,6 +483,20 @@ function isClosed(o){
   return (o.status==='done'||o.status==='sent') && tot>0 && (parseFloat(o.prepaid)||0)>=tot;
 }
 function closedDate(o){return o.closedAt||o.created;}
+// timestamp -> "YYYY-MM-DD" для <input type=date>
+function tsToDateInput(ts){var d=new Date(ts);var m=String(d.getMonth()+1).padStart(2,'0');var day=String(d.getDate()).padStart(2,'0');return d.getFullYear()+'-'+m+'-'+day;}
+async function updateClosedDate(id,val){
+  var o=orders.find(function(x){return x.id===id;});
+  if(!o||!val)return;
+  var p=val.split('-').map(Number);
+  // Сохраняем время дня прежним, меняем только дату
+  var old=new Date(closedDate(o));
+  var nd=new Date(p[0],p[1]-1,p[2],old.getHours(),old.getMinutes(),old.getSeconds(),0);
+  o.closedAt=nd.getTime();
+  await saveOrders(orders);
+  renderTab(tab);
+  toast('Дата закрытия '+o.num+': '+nd.toLocaleDateString('ru'));
+}
 // \u0421\u0435\u0431\u0435\u0441\u0442\u043e\u0438\u043c\u043e\u0441\u0442\u044c \u043e\u0434\u043d\u043e\u0439 \u043f\u043e\u0437\u0438\u0446\u0438\u0438 (\u0441 \u0443\u0447\u0451\u0442\u043e\u043c \u043a\u043e\u043b-\u0432\u0430)
 function calcItemMat(item,master,rate){
   var varPerG=(typeof rate==='number'&&rate>0)?rate:(master==='\u0421\u0432\u0435\u0442\u0430'?0.40:0.25);
@@ -1089,6 +1103,13 @@ function orderCard(o){
     html+='<option value="'+k+'"'+(o.status===k?' selected':'')+'>'+STATUSES[k].label+'</option>';
   });
   html+='</select></div>';
+  // Дата закрытия — можно поправить задним числом (чтобы заказ попал в нужную неделю аналитики)
+  if(canFinance&&closed){
+    html+='<div style="display:flex;flex-direction:column;gap:2px">'
+      +'<span style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Дата закрытия</span>'
+      +'<input type="date" value="'+tsToDateInput(closedDate(o))+'" data-oid="'+o.id+'" onchange="updateClosedDate(this.dataset.oid,this.value)" '
+      +'style="padding:5px 8px;border-radius:6px;border:1px solid var(--border2);font-size:12px;background:var(--bg)"></div>';
+  }
   if(canEdit){
     if(!o.sdek)html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="markSdek(this.dataset.oid)">СДЭК ✓</button>';
     if(closed)
@@ -1265,7 +1286,8 @@ function openSdekExport(){
 async function moveNextWeekToWork(){
   var nwOrders=orders.filter(function(o){return o.status==='nextweek';});
   if(!nwOrders.length){toast('Нет заказов «След. неделя»');return;}
-  if(!confirm('Перевести '+nwOrders.length+' '+pluralZakaz(nwOrders.length)+' из «След. неделя» в «В работе»?'))return;
+  var nums=nwOrders.map(function(o){return o.num;}).join(', ');
+  if(!confirm('Перевести в «В работе» '+nwOrders.length+' '+pluralZakaz(nwOrders.length)+'?\n\n'+nums+'\n\nЭто изменит статус всех перечисленных заказов.'))return;
   nwOrders.forEach(function(o){o.status='work';});
   await saveOrders(orders);
   renderTab(tab);
