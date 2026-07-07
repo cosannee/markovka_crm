@@ -1016,6 +1016,9 @@ function orderCard(o){
   if(canFinance){
     var mZp=calcMasterPay(o);
     html+='<div style="text-align:right"><div style="font-size:11px;color:var(--text3)">ЗП '+(o.master||'мастера')+'</div><div style="font-size:13px;font-weight:700;color:var(--accent)">'+fmt(mZp)+'</div></div>';
+    if(role==='manager'){
+      html+='<div style="text-align:right"><div style="font-size:11px;color:var(--text3)">ЗП Саши</div><div style="font-size:13px;font-weight:700;color:#6b52a0">'+fmt(calcCosts(o).sasha)+'</div></div>';
+    }
     if(margin!==null){
       var mcolor=margin>0?'var(--green)':'var(--red)';
       html+='<div style="text-align:right"><div style="font-size:11px;color:var(--text3)">маржа</div><div style="font-size:13px;font-weight:700;color:'+mcolor+'">'+fmt(margin)+'</div></div>';
