@@ -716,7 +716,7 @@ function renderTabs(){
       {id:'list',label:'Заказы'},
       {id:'calendar',label:'Календарь'},
       ...(canEdit?[{id:'add',label:'Добавить'}]:[]),
-      ...(role==='manager'?[{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
+      ...(role==='manager'?[{id:'payments',label:'Выплаты'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       ...(role==='director'?[{id:'payments',label:'Выплаты'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       {id:'todos',label:'Задачи'},
     ];
@@ -2373,18 +2373,33 @@ function tplPayments(){
   var advDone=orders.filter(function(o){return o.master==='Света'&&o.advancePaid&&!o.postpayPaid&&!(o.status==='ready'||o.status==='planned'||o.status==='done');});
   var allDone=orders.filter(function(o){return o.master==='Света'&&o.postpayPaid;});
 
-  // Всего к выплате Свете сейчас = авансы по новым + полный остаток по готовым
-  var grandTotal=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0)
-    +needPost.reduce(function(s,o){return s+remainingPay(o);},0);
+  // Разбивка: авансы и готовые
+  var advSum=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0);
+  var postSum=needPost.reduce(function(s,o){return s+remainingPay(o);},0);
+  var grandTotal=advSum+postSum;
 
   var html='';
-  // Общий итог + кнопка «Выплатить всё»
-  if(grandTotal>0){
-    html+='<div class="card" style="margin-bottom:14px;background:var(--accent-bg);border:none"><div style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'
-      +'<div><div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px">Всего к выплате Свете</div>'
-      +'<div style="font-family:\'Playfair Display\',serif;font-size:24px;color:var(--accent);font-weight:600">'+fmt(grandTotal)+'</div></div>'
-      +'<button class="btn btn-primary" onclick="markAllPayments()">Выплатить всё</button>'
+  // Сообщение для телеграма после выплаты
+  if(window.lastPayout&&((window.lastPayout.advOrders||[]).length||(window.lastPayout.postOrders||[]).length)){
+    html+='<div class="card" style="margin-bottom:12px;border:1.5px solid var(--accent)"><div style="padding:12px 14px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+      +'<span style="font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.4px">✅ Текст для телеграма</span>'
+      +'<button onclick="window.lastPayout=null;renderTab(\'payments\')" style="background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;line-height:1">×</button></div>'
+      +'<textarea readonly onclick="this.select()" style="width:100%;box-sizing:border-box;min-height:130px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:12px;background:var(--bg);color:var(--text1);resize:vertical;font-family:inherit;line-height:1.5">'+esc(buildPayoutMsg(window.lastPayout))+'</textarea>'
+      +'<button class="btn btn-sm btn-primary btn-full" style="margin-top:6px;justify-content:center" data-val="'+esc(buildPayoutMsg(window.lastPayout))+'" onclick="copyField(this.dataset.val,this)">📋 Копировать текст</button>'
       +'</div></div>';
+  }
+  // Компактная сводка + кнопки выплат
+  if(grandTotal>0){
+    html+='<div class="card" style="margin-bottom:14px"><div style="padding:14px 16px">'
+      +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--text3)">Авансы · '+needAdv.length+'</span><span style="font-weight:700">'+fmt(advSum)+'</span></div>'
+      +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;border-bottom:1px solid var(--border);margin-bottom:6px"><span style="color:var(--text3)">Готовые · '+needPost.length+'</span><span style="font-weight:700">'+fmt(postSum)+'</span></div>'
+      +'<div style="display:flex;justify-content:space-between;font-size:14px;padding:4px 0 10px"><span style="font-weight:700">Итого Свете</span><span style="font-family:\'Playfair Display\',serif;font-size:20px;color:var(--accent);font-weight:600">'+fmt(grandTotal)+'</span></div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<button class="btn btn-sm btn-secondary" style="flex:1;min-width:130px;justify-content:center"'+(advSum?'':' disabled style="opacity:.4;flex:1;min-width:130px;justify-content:center"')+' onclick="payOnlyAdvances()">Только авансы '+fmt(advSum)+'</button>'
+      +'<button class="btn btn-sm btn-secondary" style="flex:1;min-width:130px;justify-content:center"'+(postSum?'':' disabled style="opacity:.4;flex:1;min-width:130px;justify-content:center"')+' onclick="payOnlyPost()">Только готовые '+fmt(postSum)+'</button>'
+      +'<button class="btn btn-sm btn-primary btn-full" style="justify-content:center" onclick="markAllPayments()">Выплатить всё '+fmt(grandTotal)+'</button>'
+      +'</div></div></div>';
   }
 
   html+='<div class="section-lbl">Аванс Свете (новые) — '+needAdv.length+'</div>';
@@ -2517,30 +2532,68 @@ function clientMsgBox(title,text){
 
 function markPayBtn(el){markPay(el.dataset.id,el.dataset.type);}
 function undoPayBtn(el){undoPay(el.dataset.id,el.dataset.type);}
-async function markAllAdvances(){
-  var list=orders.filter(function(o){return o.master==='Света'&&o.status==='new'&&!o.advancePaid;});
-  if(!list.length){toast('Нет авансов к выплате');return;}
-  var total=list.reduce(function(s,o){return s+calcAdvance(o);},0);
-  if(!confirm('Выплатить все авансы ('+list.length+' шт.) на сумму '+fmt(total)+'?'))return;
-  list.forEach(function(o){o.advancePaid=true;});
-  await saveOrders(orders);renderTab('payments');toast('Выплачено авансов: '+list.length+' ✓');
+// Списки к выплате Свете
+function svetaAdvNeed(){return orders.filter(function(o){return o.master==='Света'&&['new','nextweek','work'].indexOf(o.status)>=0&&!o.advancePaid;});}
+function svetaPostNeed(){return orders.filter(function(o){return o.master==='Света'&&['ready','planned','done'].indexOf(o.status)>=0&&!o.postpayPaid;});}
+// Сообщение для телеграма после выплаты
+function buildPayoutMsg(p){
+  var lines=['Выплата ('+p.date+'):',''];
+  if(p.postOrders&&p.postOrders.length)lines.push(fmt(p.postSum)+' – готовые заказы – '+p.postOrders.join(', '));
+  if(p.advOrders&&p.advOrders.length)lines.push(fmt(p.advSum)+' – аванс – '+p.advOrders.join(', '));
+  lines.push('');
+  lines.push('Итого: '+fmt((p.postSum||0)+(p.advSum||0)));
+  lines.push('');
+  lines.push('@dasha27smirnova чек');
+  lines.push('@svetashevel отметка после получения');
+  return lines.join('\n');
 }
+function payoutDate(){return new Date().toLocaleDateString('ru');}
 async function markPay(id,type){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
-  if(type==='advance')o.advancePaid=true;
-  // Доплата при готовности закрывает и невыплаченный аванс (иначе он терялся)
-  if(type==='postpay'){o.postpayPaid=true;o.advancePaid=true;}
+  if(type==='advance'){
+    if(!confirm('Выплатить аванс '+fmt(calcAdvance(o))+' по заказу '+o.num+'?'))return;
+    o.advancePaid=true;
+    window.lastPayout={date:payoutDate(),advOrders:[o.num],advSum:calcAdvance(o),postOrders:[],postSum:0};
+  }
+  if(type==='postpay'){
+    var rem=remainingPay(o);
+    if(!confirm('Выплатить '+fmt(rem)+' по готовому заказу '+o.num+'?'))return;
+    o.postpayPaid=true;o.advancePaid=true;
+    window.lastPayout={date:payoutDate(),postOrders:[o.num],postSum:rem,advOrders:[],advSum:0};
+  }
   await saveOrders(orders);renderTab('payments');toast('Выплата отмечена ✓');
 }
+// Выплатить только авансы
+async function payOnlyAdvances(){
+  var list=svetaAdvNeed();
+  if(!list.length){toast('Нет авансов к выплате');return;}
+  var total=list.reduce(function(s,o){return s+calcAdvance(o);},0);
+  if(!confirm('Выплатить авансы — '+list.length+' '+pluralZakaz(list.length)+' на '+fmt(total)+'?\n\n'+list.map(function(o){return o.num;}).join(', ')))return;
+  list.forEach(function(o){o.advancePaid=true;});
+  window.lastPayout={date:payoutDate(),advOrders:list.map(function(o){return o.num;}),advSum:total,postOrders:[],postSum:0};
+  await saveOrders(orders);renderTab('payments');toast('Выплачено авансов: '+fmt(total)+' ✓');
+}
+// Выплатить только готовые
+async function payOnlyPost(){
+  var list=svetaPostNeed();
+  if(!list.length){toast('Нет готовых к выплате');return;}
+  var total=list.reduce(function(s,o){return s+remainingPay(o);},0);
+  if(!confirm('Выплатить готовые — '+list.length+' '+pluralZakaz(list.length)+' на '+fmt(total)+'?\n\n'+list.map(function(o){return o.num;}).join(', ')))return;
+  list.forEach(function(o){o.advancePaid=true;o.postpayPaid=true;});
+  window.lastPayout={date:payoutDate(),postOrders:list.map(function(o){return o.num;}),postSum:total,advOrders:[],advSum:0};
+  await saveOrders(orders);renderTab('payments');toast('Выплачено за готовые: '+fmt(total)+' ✓');
+}
 async function markAllPayments(){
-  var needAdv=orders.filter(function(o){return o.master==='Света'&&['new','nextweek','work'].indexOf(o.status)>=0&&!o.advancePaid;});
-  var needPost=orders.filter(function(o){return o.master==='Света'&&(o.status==='ready'||o.status==='planned'||o.status==='done')&&!o.postpayPaid;});
-  var total=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0)+needPost.reduce(function(s,o){return s+remainingPay(o);},0);
+  var needAdv=svetaAdvNeed(),needPost=svetaPostNeed();
+  var advSum=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0);
+  var postSum=needPost.reduce(function(s,o){return s+remainingPay(o);},0);
+  var total=advSum+postSum;
   if(!total){toast('Нечего выплачивать');return;}
-  if(!confirm('Выплатить Свете всё ('+(needAdv.length+needPost.length)+' зак.) на сумму '+fmt(total)+'?'))return;
+  if(!confirm('Выплатить Свете всё — '+(needAdv.length+needPost.length)+' '+pluralZakaz(needAdv.length+needPost.length)+' на '+fmt(total)+'?'))return;
   needAdv.forEach(function(o){o.advancePaid=true;});
   needPost.forEach(function(o){o.advancePaid=true;o.postpayPaid=true;});
+  window.lastPayout={date:payoutDate(),postOrders:needPost.map(function(o){return o.num;}),postSum:postSum,advOrders:needAdv.map(function(o){return o.num;}),advSum:advSum};
   await saveOrders(orders);renderTab('payments');toast('Выплачено: '+fmt(total)+' ✓');
 }
 async function undoPay(id,type){
@@ -3065,7 +3118,7 @@ function markOrdersSeen(){
   try{localStorage.setItem(key,Date.now());}catch(e){}
 }
 function unreadPaymentCount(){
-  if(role!=='director')return 0;
+  if(role!=='director'&&role!=='manager')return 0;
   var key='payments_seen';
   var seen=0;try{seen=parseInt(localStorage.getItem(key))||0;}catch(e){}
   var needAdv=orders.filter(function(o){return o.master==='Света'&&['new','nextweek','work'].indexOf(o.status)>=0&&!o.advancePaid&&(o.created||0)>seen;});
