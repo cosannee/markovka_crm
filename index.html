@@ -1218,7 +1218,8 @@ function sdekExportList(){
   return orders.filter(function(o){
     if(o.status!=='planned')return false;
     if(role==='master')return o.master===masterName;
-    return true; // руководитель и COO видят все планируемые отправки
+    if(role==='director')return o.master==='Даша'; // Даша — только свои накладные
+    return true; // COO видит все планируемые отправки
   }).sort(function(a,b){return (a.num||'').localeCompare(b.num||'');});
 }
 function sdekExportText(){
@@ -1230,7 +1231,7 @@ function sdekExportText(){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
     var nak=o.sdekNum?('накл. '+o.sdekNum):'накл. — (нет!)';
     var toy=orderToyLabel(o);
-    lines.push(o.num+(isMasterCopy?'':(' · '+(o.client||'—'))));
+    lines.push(o.num+(isMasterCopy?'':(' · '+(o.client||'—')))+(role==='manager'&&o.master?' ['+o.master+']':''));
     if(toy)lines.push(toy);
     if(!isMasterCopy&&o.phone)lines.push(o.phone);
     lines.push(nak+' · '+wt);
@@ -1262,7 +1263,7 @@ function openSdekExport(){
     return '<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #e8e6cc;cursor:pointer">'
       +'<input type="checkbox" class="sdek-chk" data-oid="'+o.id+'" checked style="margin-top:3px;width:16px;height:16px;accent-color:#635535;flex-shrink:0">'
       +'<div style="flex:1">'
-      +'<div style="font-size:14px;font-weight:700;color:#3a3020">'+o.num+(isMaster?'':(' · '+(o.client||'—')))+'</div>'
+      +'<div style="font-size:14px;font-weight:700;color:#3a3020">'+o.num+(isMaster?'':(' · '+(o.client||'—')))+(role==='manager'&&o.master?' <span style="font-size:11px;font-weight:700;color:#6b52a0;background:#e9e2f5;padding:1px 7px;border-radius:6px">'+o.master+'</span>':'')+'</div>'
       +(toy?'<div style="font-size:12px;font-weight:700;color:#635535;background:#f0efb1;display:inline-block;padding:2px 8px;border-radius:6px;margin:2px 0">'+toy+'</div>':'')
       +((!isMaster&&o.phone)?'<div style="font-size:13px;color:#635535">'+o.phone+'</div>':'')
       +'<div style="font-size:12px;color:#7a7570;margin-top:1px">'+nak+' · '+wt+'</div>'
