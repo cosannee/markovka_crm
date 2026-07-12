@@ -207,6 +207,9 @@ const STATUSES={
   done:{label:'Доставлен',cls:'b-done'},
   archived:{label:'Архив',cls:'b-gray'},
 };
+// Статусы для выплат мастеру (единый источник правды)
+const PAY_ADV_STATUSES=['new','nextweek','work'];              // аванс можно выплатить, пока заказ в процессе
+const PAY_POST_STATUSES=['ready','planned','sent','done'];     // доплата — готов и далее (включая «Отправлен»)
 const SOURCES={
   waiting:{label:'Лист ожидания',cls:'b-wait'},
   instagram:{label:'Instagram',cls:'b-inst'},
@@ -1065,35 +1068,29 @@ function orderCard(o){
   }
   html+='</div></div>';
 
-  // СДЭК
-  if(canFinance){
+  // СДЭК — контакты и номер накладной (пока не отправлен)
+  var isSent=o.status==='sent'||o.status==='done';
+  if(canFinance&&!isSent){
     var cS=o.client||'',pS=o.phone||'',aS=o.address||'';
-    var isSent=o.status==='sent'||o.status==='done';
     var trackNum=o.sdekNum||'';
     html+='<div style="padding:12px 16px;border-bottom:1px solid var(--border)">';
     html+='<div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Данные для СДЭК</div>';
-    if(!isSent){
-      [['Имя',cS],['Телефон',pS],['Адрес',aS]].forEach(function(row){
-        if(!row[1])return;
-        html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
-          +'<span style="font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+row[1]+'</span>'
-          +'<button class="btn btn-sm btn-ghost" style="font-size:10px;flex-shrink:0" data-val="'+row[1]+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div>';
-      });
-      var igC=igInfo(o.instagram);
-      if(igC)html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
-        +'<a href="'+igC.url+'" target="_blank" rel="noopener" style="font-size:12px;color:#c13584;font-weight:600;text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📷 '+igC.handle+'</a>'
-        +'<button class="btn btn-sm btn-ghost" style="font-size:10px;flex-shrink:0" data-val="'+igC.url+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div>';
-      html+='<div style="display:flex;align-items:center;gap:8px;margin-top:4px">'
-        +'<input type="text" placeholder="Номер накладной СДЭК" value="'+trackNum+'" '
-        +'style="flex:1;padding:7px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:12px;background:var(--bg)" '
-        +'data-oid="'+o.id+'" onchange="saveSdekNum(this.dataset.oid,this.value)">'
-        +(trackNum?'<button class="btn btn-sm btn-ghost" style="font-size:10px" data-val="'+trackNum+'" onclick="copyField(this.dataset.val,this)">Скопировать №</button>':'')
-        +'</div>';
-    }else{
-      var msg='Здравствуйте! Ваш малыш был отправлен, направляю ссылку на отслеживание:\nhttps://my.cdek.ru/m/lkfl/order/'+(trackNum||'НОМЕР')+'\n\nБлагодарю вас за терпение и доверие, будем рады обратной связи по получению! Хорошего дня 💫';
-      html+='<div style="font-size:12px;color:var(--text2);background:var(--bg2);border-radius:8px;padding:10px;line-height:1.6;margin-bottom:8px;white-space:pre-line">'+msg+'</div>'
-        +'<button class="btn btn-sm btn-primary" style="font-size:11px" data-val="'+msg.replace(/"/g,'&quot;')+'" onclick="copyField(this.dataset.val,this)">Скопировать сообщение</button>';
-    }
+    [['Имя',cS],['Телефон',pS],['Адрес',aS]].forEach(function(row){
+      if(!row[1])return;
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
+        +'<span style="font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+row[1]+'</span>'
+        +'<button class="btn btn-sm btn-ghost" style="font-size:10px;flex-shrink:0" data-val="'+row[1]+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div>';
+    });
+    var igC=igInfo(o.instagram);
+    if(igC)html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
+      +'<a href="'+igC.url+'" target="_blank" rel="noopener" style="font-size:12px;color:#c13584;font-weight:600;text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📷 '+igC.handle+'</a>'
+      +'<button class="btn btn-sm btn-ghost" style="font-size:10px;flex-shrink:0" data-val="'+igC.url+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div>';
+    html+='<div style="display:flex;align-items:center;gap:8px;margin-top:4px">'
+      +'<input type="text" placeholder="Номер накладной СДЭК" value="'+trackNum+'" '
+      +'style="flex:1;padding:7px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:12px;background:var(--bg)" '
+      +'data-oid="'+o.id+'" onchange="saveSdekNum(this.dataset.oid,this.value)">'
+      +(trackNum?'<button class="btn btn-sm btn-ghost" style="font-size:10px" data-val="'+trackNum+'" onclick="copyField(this.dataset.val,this)">Скопировать №</button>':'')
+      +'</div>';
     html+='</div>';
   }
 
@@ -2368,10 +2365,9 @@ function exportAnalyticsCsv(){
 
 function tplPayments(){
   // Аванс можно выплачивать пока заказ ещё в процессе (новый / след. неделя / в работе)
-  var advStatuses=['new','nextweek','work'];
-  var needAdv=orders.filter(function(o){return o.master==='Света'&&advStatuses.indexOf(o.status)>=0&&!o.advancePaid;});
-  var needPost=orders.filter(function(o){return o.master==='Света'&&(o.status==='ready'||o.status==='planned'||o.status==='done')&&!o.postpayPaid;});
-  var advDone=orders.filter(function(o){return o.master==='Света'&&o.advancePaid&&!o.postpayPaid&&!(o.status==='ready'||o.status==='planned'||o.status==='done');});
+  var needAdv=svetaAdvNeed();
+  var needPost=svetaPostNeed();
+  var advDone=orders.filter(function(o){return o.master==='Света'&&o.advancePaid&&!o.postpayPaid&&PAY_POST_STATUSES.indexOf(o.status)<0;});
   var allDone=orders.filter(function(o){return o.master==='Света'&&o.postpayPaid;});
 
   // Разбивка: авансы и готовые
@@ -2412,6 +2408,13 @@ function tplPayments(){
   html+='<div class="section-lbl" style="margin-top:16px">Доплата мастеру (готовы) — '+needPost.length+'</div>';
   if(!needPost.length){html+='<div class="empty" style="padding:12px 0"><div style="font-size:20px">✓</div>Все доплаты выплачены</div>';}
   else{needPost.forEach(function(o){html+=payRow(o,'postpay');});}
+
+  // Забытые долги: заказ Светы с невыплаченными деньгами, выпавший из всех статусов (например «Архив»)
+  var lost=orders.filter(function(o){return o.master==='Света'&&remainingPay(o)>0&&PAY_ADV_STATUSES.indexOf(o.status)<0&&PAY_POST_STATUSES.indexOf(o.status)<0;});
+  if(lost.length){
+    html+='<div class="section-lbl" style="margin-top:16px;color:var(--red)">⚠️ Не выплачено (архив/прочее) — '+lost.length+'</div>';
+    lost.forEach(function(o){html+=payRow(o,'postpay');});
+  }
 
   if(advDone.length){
     html+='<div class="section-lbl" style="margin-top:16px">Аванс выплачен, ждём готовности — '+advDone.length+'</div>';
@@ -2534,8 +2537,8 @@ function clientMsgBox(title,text){
 function markPayBtn(el){markPay(el.dataset.id,el.dataset.type);}
 function undoPayBtn(el){undoPay(el.dataset.id,el.dataset.type);}
 // Списки к выплате Свете
-function svetaAdvNeed(){return orders.filter(function(o){return o.master==='Света'&&['new','nextweek','work'].indexOf(o.status)>=0&&!o.advancePaid;});}
-function svetaPostNeed(){return orders.filter(function(o){return o.master==='Света'&&['ready','planned','done'].indexOf(o.status)>=0&&!o.postpayPaid;});}
+function svetaAdvNeed(){return orders.filter(function(o){return o.master==='Света'&&PAY_ADV_STATUSES.indexOf(o.status)>=0&&!o.advancePaid;});}
+function svetaPostNeed(){return orders.filter(function(o){return o.master==='Света'&&PAY_POST_STATUSES.indexOf(o.status)>=0&&!o.postpayPaid;});}
 // Сообщение для телеграма после выплаты
 function buildPayoutMsg(p){
   var lines=['Выплата ('+p.date+'):',''];
@@ -3122,8 +3125,8 @@ function unreadPaymentCount(){
   if(role!=='director'&&role!=='manager')return 0;
   var key='payments_seen';
   var seen=0;try{seen=parseInt(localStorage.getItem(key))||0;}catch(e){}
-  var needAdv=orders.filter(function(o){return o.master==='Света'&&['new','nextweek','work'].indexOf(o.status)>=0&&!o.advancePaid&&(o.created||0)>seen;});
-  var needPost=orders.filter(function(o){return o.master==='Света'&&(o.status==='ready'||o.status==='planned'||o.status==='done')&&!o.postpayPaid&&(o.created||0)>seen;});
+  var needAdv=orders.filter(function(o){return o.master==='Света'&&PAY_ADV_STATUSES.indexOf(o.status)>=0&&!o.advancePaid&&(o.created||0)>seen;});
+  var needPost=orders.filter(function(o){return o.master==='Света'&&PAY_POST_STATUSES.indexOf(o.status)>=0&&!o.postpayPaid&&(o.created||0)>seen;});
   return needAdv.length+needPost.length;
 }
 function markPaymentsSeen(){
