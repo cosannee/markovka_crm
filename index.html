@@ -3690,9 +3690,18 @@ async function parseFinanceWithAI(){
     var r=await fetch(OPENROUTER_PROXY,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'google/gemini-2.5-flash',max_tokens:1500,messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({model:'google/gemini-2.5-flash',max_tokens:1000,messages:[{role:'user',content:prompt}]})
     });
-    if(!r.ok){var e1=await r.json();throw new Error('HTTP '+r.status+': '+(e1.error&&e1.error.message||''));}
+    if(!r.ok){
+      // Тело ошибки может быть не JSON (воркер отдаёт текст) — читаем как текст,
+      // иначе разбор JSON падает и настоящая причина теряется.
+      var body='';
+      try{body=await r.text();}catch(e0){}
+      var msg='';
+      try{var j=JSON.parse(body);msg=(j.error&&(j.error.message||j.error))||'';}catch(e0){msg=body.slice(0,200);}
+      console.error('Finance AI HTTP '+r.status,body);
+      throw new Error('HTTP '+r.status+(msg?': '+msg:' — ответ прокси пуст, см. консоль'));
+    }
     var data=await r.json();
     var raw=data.choices[0].message.content.trim().replace(/```json|```/g,'').trim();
     var parsed=JSON.parse(raw);
