@@ -36,7 +36,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text1);fon
 .btn-icon{background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;padding:6px;border-radius:8px;line-height:1}
 .tabs{display:flex;background:var(--card);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
-.tab{flex:1;min-width:0;padding:11px 4px;border:none;background:none;font-family:'Nunito',sans-serif;font-size:11px;font-weight:600;color:var(--text3);cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;display:flex;flex-direction:column;align-items:center;gap:2px}
+.tab{flex:1 0 auto;min-width:62px;padding:11px 6px;border:none;background:none;font-family:'Nunito',sans-serif;font-size:11px;font-weight:600;color:var(--text3);cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;display:flex;flex-direction:column;align-items:center;gap:2px}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
 .main{padding:14px;flex:1;max-width:600px;width:100%;margin:0 auto}
 .card{background:var(--card);border-radius:var(--r2);border:1px solid var(--border);box-shadow:var(--sh);overflow:hidden}
@@ -232,7 +232,7 @@ let role=null,masterName=null,tab='list',myTodos=[],fStatus='all',fMonth='all',f
 const VALID_SORTS=['date','date_asc','deadline','margin'];
 let expandedCards=new Set();
 let realRole=null,isPreviewMode=false;
-let orders=[],tasks=[];
+let orders=[],tasks=[],finance=[];
 let cloudOrderCount=0;  // сколько заказов мы считаем в облаке (для стража массового стирания)
 
 const OPENROUTER_PROXY='https://openrouter-proxy.zaytsevalexandara.workers.dev';
@@ -249,7 +249,7 @@ const SB_URL='https://xcthayifpkqfjwdvvcvh.supabase.co';
 const SB_KEY='sb_publishable_iLKu1GyvYIpLIwEnLlLIXg_uVHbuLhT';
 function sbHeaders(){return {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};}
 // Снимок последнего синхронизированного состояния (id -> JSON) для диффа при сохранении
-let _sbSnap={orders:{},tasks:{}};
+let _sbSnap={orders:{},tasks:{},finance:{}};
 function sbBuildSnap(arr){var m={};(arr||[]).forEach(function(it){if(it&&it.id)m[it.id]=JSON.stringify(it);});return m;}
 
 // ── Параметры синхронизации ──
@@ -259,6 +259,7 @@ let lastSyncTime=0;          // время последней успешной �
 let syncInProgress=false;    // защита от одновременных запросов чтения
 let cloudLoadOk=false;       // удалось ли хоть раз успешно прочитать облако в этой сессии
 let lastActivity=Date.now(); // время последнего действия пользователя
+let financeTableOk=false;    // существует ли таблица finance в Supabase (модуль «Банк»)
 let activityBound=false;     // навешены ли слушатели активности
 
 // Чтение локального кэша
@@ -278,15 +279,21 @@ async function loadData(force){
     console.log("Supabase sync");
     const ord=await sbSelectTable('orders');
     const tsk=await sbSelectTable('tasks');
+    // Таблица finance может ещё не существовать (модуль «Банк» подключается отдельно) —
+    // её отсутствие не должно ломать загрузку заказов и задач.
+    let fin=[];
+    try{fin=await sbSelectTable('finance');financeTableOk=true;}
+    catch(e){financeTableOk=false;console.warn('Таблица finance недоступна',e);}
     // Сортируем по дате создания (новые сверху) — порядок в БД произвольный
     ord.sort(function(a,b){return (b.created||0)-(a.created||0);});
     tsk.sort(function(a,b){return (b.created||0)-(a.created||0);});
-    const data={orders:ord,tasks:tsk};
+    const data={orders:ord,tasks:tsk,finance:fin};
     lastSyncTime=Date.now();
     cloudLoadOk=true;                       // облако успешно прочитано
     cloudOrderCount=ord.length;
     _sbSnap.orders=sbBuildSnap(ord);
     _sbSnap.tasks=sbBuildSnap(tsk);
+    if(financeTableOk)_sbSnap.finance=sbBuildSnap(fin);
     try{localStorage.setItem('markovka_data',JSON.stringify(data));}catch(e){}
     return data;
   }catch(e){
@@ -328,7 +335,8 @@ async function restoreBackup(idx){
   }catch(e){toast('Ошибка восстановления');}
 }
 
-async function saveData(ords,tsks,skipGuard){
+async function saveData(ords,tsks,skipGuard,fins){
+  if(!Array.isArray(fins))fins=finance;
   // ЗАЩИТА ОТ ПОТЕРИ ДАННЫХ: не пишем в облако, пока ни разу его не прочитали.
   // Иначе пустой/тестовый локальный набор может затереть реальные данные в JsonBin.
   if(!cloudLoadOk){
@@ -360,7 +368,7 @@ async function saveData(ords,tsks,skipGuard){
       }
     }catch(e){/* если страж не смог прочитать облако — не блокируем, чтобы не терять правки */}
   }
-  const payload={orders:ords,tasks:tsks};
+  const payload={orders:ords,tasks:tsks,finance:fins};
   pushBackup(payload);  // снимок перед записью
   // Локальная копия считается свежей сразу после сохранения — повторное чтение не требуется
   try{localStorage.setItem('markovka_data',JSON.stringify(payload));lastSyncTime=Date.now();}catch(e){}
@@ -368,6 +376,7 @@ async function saveData(ords,tsks,skipGuard){
     console.log("Supabase sync");
     await sbSyncTable('orders',ords);
     await sbSyncTable('tasks',tsks);
+    if(financeTableOk)await sbSyncTable('finance',fins);
     cloudOrderCount=Array.isArray(ords)?ords.length:cloudOrderCount;  // облако теперь содержит столько заказов
   }catch(e){console.warn('save error',e);toast('⚠️ Не удалось сохранить в облако');}
 }
@@ -404,6 +413,15 @@ async function sbSyncTable(table,arr){
 }
 async function saveOrders(ords){orders=ords;await saveData(ords,tasks);}
 async function saveTasks(tsks){tasks=tsks;await saveData(orders,tsks);}
+async function saveFinance(fins){
+  if(!financeTableOk){
+    toast('⚠️ Таблица finance не создана в Supabase — см. инструкцию');
+    return false;
+  }
+  finance=fins;
+  await saveData(orders,tasks,true,fins);
+  return true;
+}
 
 // ── РАЗОВАЯ МИГРАЦИЯ JsonBin → Supabase ──
 // Вызывается один раз из консоли браузера: migrateFromJsonBin()
@@ -601,13 +619,16 @@ async function login(r,userName,userLabel,mName){
     // Облако прочитано успешно и в нём есть заказы — используем их
     orders=data.orders;
     tasks=Array.isArray(data.tasks)?data.tasks:[];
+    finance=Array.isArray(data.finance)?data.finance:[];
   }else if(cloudLoadOk){
     // Облако прочитано, но реально пустое — показываем пусто (НИКОГДА не пишем тестовые автоматически)
     orders=[];tasks=[];
+    finance=Array.isArray(data&&data.finance)?data.finance:[];
   }else{
     // Облако НЕдоступно — работаем с локальным кэшем, ничего не записываем
     orders=(cached&&Array.isArray(cached.orders))?cached.orders:[];
     tasks=(cached&&Array.isArray(cached.tasks))?cached.tasks:[];
+    finance=(cached&&Array.isArray(cached.finance))?cached.finance:[];
     if(!cached)toast('⚠️ Нет связи с облаком — данные не загружены');
   }
   renderTabs();renderTab(tab);
@@ -632,6 +653,7 @@ async function syncFromCloud(){
   if(data){
     if(JSON.stringify(data.orders)!==JSON.stringify(orders)){orders=data.orders||[];renderTab(tab);}
     if(JSON.stringify(data.tasks)!==JSON.stringify(tasks)){tasks=data.tasks||[];if(tab==='todos')renderTab(tab);else renderTabs();}
+    if(financeTableOk&&JSON.stringify(data.finance)!==JSON.stringify(finance)){finance=data.finance||[];if(tab==='bank')renderTab(tab);}
   }
 }
 function setupActivity(){
@@ -709,6 +731,7 @@ function renderTabs(){
     add:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>',
     stats:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,7 9,10 14,4"/></svg>',
     payments:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="14" height="9" rx="2"/><line x1="1" y1="8" x2="15" y2="8"/></svg>',
+    bank:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5L8 2.5l6 4"/><line x1="3.5" y1="7" x2="3.5" y2="12"/><line x1="8" y1="7" x2="8" y2="12"/><line x1="12.5" y1="7" x2="12.5" y2="12"/><line x1="2" y1="13.5" x2="14" y2="13.5"/></svg>',
     finance:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,7 9,10 14,4"/></svg>',
     todos:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8 6,11 13,4"/><circle cx="8" cy="8" r="6.5"/></svg>',
     analytics:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="3" height="5" rx="1"/><rect x="6.5" y="5" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></svg>',
@@ -719,8 +742,9 @@ function renderTabs(){
       {id:'list',label:'Заказы'},
       {id:'calendar',label:'Календарь'},
       ...(canEdit?[{id:'add',label:'Добавить'}]:[]),
-      ...(role==='manager'?[{id:'payments',label:'Выплаты'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
-      ...(role==='director'?[{id:'payments',label:'Выплаты'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
+      // Банк доступен только Александре (manager) и Дарье (director) — Свете раздел не показывается
+      ...(role==='manager'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
+      ...(role==='director'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       {id:'todos',label:'Задачи'},
     ];
   bar.innerHTML=all.map(function(t){
@@ -759,6 +783,8 @@ function updateSearch(val){
 }
 
 function renderTab(t){
+  // Страховка: раздел «Банк» закрыт для мастера (в т.ч. в режиме просмотра от лица Светы)
+  if(t==='bank'&&!canSeeBank())t=(role==='master'?'master':'list');
   tab=t;
   if(t==='todos')markTasksSeen();
   if(t==='list'||t==='master')markOrdersSeen();
@@ -772,6 +798,7 @@ function renderTab(t){
   else if(t==='stats')m.innerHTML=tplStats();
   else if(t==='finance'&&(role==='manager'||role==='director'))m.innerHTML=tplStats();
   else if(t==='payments')m.innerHTML=tplPayments();
+  else if(t==='bank')m.innerHTML=tplBank();
   else if(t==='analytics')m.innerHTML=tplWeeklyAnalytics();
   else if(t==='finance')m.innerHTML=tplSvetaFinance();
   else if(t==='todos'){m.innerHTML=tplTasks();return;}
@@ -1151,12 +1178,14 @@ async function closeOrder(id){
   if(!o)return;
   var tot=orderTotal(o);
   if(!confirm('Закрыть заказ '+o.num+'?\nОплата будет проставлена полной ('+fmt(tot)+') и заказ отметится как закрытый.'))return;
+  var wasPaid=parseFloat(o.prepaid)||0;
   o.closed=true;
   o.closedAt=Date.now();
   o.prepaid=tot; // полная оплата от клиента
   await saveOrders(orders);
   renderTab(tab);
   toast('Заказ '+o.num+' закрыт ✓');
+  offerOrderIncome(o,tot-wasPaid);   // предложить провести доплату через банк
 }
 async function reopenOrder(id){
   var o=orders.find(function(x){return x.id===id;});
@@ -1714,6 +1743,7 @@ async function addOrder(){
   toast('Сохраняем заказ '+o.num+'...');
   await saveOrders(orders);
   toast('✅ Заказ '+o.num+' добавлен');
+  offerOrderIncome(o,parseFloat(o.prepaid)||0);   // если внесли предоплату — предложить провести её по банку
 }
 
 function openEdit(id){
@@ -1766,6 +1796,7 @@ async function saveEdit(id){
   const items=readItemsFrom('edit-items-container');
   if(!items.length||!items.some(function(it){return it.toyType;})){toast('Добавьте хотя бы одну игрушку');return;}
   const first=items[0]||{};
+  const prevPrepaid=parseFloat(o.prepaid)||0;   // для предложения провести оплату через банк
   o.num=newNum;o.client=v('ec');o.phone=v('ep');o.address=v('ea');o.instagram=v('eig');
   o.items=items;
   // Агрегаты для совместимости/отображения
@@ -1784,6 +1815,7 @@ async function saveEdit(id){
   o.comment=v('ecm');
   await saveOrders(orders);
   closeModal();toast('Заказ сохранён');renderTab(tab);
+  offerOrderIncome(o,(parseFloat(o.prepaid)||0)-prevPrepaid);
 }
 
 function closeModal(){
@@ -3230,6 +3262,693 @@ document.addEventListener('click',function(e){
   }
   if(!e.target.closest('.dropdown'))closeAllDrops();
 });
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  МОДУЛЬ «БАНК» — фактическое движение денег
+//  Доступ: только manager (Александра) и director (Дарья). Мастеру закрыт.
+//
+//  Хранение: таблица Supabase `finance`, строки вида {id, data:jsonb}.
+//  В одной таблице два типа записей, различаются по полю data.kind:
+//    kind:'account' — счёт   {id,kind,name,type:'bank'|'savings',startBalance,startDate,ord,archived}
+//    kind:'tx'      — операция {id,kind,date,type:'income'|'expense'|'transfer',amount,
+//                               accountId,toAccountId,category,merchant,comment,
+//                               direction:'toys'|'mk',orderId,author,source,created}
+//
+//  ВАЖНО: баланс нигде не хранится полем — он всегда пересчитывается из
+//  начального остатка счёта и операций. Иначе при параллельной работе
+//  Александры и Дарьи цифры разъедутся.
+// ═══════════════════════════════════════════════════════════════════
+
+// Направления учёта. МК (мастер-классы) — отдельное направление: деньги лежат
+// физически на счёте (обычно Озон), но в «общий котёл» игрушек не входят.
+const BANK_DIRS=[{id:'toys',label:'Игрушки'},{id:'mk',label:'Мастер-классы'}];
+const DIR_LBL={toys:'Игрушки',mk:'МК'};
+
+const INCOME_CATS=['Предоплата заказа','Доплата заказа','Продажа МК','Возврат/компенсация','Прочий доход'];
+const EXPENSE_CATS=['Материалы','Гранулят','Одежда (Настя)','ЗП Света','ЗП Даша','ЗП Александра','Дивиденды/выводы','Доставка/СДЭК','Упаковка и полиграфия','Сервисы','Налоги','Прочее'];
+const TRANSFER_CATS=['Между счетами','Пополнение вклада','Снятие с вклада'];
+
+// Счета, которые создаются при первом открытии раздела
+const DEFAULT_ACCOUNTS=[
+  {name:'Озон Банк',    type:'bank'},
+  {name:'Сбербанк',     type:'bank'},
+  {name:'Вклад Сбербанк',type:'savings'},
+];
+
+// Состояние экрана
+var bankPeriod='month';     // 'week' | 'month' | 'all'
+var bankMonthKey='';        // выбранный месяц YYYY-MM
+var bankFilterAcc='all';
+var bankFilterDir='all';
+var bankAiDraft=null;       // распознанные ИИ операции, ждущие подтверждения
+
+function canSeeBank(){return role==='manager'||role==='director';}
+function bankAuthor(){return role==='director'?'Даша':(role==='manager'?'Александра':'—');}
+
+// ── Выборки ──
+function bankAccounts(){
+  return finance.filter(function(r){return r&&r.kind==='account'&&!r.archived;})
+    .sort(function(a,b){return (a.ord||0)-(b.ord||0);});
+}
+function bankTxAll(){
+  return finance.filter(function(r){return r&&r.kind==='tx';})
+    .sort(function(a,b){
+      if(a.date!==b.date)return a.date<b.date?1:-1;   // новые сверху
+      return (b.created||0)-(a.created||0);
+    });
+}
+function accById(id){return finance.find(function(r){return r&&r.kind==='account'&&r.id===id;});}
+function accName(id){var a=accById(id);return a?a.name:'—';}
+
+// ── Балансы ──
+// Физический баланс счёта: начальный остаток + все операции по нему (включая МК).
+function accBalance(accId){
+  var a=accById(accId);
+  if(!a)return 0;
+  var bal=parseFloat(a.startBalance)||0;
+  bankTxAll().forEach(function(t){
+    var amt=parseFloat(t.amount)||0;
+    if(t.type==='income'&&t.accountId===accId)bal+=amt;
+    else if(t.type==='expense'&&t.accountId===accId)bal-=amt;
+    else if(t.type==='transfer'){
+      if(t.accountId===accId)bal-=amt;
+      if(t.toAccountId===accId)bal+=amt;
+    }
+  });
+  return bal;
+}
+// Сальдо направления: доходы минус расходы. Переводы между своими счетами
+// направление не меняют, поэтому в расчёт не идут.
+function dirBalance(dir){
+  return bankTxAll().reduce(function(s,t){
+    if((t.direction||'toys')!==dir)return s;
+    var amt=parseFloat(t.amount)||0;
+    if(t.type==='income')return s+amt;
+    if(t.type==='expense')return s-amt;
+    return s;
+  },0);
+}
+function bankTotals(){
+  var accs=bankAccounts();
+  var phys=accs.reduce(function(s,a){return s+accBalance(a.id);},0);
+  var liquid=accs.filter(function(a){return a.type!=='savings';})
+                 .reduce(function(s,a){return s+accBalance(a.id);},0);
+  var mk=dirBalance('mk');
+  return {
+    phys:phys,          // сколько денег физически на всех счетах
+    mk:mk,              // из них относится к направлению МК
+    pot:phys-mk,        // общий котёл игрушек (МК исключён)
+    spendable:liquid-mk // доступно к трате: без вклада и без денег МК
+  };
+}
+
+// ── Периоды ──
+function bankRange(){
+  var now=new Date();
+  if(bankPeriod==='week'){
+    var r=getWeekRange();
+    return {start:r.start,end:r.end,label:'Текущая неделя'};
+  }
+  if(bankPeriod==='month'){
+    var key=bankMonthKey||(now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0'));
+    var p=key.split('-');
+    var s=new Date(+p[0],+p[1]-1,1,0,0,0,0);
+    var e=new Date(+p[0],+p[1],0,23,59,59,999);
+    return {start:s,end:e,label:moLbl(key),monthKey:key};
+  }
+  return {start:new Date(2000,0,1),end:new Date(2999,0,1),label:'Всё время'};
+}
+function bankPeriodTx(){
+  var r=bankRange();
+  return bankTxAll().filter(function(t){
+    var d=new Date(t.date+'T12:00:00');
+    if(d<r.start||d>r.end)return false;
+    if(bankFilterAcc!=='all'&&t.accountId!==bankFilterAcc&&t.toAccountId!==bankFilterAcc)return false;
+    if(bankFilterDir!=='all'&&(t.direction||'toys')!==bankFilterDir)return false;
+    return true;
+  });
+}
+function setBankPeriod(p){bankPeriod=p;if(p!=='month')bankMonthKey='';renderTab('bank');}
+function setBankMonth(m){bankMonthKey=m;bankPeriod='month';renderTab('bank');}
+function setBankAcc(id){bankFilterAcc=id;renderTab('bank');}
+function setBankDir(d){bankFilterDir=d;renderTab('bank');}
+
+function todayISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function dLbl(iso){
+  if(!iso)return '';
+  var p=iso.split('-');
+  return p[2]+'.'+p[1];
+}
+
+// ── Первичная настройка счетов ──
+async function bankSetupDefaults(){
+  if(bankAccounts().length){toast('Счета уже созданы');return;}
+  var now=Date.now();
+  var accs=DEFAULT_ACCOUNTS.map(function(a,i){
+    return {id:uid(),kind:'account',name:a.name,type:a.type,startBalance:0,startDate:todayISO(),ord:i,archived:false,created:now+i};
+  });
+  var ok=await saveFinance(finance.concat(accs));
+  if(ok){renderTab('bank');toast('Счета созданы — укажите начальные остатки');}
+}
+
+// ═══ ЭКРАН ═══
+function tplBank(){
+  if(!canSeeBank())return '<div class="empty"><div class="empty-icon">🔒</div>Раздел недоступен</div>';
+
+  if(!financeTableOk){
+    return '<div class="card" style="padding:16px">'
+      +'<div style="font-family:\'Playfair Display\',serif;font-style:italic;font-size:17px;color:var(--accent);margin-bottom:8px">Нужен один шаг настройки</div>'
+      +'<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">В Supabase ещё нет таблицы <b>finance</b>. Откройте проект → SQL Editor и выполните:</div>'
+      +'<pre style="background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:12px;font-size:11px;overflow-x:auto;white-space:pre-wrap">create table if not exists finance (\n  id text primary key,\n  data jsonb\n);\nalter table finance enable row level security;\ncreate policy "finance rw" on finance\n  for all using (true) with check (true);</pre>'
+      +'<div style="font-size:12px;color:var(--text3);margin-top:10px">После этого обновите страницу.</div>'
+      +'</div>';
+  }
+
+  var accs=bankAccounts();
+  if(!accs.length){
+    return '<div class="card" style="padding:20px;text-align:center">'
+      +'<div class="empty-icon" style="font-size:32px">🏦</div>'
+      +'<div style="font-size:14px;color:var(--text2);margin:8px 0 14px">Счета ещё не заведены</div>'
+      +'<button class="btn btn-primary" onclick="bankSetupDefaults()">Создать: Озон, Сбер, Вклад</button>'
+      +'</div>';
+  }
+
+  var t=bankTotals();
+  var html='<div style="padding:2px">';
+
+  // ── Сводка ──
+  html+='<div class="card" style="padding:14px;margin-bottom:10px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">'
+      +'<span style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Общий котёл</span>'
+      +'<span style="font-family:\'Playfair Display\',serif;font-size:22px;color:var(--accent)">'+fmt(t.pot)+'</span>'
+    +'</div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--text3)">'
+      +'<span>Доступно к трате (без вклада)</span>'
+      +'<span style="font-weight:700;color:'+(t.spendable>=0?'var(--green)':'var(--red)')+'">'+fmt(t.spendable)+'</span>'
+    +'</div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--text3);margin-top:3px">'
+      +'<span>Направление МК (отдельно)</span>'
+      +'<span style="font-weight:700;color:var(--blue)">'+fmt(t.mk)+'</span>'
+    +'</div>'
+    +'</div>';
+
+  // ── Плитки счетов ──
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">';
+  accs.forEach(function(a){
+    var bal=accBalance(a.id);
+    var isSav=a.type==='savings';
+    html+='<div onclick="openAccountEdit(\''+a.id+'\')" style="background:var(--card);border:1px solid '+(isSav?'#c8dde3':'var(--border)')+';border-radius:14px;padding:12px;cursor:pointer">'
+      +'<div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px">'+a.name+(isSav?' 🔒':'')+'</div>'
+      +'<div style="font-size:16px;font-weight:700;color:'+(bal>=0?'var(--accent)':'var(--red)')+'">'+fmt(bal)+'</div>'
+      +'</div>';
+  });
+  html+='</div>';
+
+  // ── ИИ-ввод ──
+  html+=tplBankAi();
+
+  // ── Кнопки ──
+  html+='<div style="display:flex;gap:8px;margin-bottom:14px">'
+    +'<button class="btn btn-secondary btn-sm" style="flex:1;justify-content:center" onclick="openTxForm()">+ Операция вручную</button>'
+    +'<button class="btn btn-secondary btn-sm" style="flex:1;justify-content:center" onclick="openTxForm(null,\'transfer\')">⇄ Перевод</button>'
+    +'</div>';
+
+  // ── Фильтры ──
+  html+='<div class="filters">';
+  [['week','Неделя'],['month','Месяц'],['all','Всё время']].forEach(function(p){
+    html+='<button class="chip '+(bankPeriod===p[0]?'active':'')+'" onclick="setBankPeriod(\''+p[0]+'\')">'+p[1]+'</button>';
+  });
+  html+='</div>';
+
+  if(bankPeriod==='month'){
+    var r0=bankRange();
+    var months=[...new Set(bankTxAll().map(function(x){return (x.date||'').slice(0,7);}).filter(Boolean))];
+    var curKey=new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0');
+    if(months.indexOf(curKey)<0)months.push(curKey);
+    months.sort().reverse();
+    html+='<div class="filters">';
+    months.forEach(function(m){
+      html+='<button class="chip '+(r0.monthKey===m?'active':'')+'" onclick="setBankMonth(\''+m+'\')">'+moLbl(m)+'</button>';
+    });
+    html+='</div>';
+  }
+
+  html+='<div class="filters">'
+    +'<button class="chip '+(bankFilterAcc==='all'?'active':'')+'" onclick="setBankAcc(\'all\')">Все счета</button>';
+  accs.forEach(function(a){
+    html+='<button class="chip '+(bankFilterAcc===a.id?'active':'')+'" onclick="setBankAcc(\''+a.id+'\')">'+a.name+'</button>';
+  });
+  html+='</div>';
+
+  html+='<div class="filters">'
+    +'<button class="chip '+(bankFilterDir==='all'?'active':'')+'" onclick="setBankDir(\'all\')">Все направления</button>';
+  BANK_DIRS.forEach(function(d){
+    html+='<button class="chip '+(bankFilterDir===d.id?'active':'')+'" onclick="setBankDir(\''+d.id+'\')">'+d.label+'</button>';
+  });
+  html+='</div>';
+
+  // ── Итоги периода ──
+  var list=bankPeriodTx();
+  var inc=list.filter(function(x){return x.type==='income';}).reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0);
+  var exp=list.filter(function(x){return x.type==='expense';}).reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0);
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">'
+    +'<div style="background:var(--green-bg);border-radius:12px;padding:10px;text-align:center"><div style="font-size:14px;font-weight:700;color:var(--green)">'+fmt(inc)+'</div><div style="font-size:10px;color:var(--text3)">Доход</div></div>'
+    +'<div style="background:var(--red-bg);border-radius:12px;padding:10px;text-align:center"><div style="font-size:14px;font-weight:700;color:var(--red)">'+fmt(exp)+'</div><div style="font-size:10px;color:var(--text3)">Расход</div></div>'
+    +'<div style="background:var(--bg2);border-radius:12px;padding:10px;text-align:center"><div style="font-size:14px;font-weight:700;color:'+(inc-exp>=0?'var(--green)':'var(--red)')+'">'+fmt(inc-exp)+'</div><div style="font-size:10px;color:var(--text3)">Итог</div></div>'
+    +'</div>';
+
+  // ── Лента ──
+  html+='<div class="section-lbl" style="margin-bottom:6px">Операции — '+list.length+'</div>';
+  if(!list.length){
+    html+='<div class="empty" style="padding:24px"><div class="empty-icon">💸</div>Операций за период нет</div>';
+  }else{
+    html+=list.map(txRow).join('');
+  }
+
+  // ── Расходы по категориям ──
+  html+=tplBankByCategory(list);
+  // ── Сверка с заказами ──
+  html+=tplBankReconcile(list);
+
+  html+='</div>';
+  return html;
+}
+
+function txRow(t){
+  var isInc=t.type==='income',isTr=t.type==='transfer';
+  var sign=isTr?'⇄':(isInc?'+':'−');
+  var color=isTr?'var(--blue)':(isInc?'var(--green)':'var(--red)');
+  var where=isTr?(accName(t.accountId)+' → '+accName(t.toAccountId)):accName(t.accountId);
+  var meta=[dLbl(t.date),where];
+  if((t.direction||'toys')==='mk')meta.push('МК');
+  if(t.orderId){var o=orders.find(function(x){return x.id===t.orderId;});if(o)meta.push('заказ '+o.num);}
+  return '<div onclick="openTxForm(\''+t.id+'\')" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer">'
+    +'<div style="min-width:0;flex:1">'
+      +'<div style="font-size:13px;font-weight:600;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(t.category||'—')+(t.merchant?' · <span style="color:var(--text3);font-weight:400">'+t.merchant+'</span>':'')+'</div>'
+      +'<div style="font-size:10px;color:var(--text3);margin-top:2px">'+meta.join(' · ')+'</div>'
+      +(t.comment?'<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:2px">'+t.comment+'</div>':'')
+    +'</div>'
+    +'<div style="font-size:14px;font-weight:700;color:'+color+';white-space:nowrap">'+sign+' '+fmt(t.amount)+'</div>'
+    +'</div>';
+}
+
+function tplBankByCategory(list){
+  var exp=list.filter(function(t){return t.type==='expense';});
+  if(!exp.length)return '';
+  var by={};
+  exp.forEach(function(t){var c=t.category||'Прочее';by[c]=(by[c]||0)+(parseFloat(t.amount)||0);});
+  var rows=Object.keys(by).map(function(c){return {c:c,v:by[c]};}).sort(function(a,b){return b.v-a.v;});
+  var tot=rows.reduce(function(s,r){return s+r.v;},0);
+  var html='<div class="card" style="padding:14px;margin-top:14px">'
+    +'<div class="section-lbl" style="margin-bottom:10px">Расходы по категориям</div>';
+  rows.forEach(function(r){
+    var p=tot>0?Math.round(r.v/tot*100):0;
+    html+='<div style="margin-bottom:8px">'
+      +'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:3px"><span>'+r.c+'</span><span style="font-weight:700">'+fmt(r.v)+' · '+p+'%</span></div>'
+      +'<div style="height:6px;background:var(--bg2);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+p+'%;background:var(--accent)"></div></div>'
+      +'</div>';
+  });
+  html+='</div>';
+  return html;
+}
+
+// Сверка: расчётная прибыль по закрытым заказам против фактического денежного потока.
+// Расхождение — не ошибка, а сигнал: либо забыли внести операцию, либо формула
+// себестоимости разошлась с реальностью.
+function tplBankReconcile(list){
+  var r=bankRange();
+  var closed=orders.filter(function(o){
+    if(!isClosed(o))return false;
+    var d=new Date(closedDate(o));
+    return d>=r.start&&d<=r.end;
+  });
+  if(!closed.length)return '';
+  var calcProfit=closed.reduce(function(s,o){return s+calcCosts(o).profit;},0);
+  var toysTx=list.filter(function(t){return (t.direction||'toys')==='toys';});
+  var factInc=toysTx.filter(function(t){return t.type==='income';}).reduce(function(s,t){return s+(parseFloat(t.amount)||0);},0);
+  var factExp=toysTx.filter(function(t){return t.type==='expense';}).reduce(function(s,t){return s+(parseFloat(t.amount)||0);},0);
+  var factFlow=factInc-factExp;
+  var diff=factFlow-calcProfit;
+  return '<div class="card" style="padding:14px;margin-top:10px">'
+    +'<div class="section-lbl" style="margin-bottom:10px">Сверка с заказами · '+r.label+'</div>'
+    +'<div class="pay-row" style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text2)">Расчётная прибыль ('+closed.length+' закр. зак.)</span><span style="font-weight:700">'+fmt(calcProfit)+'</span></div>'
+    +'<div class="pay-row" style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text2)">Фактический поток (игрушки)</span><span style="font-weight:700">'+fmt(factFlow)+'</span></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0 0;border-top:1px solid var(--border2);margin-top:4px"><span style="color:var(--text2);font-weight:700">Расхождение</span><span style="font-weight:700;color:'+(Math.abs(diff)<1000?'var(--green)':'var(--orange)')+'">'+fmt(diff)+'</span></div>'
+    +'<div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.5">Расчёт — по формуле себестоимости из заказов. Факт — по внесённым операциям. Разница обычно означает неучтённую операцию или оплату, прошедшую в другом периоде.</div>'
+    +'</div>';
+}
+
+// ═══ ИИ-ВВОД ═══
+function tplBankAi(){
+  var html='<div class="card" style="padding:12px;margin-bottom:10px">'
+    +'<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Быстрый ввод</div>'
+    +'<textarea id="fin-ai-input" placeholder="Например: оплата материалов с озон 4500, вчера пришла предоплата 7000 на сбер по М-015" style="width:100%;min-height:56px;padding:9px 12px;border-radius:12px;border:1px solid var(--border2);background:var(--bg);font-family:\'Nunito\',sans-serif;font-size:13px;color:var(--text1);outline:none;resize:vertical"></textarea>'
+    +'<button id="fin-ai-btn" class="btn btn-primary btn-full btn-sm" style="margin-top:8px" onclick="parseFinanceWithAI()">✨ Распознать</button>';
+  if(bankAiDraft&&bankAiDraft.length)html+=tplAiDraft();
+  html+='</div>';
+  return html;
+}
+
+function tplAiDraft(){
+  var accs=bankAccounts();
+  var html='<div style="margin-top:10px;border-top:1px solid var(--border2);padding-top:10px">'
+    +'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Проверьте и подтвердите — до подтверждения ничего не сохранено</div>';
+  bankAiDraft.forEach(function(d,i){
+    var isInc=d.type==='income',isTr=d.type==='transfer';
+    html+='<div style="background:var(--bg);border:1px solid var(--border2);border-radius:12px;padding:10px;margin-bottom:8px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+        +'<span style="font-size:11px;font-weight:700;color:'+(isTr?'var(--blue)':(isInc?'var(--green)':'var(--red)'))+'">'+(isTr?'⇄ Перевод':(isInc?'↓ Доход':'↑ Расход'))+'</span>'
+        +'<button onclick="dropAiDraft('+i+')" style="background:none;border:none;color:#c8a0a0;font-size:20px;line-height:1;cursor:pointer">×</button>'
+      +'</div>'
+      +'<div class="form-grid">'
+        +'<div class="fg"><label>Сумма</label><input type="number" value="'+(d.amount||'')+'" oninput="editAiDraft('+i+',\'amount\',this.value)"></div>'
+        +'<div class="fg"><label>Дата</label><input type="date" value="'+(d.date||todayISO())+'" oninput="editAiDraft('+i+',\'date\',this.value)"></div>'
+        +'<div class="fg"><label>'+(isTr?'Откуда':'Счёт')+'</label><select onchange="editAiDraft('+i+',\'accountId\',this.value)">'+accs.map(function(a){return '<option value="'+a.id+'"'+(d.accountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
+        +(isTr
+          ?'<div class="fg"><label>Куда</label><select onchange="editAiDraft('+i+',\'toAccountId\',this.value)">'+accs.map(function(a){return '<option value="'+a.id+'"'+(d.toAccountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
+          :'<div class="fg"><label>Направление</label><select onchange="editAiDraft('+i+',\'direction\',this.value)">'+BANK_DIRS.map(function(x){return '<option value="'+x.id+'"'+((d.direction||'toys')===x.id?' selected':'')+'>'+x.label+'</option>';}).join('')+'</select></div>')
+        +'<div class="fg span2"><label>Категория</label><select onchange="editAiDraft('+i+',\'category\',this.value)">'+bankCatsFor(d.type).map(function(c){return '<option'+(d.category===c?' selected':'')+'>'+c+'</option>';}).join('')+'</select></div>'
+        +'<div class="fg span2"><label>Комментарий</label><input value="'+esc(d.merchant||d.comment)+'" oninput="editAiDraft('+i+',\'comment\',this.value)"></div>'
+      +'</div>'
+      +'</div>';
+  });
+  html+='<div style="display:flex;gap:8px">'
+    +'<button class="btn btn-secondary btn-sm" style="flex:1;justify-content:center" onclick="bankAiDraft=null;renderTab(\'bank\')">Отмена</button>'
+    +'<button class="btn btn-primary btn-sm" style="flex:2;justify-content:center" onclick="commitAiDraft()">Сохранить '+bankAiDraft.length+' оп.</button>'
+    +'</div></div>';
+  return html;
+}
+function bankCatsFor(type){
+  if(type==='income')return INCOME_CATS;
+  if(type==='transfer')return TRANSFER_CATS;
+  return EXPENSE_CATS;
+}
+function editAiDraft(i,field,val){
+  if(!bankAiDraft||!bankAiDraft[i])return;
+  bankAiDraft[i][field]=(field==='amount')?(parseFloat(val)||0):val;
+}
+function dropAiDraft(i){
+  bankAiDraft.splice(i,1);
+  if(!bankAiDraft.length)bankAiDraft=null;
+  renderTab('bank');
+}
+
+async function parseFinanceWithAI(){
+  var text=document.getElementById('fin-ai-input').value.trim();
+  if(!text){toast('Опишите операцию');return;}
+  var accs=bankAccounts();
+  var btn=document.getElementById('fin-ai-btn');
+  btn.disabled=true;btn.textContent='Анализирую...';
+  var prompt='Ты финансовый ассистент мастерской мягких игрушек «Марковка». Сегодня '+todayISO()+'.\n'
+    +'Извлеки из текста ВСЕ денежные операции и верни ТОЛЬКО JSON-массив без пояснений и без markdown.\n'
+    +'Формат элемента:\n'
+    +'{\n'
+    +'  "type": "income" | "expense" | "transfer",\n'
+    +'  "amount": число (только положительное),\n'
+    +'  "date": "YYYY-MM-DD" (если не указана — сегодня; «вчера»/«позавчера» посчитай от сегодняшней даты),\n'
+    +'  "account": "название счёта откуда/куда идут деньги — строго одно из: '+accs.map(function(a){return a.name;}).join(' | ')+'",\n'
+    +'  "toAccount": "только для type=transfer — счёт-получатель из того же списка, иначе пустая строка",\n'
+    +'  "category": "строго одно значение из списка ниже",\n'
+    +'  "direction": "toys" или "mk",\n'
+    +'  "merchant": "у кого купили / от кого пришло, свободный текст, или пустая строка",\n'
+    +'  "orderNum": "номер заказа вида М-015, если упомянут, иначе пустая строка"\n'
+    +'}\n'
+    +'Категории для income: '+INCOME_CATS.join(' | ')+'\n'
+    +'Категории для expense: '+EXPENSE_CATS.join(' | ')+'\n'
+    +'Категории для transfer: '+TRANSFER_CATS.join(' | ')+'\n'
+    +'\nПРАВИЛА:\n'
+    +'1. Категорию БЕРИ ТОЛЬКО из списка. Ничего не выдумывай. Не подходит — ставь «Прочее» (или «Прочий доход»), а исходные слова положи в merchant.\n'
+    +'2. Различай счёт и продавца: «с озон», «с озон банка», «озоном» = счёт «Озон Банк». «с Озона», «на Озоне», «заказала на озоне» = маркетплейс Ozon, это merchant, а счёт определи из остального текста (по умолчанию «Озон Банк»).\n'
+    +'3. direction="mk" ставь ТОЛЬКО если речь о мастер-классе (МК, мастер-класс, обучение, ученица, набор для МК). Во всех остальных случаях "toys".\n'
+    +'4. Наполнитель, холлофайбер, гранулят, пеллетс — категория «Гранулят». Мех, ткань, фурнитура, глазки, нитки — «Материалы».\n'
+    +'5. Перевод на вклад / отложили / накопления = type "transfer", category «Пополнение вклада», toAccount «Вклад Сбербанк». Это НЕ расход.\n'
+    +'6. Выплата Свете = «ЗП Света», Даше = «ЗП Даша», Александре = «ЗП Александра», Насте за одежду = «Одежда (Настя)».\n'
+    +'7. Если операций несколько — верни несколько элементов массива.\n'
+    +'\nТекст:\n'+text;
+  try{
+    var r=await fetch(OPENROUTER_PROXY,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'google/gemini-2.5-flash',max_tokens:1500,messages:[{role:'user',content:prompt}]})
+    });
+    if(!r.ok){var e1=await r.json();throw new Error('HTTP '+r.status+': '+(e1.error&&e1.error.message||''));}
+    var data=await r.json();
+    var raw=data.choices[0].message.content.trim().replace(/```json|```/g,'').trim();
+    var parsed=JSON.parse(raw);
+    if(!Array.isArray(parsed))parsed=[parsed];
+    var findAcc=function(name){
+      if(!name)return accs[0]&&accs[0].id;
+      var n=String(name).toLowerCase();
+      var hit=accs.find(function(a){return a.name.toLowerCase()===n;})
+           ||accs.find(function(a){return a.name.toLowerCase().indexOf(n)>=0||n.indexOf(a.name.toLowerCase())>=0;});
+      return hit?hit.id:(accs[0]&&accs[0].id);
+    };
+    bankAiDraft=parsed.map(function(p){
+      var type=(p.type==='income'||p.type==='transfer')?p.type:'expense';
+      var cats=bankCatsFor(type);
+      var ord=p.orderNum?orders.find(function(o){return o.num===p.orderNum;}):null;
+      return {
+        type:type,
+        amount:Math.abs(parseFloat(p.amount)||0),
+        date:/^\d{4}-\d{2}-\d{2}$/.test(p.date||'')?p.date:todayISO(),
+        accountId:findAcc(p.account),
+        toAccountId:type==='transfer'?findAcc(p.toAccount):'',
+        category:cats.indexOf(p.category)>=0?p.category:cats[cats.length-1],
+        direction:p.direction==='mk'?'mk':'toys',
+        merchant:p.merchant||'',
+        comment:p.merchant||'',
+        orderId:ord?ord.id:''
+      };
+    }).filter(function(d){return d.amount>0;});
+    if(!bankAiDraft.length){bankAiDraft=null;toast('Не удалось распознать сумму');}
+    else{document.getElementById('fin-ai-input').value='';toast('✅ Распознано операций: '+bankAiDraft.length);}
+    renderTab('bank');
+  }catch(e){
+    toast('⚠️ Ошибка: '+e.message);
+    console.error('Finance AI error:',e);
+    btn.disabled=false;btn.textContent='✨ Распознать';
+  }
+}
+
+async function commitAiDraft(){
+  if(!bankAiDraft||!bankAiDraft.length)return;
+  var now=Date.now();
+  var recs=bankAiDraft.map(function(d,i){
+    return {
+      id:uid(),kind:'tx',date:d.date,type:d.type,amount:d.amount,
+      accountId:d.accountId,toAccountId:d.toAccountId||'',
+      category:d.category,merchant:d.merchant||'',comment:d.comment||'',
+      direction:d.type==='transfer'?'toys':(d.direction||'toys'),
+      orderId:d.orderId||'',author:bankAuthor(),source:'ai',created:now+i
+    };
+  });
+  var n=recs.length;
+  bankAiDraft=null;
+  var ok=await saveFinance(finance.concat(recs));
+  renderTab('bank');
+  if(ok)toast('✅ Добавлено операций: '+n);
+}
+
+// ═══ РУЧНАЯ ФОРМА ═══
+function openTxForm(txId,presetType){
+  var accs=bankAccounts();
+  if(!accs.length){toast('Сначала создайте счета');return;}
+  var t=txId?finance.find(function(x){return x.id===txId;}):null;
+  var isNew=!t;
+  var d=t||{type:presetType||'expense',date:todayISO(),amount:'',accountId:accs[0].id,toAccountId:(accs[1]||accs[0]).id,category:'',direction:'toys',comment:'',merchant:'',orderId:''};
+  var el=document.createElement('div');
+  el.id='tx-modal';
+  el.style.cssText='position:fixed;inset:0;background:rgba(60,48,32,.5);z-index:300;display:flex;align-items:flex-end;justify-content:center;overflow-y:auto';
+  el.innerHTML='<div style="background:var(--card);border-radius:20px 20px 0 0;padding:20px;width:100%;max-width:480px;max-height:92vh;overflow-y:auto">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
+      +'<div style="font-family:\'Playfair Display\',serif;font-style:italic;font-size:17px;color:var(--accent)">'+(isNew?'Новая операция':'Операция')+'</div>'
+      +'<button onclick="closeTxModal()" style="background:none;border:none;color:var(--text3);font-size:24px;line-height:1;cursor:pointer">×</button>'
+    +'</div>'
+    +'<div class="filters" id="tx-type-row">'
+      +[['expense','Расход'],['income','Доход'],['transfer','Перевод']].map(function(x){
+        return '<button class="chip '+(d.type===x[0]?'active':'')+'" onclick="txSetType(\''+x[0]+'\')">'+x[1]+'</button>';
+      }).join('')
+    +'</div>'
+    +'<input type="hidden" id="tx-id" value="'+(t?t.id:'')+'">'
+    +'<input type="hidden" id="tx-type" value="'+d.type+'">'
+    +'<div id="tx-fields"></div>'
+    +'<div style="display:flex;gap:8px;margin-top:6px">'
+      +(isNew?'':'<button class="btn btn-danger btn-sm" onclick="deleteTx(\''+t.id+'\')">Удалить</button>')
+      +'<button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="saveTx()">Сохранить</button>'
+    +'</div>'
+    +'</div>';
+  document.body.appendChild(el);
+  el.addEventListener('click',function(e){if(e.target===el)closeTxModal();});
+  window._txDraft=JSON.parse(JSON.stringify(d));
+  renderTxFields();
+}
+function closeTxModal(){var m=document.getElementById('tx-modal');if(m)m.remove();window._txDraft=null;}
+function txSetType(tp){
+  window._txDraft.type=tp;
+  window._txDraft.category='';
+  document.getElementById('tx-type').value=tp;
+  var row=document.getElementById('tx-type-row');
+  [['expense','Расход'],['income','Доход'],['transfer','Перевод']].forEach(function(x,i){
+    row.children[i].className='chip '+(tp===x[0]?'active':'');
+  });
+  renderTxFields();
+}
+function renderTxFields(){
+  var d=window._txDraft,accs=bankAccounts(),isTr=d.type==='transfer';
+  var cats=bankCatsFor(d.type);
+  var openOrders=orders.filter(function(o){return o.status!=='archived';}).slice(0,80);
+  document.getElementById('tx-fields').innerHTML='<div class="form-grid">'
+    +'<div class="fg"><label>Сумма (₽)</label><input id="tx-amount" type="number" value="'+(d.amount||'')+'" placeholder="4500"></div>'
+    +'<div class="fg"><label>Дата</label><input id="tx-date" type="date" value="'+(d.date||todayISO())+'"></div>'
+    +'<div class="fg"><label>'+(isTr?'Откуда':'Счёт')+'</label><select id="tx-acc">'+accs.map(function(a){return '<option value="'+a.id+'"'+(d.accountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
+    +(isTr
+      ?'<div class="fg"><label>Куда</label><select id="tx-acc2">'+accs.map(function(a){return '<option value="'+a.id+'"'+(d.toAccountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
+      :'<div class="fg"><label>Направление</label><select id="tx-dir">'+BANK_DIRS.map(function(x){return '<option value="'+x.id+'"'+((d.direction||'toys')===x.id?' selected':'')+'>'+x.label+'</option>';}).join('')+'</select></div>')
+    +'<div class="fg span2"><label>Категория</label><select id="tx-cat">'+cats.map(function(c){return '<option'+(d.category===c?' selected':'')+'>'+c+'</option>';}).join('')+'</select></div>'
+    +(isTr?'':'<div class="fg span2"><label>Заказ (необязательно)</label><select id="tx-order"><option value="">— не привязан —</option>'+openOrders.map(function(o){return '<option value="'+o.id+'"'+(d.orderId===o.id?' selected':'')+'>'+o.num+' · '+o.client+'</option>';}).join('')+'</select></div>')
+    +'<div class="fg span2"><label>Комментарий</label><input id="tx-comment" value="'+esc(d.comment)+'" placeholder="У кого купили, за что..."></div>'
+    +'</div>';
+}
+function saveTx(){
+  var v=function(id){var e=document.getElementById(id);return e?e.value:'';};
+  var type=v('tx-type');
+  var amount=Math.abs(parseFloat(v('tx-amount'))||0);
+  if(!amount){toast('Укажите сумму');return;}
+  var accId=v('tx-acc');
+  var toAcc=type==='transfer'?v('tx-acc2'):'';
+  if(type==='transfer'&&accId===toAcc){toast('Счета перевода совпадают');return;}
+  var id=v('tx-id');
+  var rec={
+    id:id||uid(),kind:'tx',date:v('tx-date')||todayISO(),type:type,amount:amount,
+    accountId:accId,toAccountId:toAcc,
+    category:v('tx-cat')||'Прочее',
+    merchant:'',comment:v('tx-comment'),
+    direction:type==='transfer'?'toys':(v('tx-dir')||'toys'),
+    orderId:type==='transfer'?'':v('tx-order'),
+    author:bankAuthor(),source:'manual',created:Date.now()
+  };
+  var next;
+  if(id){
+    var old=finance.find(function(x){return x.id===id;});
+    if(old){rec.created=old.created;rec.author=old.author;rec.source=old.source;}
+    next=finance.map(function(x){return x.id===id?rec:x;});
+  }else{
+    next=finance.concat([rec]);
+  }
+  closeTxModal();
+  saveFinance(next).then(function(ok){renderTab('bank');if(ok)toast(id?'Операция изменена':'Операция добавлена ✓');});
+}
+async function deleteTx(id){
+  if(!confirm('Удалить операцию? Балансы пересчитаются.'))return;
+  closeTxModal();
+  var ok=await saveFinance(finance.filter(function(x){return x.id!==id;}));
+  renderTab('bank');
+  if(ok)toast('Операция удалена');
+}
+
+// ═══ НАСТРОЙКИ СЧЁТА ═══
+function openAccountEdit(id){
+  var a=accById(id);
+  if(!a)return;
+  var el=document.createElement('div');
+  el.id='acc-modal';
+  el.style.cssText='position:fixed;inset:0;background:rgba(60,48,32,.5);z-index:300;display:flex;align-items:flex-end;justify-content:center';
+  el.innerHTML='<div style="background:var(--card);border-radius:20px 20px 0 0;padding:20px;width:100%;max-width:480px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+      +'<div style="font-family:\'Playfair Display\',serif;font-style:italic;font-size:17px;color:var(--accent)">'+a.name+'</div>'
+      +'<button onclick="closeAccModal()" style="background:none;border:none;color:var(--text3);font-size:24px;line-height:1;cursor:pointer">×</button>'
+    +'</div>'
+    +'<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Текущий баланс: <b style="color:var(--accent)">'+fmt(accBalance(a.id))+'</b></div>'
+    +'<div class="form-grid">'
+      +'<div class="fg span2"><label>Название</label><input id="acc-name" value="'+esc(a.name)+'"></div>'
+      +'<div class="fg"><label>Начальный остаток (₽)</label><input id="acc-start" type="number" value="'+(a.startBalance||0)+'"></div>'
+      +'<div class="fg"><label>На дату</label><input id="acc-date" type="date" value="'+(a.startDate||todayISO())+'"></div>'
+      +'<div class="fg span2"><label>Тип счёта</label><select id="acc-type">'
+        +'<option value="bank"'+(a.type==='bank'?' selected':'')+'>Расчётный — входит в «доступно к трате»</option>'
+        +'<option value="savings"'+(a.type==='savings'?' selected':'')+'>Накопительный — в котле, но тратить нельзя</option>'
+      +'</select></div>'
+    +'</div>'
+    +'<div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:12px">Начальный остаток — сколько было на счету на указанную дату. Все операции считаются поверх него.</div>'
+    +'<div style="display:flex;gap:8px">'
+      +'<button class="btn btn-danger btn-sm" onclick="archiveAccount(\''+a.id+'\')">Скрыть счёт</button>'
+      +'<button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="saveAccount(\''+a.id+'\')">Сохранить</button>'
+    +'</div>'
+    +'</div>';
+  document.body.appendChild(el);
+  el.addEventListener('click',function(e){if(e.target===el)closeAccModal();});
+}
+function closeAccModal(){var m=document.getElementById('acc-modal');if(m)m.remove();}
+async function saveAccount(id){
+  var v=function(x){var e=document.getElementById(x);return e?e.value:'';};
+  var name=v('acc-name').trim();
+  if(!name){toast('Укажите название');return;}
+  var next=finance.map(function(r){
+    if(r.id!==id)return r;
+    return Object.assign({},r,{name:name,startBalance:parseFloat(v('acc-start'))||0,startDate:v('acc-date')||todayISO(),type:v('acc-type')});
+  });
+  closeAccModal();
+  var ok=await saveFinance(next);
+  renderTab('bank');
+  if(ok)toast('Счёт сохранён ✓');
+}
+async function archiveAccount(id){
+  var n=bankTxAll().filter(function(t){return t.accountId===id||t.toAccountId===id;}).length;
+  if(!confirm('Скрыть счёт из списка?'+(n?'\nПо нему уже есть операций: '+n+'. Они останутся в базе, но пропадут из балансов.':'')))return;
+  var next=finance.map(function(r){return r.id===id?Object.assign({},r,{archived:true}):r;});
+  closeAccModal();
+  var ok=await saveFinance(next);
+  renderTab('bank');
+  if(ok)toast('Счёт скрыт');
+}
+
+// ═══ ПОЛУАВТОМАТ: оплата в заказе → доход в банке ═══
+// Никогда не создаём операцию молча. При росте оплаты по заказу предлагаем
+// внести доход и спрашиваем счёт — подтверждает человек.
+function offerOrderIncome(order,delta){
+  if(!canSeeBank()||!financeTableOk||delta<=0)return;
+  var accs=bankAccounts();
+  if(!accs.length)return;
+  var already=bankTxAll().filter(function(t){return t.orderId===order.id&&t.type==='income';})
+    .reduce(function(s,t){return s+(parseFloat(t.amount)||0);},0);
+  var el=document.createElement('div');
+  el.id='oi-modal';
+  el.style.cssText='position:fixed;inset:0;background:rgba(60,48,32,.5);z-index:320;display:flex;align-items:flex-end;justify-content:center';
+  el.innerHTML='<div style="background:var(--card);border-radius:20px 20px 0 0;padding:20px;width:100%;max-width:480px">'
+    +'<div style="font-family:\'Playfair Display\',serif;font-style:italic;font-size:17px;color:var(--accent);margin-bottom:4px">Внести деньги в банк?</div>'
+    +'<div style="font-size:12px;color:var(--text3);margin-bottom:14px">По заказу '+order.num+' оплата выросла на <b style="color:var(--green)">'+fmt(delta)+'</b>.'
+      +(already>0?'<br>Ранее по этому заказу уже проведено '+fmt(already)+'.':'')+'</div>'
+    +'<div class="form-grid">'
+      +'<div class="fg"><label>Сумма (₽)</label><input id="oi-amount" type="number" value="'+Math.round(delta)+'"></div>'
+      +'<div class="fg"><label>Дата</label><input id="oi-date" type="date" value="'+todayISO()+'"></div>'
+      +'<div class="fg span2"><label>На какой счёт пришли</label><select id="oi-acc">'+accs.filter(function(a){return a.type!=='savings';}).map(function(a){return '<option value="'+a.id+'">'+a.name+'</option>';}).join('')+'</select></div>'
+      +'<div class="fg span2"><label>Категория</label><select id="oi-cat">'
+        +'<option>Предоплата заказа</option><option'+(already>0?' selected':'')+'>Доплата заказа</option>'
+      +'</select></div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px">'
+      +'<button class="btn btn-secondary btn-sm" style="flex:1;justify-content:center" onclick="closeOiModal()">Не сейчас</button>'
+      +'<button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="confirmOrderIncome(\''+order.id+'\')">Внести</button>'
+    +'</div>'
+    +'</div>';
+  document.body.appendChild(el);
+  el.addEventListener('click',function(e){if(e.target===el)closeOiModal();});
+}
+function closeOiModal(){var m=document.getElementById('oi-modal');if(m)m.remove();}
+async function confirmOrderIncome(orderId){
+  var v=function(x){var e=document.getElementById(x);return e?e.value:'';};
+  var amount=Math.abs(parseFloat(v('oi-amount'))||0);
+  if(!amount){toast('Укажите сумму');return;}
+  var rec={
+    id:uid(),kind:'tx',date:v('oi-date')||todayISO(),type:'income',amount:amount,
+    accountId:v('oi-acc'),toAccountId:'',category:v('oi-cat')||'Предоплата заказа',
+    merchant:'',comment:'',direction:'toys',orderId:orderId,
+    author:bankAuthor(),source:'order',created:Date.now()
+  };
+  closeOiModal();
+  var ok=await saveFinance(finance.concat([rec]));
+  if(ok)toast('Доход '+fmt(amount)+' внесён в банк ✓');
+}
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
 
