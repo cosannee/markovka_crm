@@ -250,7 +250,11 @@ const STATUSES={
   archived:{label:'Архив',cls:'b-gray'},
 };
 // Статусы для выплат мастеру (единый источник правды)
-const PAY_ADV_STATUSES=['new','nextweek','work'];              // аванс можно выплатить, пока заказ в процессе
+const PAY_ADV_STATUSES=['new','nextweek','work'];              // аванс в принципе возможен, пока заказ в процессе
+// Аванс выплачивается по заказам, взятым в работу на следующую неделю.
+// Остальные «в процессе» показываются отдельным списком, чтобы не потерялись,
+// но в сводку и в кнопки массовой выплаты не входят.
+const ADV_PAY_STATUS='nextweek';
 const PAY_POST_STATUSES=['ready','planned','sent','done'];     // доплата — готов и далее (включая «Отправлен»)
 const SOURCES={
   waiting:{label:'Лист ожидания',cls:'b-wait'},
@@ -2491,7 +2495,7 @@ function tplPayments(){
     var advSum=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0);
     var postSum=needPost.reduce(function(s,o){return s+remainingPay(o);},0);
     var grandTotal=advSum+postSum;
-    var hasAny=grandTotal>0||advDone.length||allDone.length;
+    var hasAny=grandTotal>0||advDone.length||allDone.length||advLaterFor(m).length;
     var pct=advPctLbl(m);
 
     // Заголовок мастера — когда мастер в выплатах один, лишний разделитель не нужен
@@ -2506,7 +2510,7 @@ function tplPayments(){
 
     if(grandTotal>0){
       html+='<div class="card" style="margin-bottom:14px"><div style="padding:14px 16px">'
-        +(pct>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--text3)">Авансы · '+needAdv.length+'</span><span style="font-weight:700">'+fmt(advSum)+'</span></div>':'')
+        +(pct>0?'<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span style="color:var(--text3)">Авансы · '+STATUSES[ADV_PAY_STATUS].label+' · '+needAdv.length+'</span><span style="font-weight:700">'+fmt(advSum)+'</span></div>':'')
         +'<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;border-bottom:1px solid var(--border);margin-bottom:6px"><span style="color:var(--text3)">Готовые · '+needPost.length+'</span><span style="font-weight:700">'+fmt(postSum)+'</span></div>'
         +'<div style="display:flex;justify-content:space-between;font-size:14px;padding:4px 0 10px"><span style="font-weight:700">Итого</span><span style="font-weight:700;letter-spacing:-.4px;font-size:20px;color:var(--accent)">'+fmt(grandTotal)+'</span></div>'
         +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
@@ -2517,9 +2521,17 @@ function tplPayments(){
     }
 
     if(pct>0){
-      html+='<div class="section-lbl">Авансы (новые) — '+needAdv.length+'</div>';
-      if(!needAdv.length)html+='<div class="empty" style="padding:12px 0"><div style="font-size:20px">✓</div>Все авансы выплачены</div>';
+      html+='<div class="section-lbl">Авансы · '+STATUSES[ADV_PAY_STATUS].label+' — '+needAdv.length+'</div>';
+      if(!needAdv.length)html+='<div class="empty" style="padding:12px 0"><div style="font-size:20px">✓</div>Авансов к выплате нет</div>';
       else needAdv.forEach(function(o){html+=payRow(o,'advance');});
+      // Заказы, по которым аванс возможен, но неделя ещё не подошла
+      var later=advLaterFor(m);
+      if(later.length){
+        var laterSum=later.reduce(function(s2,o){return s2+calcAdvance(o);},0);
+        html+='<div class="section-lbl" style="margin-top:14px">Аванс позже · другие статусы — '+later.length+' · '+fmt(laterSum)+'</div>'
+          +'<div style="font-size:11px;color:var(--text3);margin:-4px 0 8px">Не входят в сводку и в кнопку «Только авансы». Выплатить можно по одному.</div>';
+        later.forEach(function(o){html+=payRow(o,'advance');});
+      }
     }
 
     html+='<div class="section-lbl" style="margin-top:16px">'+(pct>0?'Доплаты':'Выплаты')+' (готовы) — '+needPost.length+'</div>';
@@ -2656,7 +2668,10 @@ function markPayBtn(el){markPay(el.dataset.id,el.dataset.type);}
 function undoPayBtn(el){undoPay(el.dataset.id,el.dataset.type);}
 // Списки к выплате по конкретному мастеру.
 // Аванс попадает в список только если он у мастера вообще предусмотрен (advancePct>0).
-function advNeedFor(m){return orders.filter(function(o){return o.master===m&&PAY_ADV_STATUSES.indexOf(o.status)>=0&&!o.advancePaid&&calcAdvance(o)>0;});}
+// К выплате сейчас: только заказы со статусом «След. неделя»
+function advNeedFor(m){return orders.filter(function(o){return o.master===m&&o.status===ADV_PAY_STATUS&&!o.advancePaid&&calcAdvance(o)>0;});}
+// Аванс возможен, но неделя ещё не подошла — справочный список
+function advLaterFor(m){return orders.filter(function(o){return o.master===m&&o.status!==ADV_PAY_STATUS&&PAY_ADV_STATUSES.indexOf(o.status)>=0&&!o.advancePaid&&calcAdvance(o)>0;});}
 function postNeedFor(m){return orders.filter(function(o){return o.master===m&&PAY_POST_STATUSES.indexOf(o.status)>=0&&!o.postpayPaid;});}
 // Сообщение для телеграма после выплаты
 function buildPayoutMsg(p){
@@ -3262,7 +3277,7 @@ function unreadPaymentCount(){
   var key='payments_seen';
   var seen=0;try{seen=parseInt(localStorage.getItem(key))||0;}catch(e){}
   var payNames=payoutMasters().map(function(m){return m.name;});
-  var needAdv=orders.filter(function(o){return payNames.indexOf(o.master)>=0&&PAY_ADV_STATUSES.indexOf(o.status)>=0&&!o.advancePaid&&calcAdvance(o)>0&&(o.created||0)>seen;});
+  var needAdv=orders.filter(function(o){return payNames.indexOf(o.master)>=0&&o.status===ADV_PAY_STATUS&&!o.advancePaid&&calcAdvance(o)>0&&(o.created||0)>seen;});
   var needPost=orders.filter(function(o){return payNames.indexOf(o.master)>=0&&PAY_POST_STATUSES.indexOf(o.status)>=0&&!o.postpayPaid&&(o.created||0)>seen;});
   return needAdv.length+needPost.length;
 }
