@@ -1749,7 +1749,7 @@ function tplAdd(){
     +'<div id="items-container">'+itemBlockHtml({})+'</div>'
     +'<button type="button" class="btn btn-secondary btn-full" style="margin-bottom:14px" onclick="addItemBlock(\'items-container\')">+ Добавить игрушку</button>'
     // Флаги заказа
-    +'<label class="checkbox-row"><input type="checkbox" id="fur"> Срочный заказ</label>'
+    +'<label class="checkbox-row"><input type="checkbox" id="fur" onchange="previewMasterPay()"> Срочный заказ<span style="font-size:11px;color:var(--text3)"> · +'+Math.round(URGENT_PCT*100)+'% к ЗП мастера</span></label>'
     +'<label class="checkbox-row"><input type="checkbox" id="fsd"> Накладная СДЭК создана</label>'
     +'<div class="fg" style="margin-top:8px"><label>Комментарий к заказу</label><textarea id="fcm" placeholder="Особые пожелания..."></textarea></div>'
     +'<div id="master-pay-preview" style="display:none;background:var(--accent-bg);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:10px"></div>'
@@ -1772,7 +1772,8 @@ function previewMasterPay(){
   if(!items.length){prev.style.display='none';return;}
   var hasData=items.some(function(it){return it.weightG||it.price;});
   if(!hasData){prev.style.display='none';return;}
-  var tmpO={master:master,items:items};
+  var urgEl=document.getElementById('fur');
+  var tmpO={master:master,items:items,urgent:!!(urgEl&&urgEl.checked),closed:false};
   var total=calcMasterPay(tmpO);
   var adv=calcAdvance(tmpO);
   var post=calcPostpay(tmpO);
@@ -1781,10 +1782,10 @@ function previewMasterPay(){
   var head='<b>Сумма заказа:</b> '+fmt(price)+' · игрушек: '+items.length+'<br>';
   var apct=advPctLbl(master);
   if(apct>0){
-    prev.innerHTML=head+'<b>ЗП '+master+':</b> '+fmt(total)+'<br>'
+    prev.innerHTML=head+'<b>ЗП '+master+':</b> '+fmt(total)+urgentBonusLbl(tmpO)+'<br>'
       +'<span style="color:var(--text3)">Аванс ('+apct+'%): '+fmt(adv)+' · Доплата ('+(100-apct)+'%): '+fmt(post)+'</span>';
   }else{
-    prev.innerHTML=head+'<b>ЗП '+master+':</b> '+fmt(total)+'<br>'
+    prev.innerHTML=head+'<b>ЗП '+master+':</b> '+fmt(total)+urgentBonusLbl(tmpO)+'<br>'
       +'<span style="color:var(--text3)">Выплачивается раз в неделю</span>';
   }
 }
@@ -1906,6 +1907,21 @@ function closeModal(){
 const FIXED_COST = 700;           // фиксированные расходы на игрушку
 // Ставки материалов по мастерам переехали в MASTER_CFG (поле varRate)
 const SASHA_PCT = 0.20;           // % Александры
+// Надбавка мастеру за срочность: срочный заказ оплачивается на 50% дороже.
+// Правило, а не поле в заказе, — поэтому ничего не нужно проставлять руками.
+//
+// Действует на все незакрытые срочные заказы. Закрытые попадают под надбавку,
+// только если закрыты не раньше URGENT_FROM: так аналитика и финансы прошлых
+// недель остаются ровно такими, какими были, а текущая неделя пересчитывается.
+const URGENT_PCT = 0.5;
+const URGENT_FROM = Date.parse('2026-08-10T00:00:00');
+function urgentBonusPct(o){
+  if(!o||!o.urgent)return 0;
+  if(!isClosed(o))return URGENT_PCT;            // заказ ещё в работе — надбавка всегда
+  return closedDate(o)>=URGENT_FROM ? URGENT_PCT : 0;
+}
+function urgentBonusLbl(o){var p=urgentBonusPct(o);return p?' · срочный +'+Math.round(p*100)+'%':'';}
+
 const NASTYA_PER_TOY = 300;       // Настя (швея одежды на аутсорсе) — 300₽ с каждой игрушки Даши
 const TAX_PCT = 0;                // налог (0 = не учитываем)
 const DARYA_DIVIDEND_PCT = 0.05;  // дивиденды Дарьи как автора проекта — 5% от чистой прибыли
@@ -1924,13 +1940,14 @@ function calcCosts(o){
     ? o.varRate
     : masterCfg(o.master).varRate;
   var items = getItems(o);
-  var fixed=0, variable=0, master=0;
+  var fixed=0, variable=0;
   items.forEach(function(it){
     var cnt=parseInt(it.count)||1;
     fixed    += FIXED_COST * cnt;
     variable += (parseFloat(it.weightG)||0) * varPerG * cnt;
-    master   += calcItemMasterPay(it, o.master);
   });
+  // ЗП берём одной функцией, иначе надбавка за срочность прошла бы мимо себестоимости
+  var master = calcMasterPay(o);
   var materials = fixed + variable;
   var price = orderTotal(o);
   var sasha  = Math.round((price - materials) * SASHA_PCT);
@@ -2578,14 +2595,14 @@ function payRow(o,type){
   if(type==='advance'){
     var apct=advPctLbl(o.master);
     var pLbl=apct>0?('Доплата ('+(100-apct)+'%)'):'Выплата';
-    body='<div class="pay-row"><span style="color:var(--text3)">ЗП итого</span><span style="font-weight:700">'+fmt(total)+'</span></div>'
+    body='<div class="pay-row"><span style="color:var(--text3)">ЗП итого'+urgentBonusLbl(o)+'</span><span style="font-weight:700">'+fmt(total)+'</span></div>'
       +'<div class="pay-row"><span style="color:var(--text3)">Аванс ('+apct+'%)</span><span style="font-weight:700;color:var(--accent)">'+fmt(adv)+'</span></div>'
       +'<div class="pay-row"><span style="color:var(--text3)">'+pLbl+'</span><span style="font-weight:700;color:var(--text2)">'+fmt(post)+'</span></div>'
       +'<div style="margin-top:10px">'+btnAdv+'</div>';
   }else if(type==='postpay'){
     var rem=remainingPay(o);
     var btnPostFull='<button class="btn btn-sm btn-primary" data-id="'+oid+'" data-type="postpay" onclick="markPayBtn(this)">Выплатить '+fmt(rem)+'</button>';
-    body='<div class="pay-row"><span style="color:var(--text3)">ЗП итого</span><span style="font-weight:700">'+fmt(total)+'</span></div>'
+    body='<div class="pay-row"><span style="color:var(--text3)">ЗП итого'+urgentBonusLbl(o)+'</span><span style="font-weight:700">'+fmt(total)+'</span></div>'
       +(o.advancePaid
         ? '<div class="pay-row"><span style="color:var(--text3)">Аванс выплачен</span><span style="color:var(--green-ink)">'+fmt(adv)+' ✓</span></div>'
           +'<div class="pay-row"><span style="color:var(--text3)">Доплата ('+(100-advPctLbl(o.master))+'%)</span><span style="font-weight:700;color:var(--accent)">'+fmt(post)+'</span></div>'
@@ -2620,8 +2637,9 @@ function calcZpTable(weightG,embCount){
   return base+(parseInt(embCount)||0)*400;
 }
 function calcMasterPay(o){
-  // Сумма ЗП по всем игрушкам заказа
-  return getItems(o).reduce(function(s,it){return s+calcItemMasterPay(it,o.master);},0);
+  // Сумма ЗП по всем игрушкам заказа + надбавка за срочность
+  var base=getItems(o).reduce(function(s,it){return s+calcItemMasterPay(it,o.master);},0);
+  return Math.round(base*(1+urgentBonusPct(o)));
 }
 function calcAdvance(o){
   var pct=masterCfg(o.master).advancePct||0;
@@ -2937,7 +2955,7 @@ function tplSvetaFinance(){
       +'</div>'
       +'<div style="font-size:12px;color:var(--text3);margin-bottom:8px">'+orderToyLabel(o)+' · '+wInfo+' · '+moLbl(o.month)+'</div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:12px">'
-      +'<div><div style="color:var(--text3)">ЗП итого</div><div style="font-weight:700">'+fmt(total)+'</div></div>'
+      +'<div><div style="color:var(--text3)">ЗП итого'+urgentBonusLbl(o)+'</div><div style="font-weight:700">'+fmt(total)+'</div></div>'
       +'<div><div style="color:var(--text3)">Получено</div><div style="font-weight:700;color:var(--green-ink)">'+fmt((o.advancePaid?adv:0)+(o.postpayPaid?post:0))+'</div></div>'
       +'<div><div style="color:var(--text3)">Ожидается</div><div style="font-weight:700;color:var(--orange-ink)">'+fmt((!o.advancePaid?adv:0)+(!o.postpayPaid?post:0))+'</div></div>'
       +'</div></div>';
