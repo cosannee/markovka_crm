@@ -280,9 +280,12 @@ const CRAFT_STAGES=[
   {key:'assembled',  label:'Собран'},
   {key:'dressed',    label:'Одежда готова'},
 ];
-function effectiveCraftStage(o){return (o&&o.craftStage)||'cut';}
+// Пока мастер не отметил заказ раскроенным, o.craftStage не выставлен —
+// такой заказ остаётся в «План на неделю», даже если статус уже «В работе»
+// (например, после массового перевода из «След. неделя»).
+function effectiveCraftStage(o){return o&&o.craftStage;}
 // Колонки доски в порядке движения заказа слева направо
-const WEEK_COLUMNS=[{key:'nextweek',label:'План на неделю',match:function(o){return o.status==='nextweek';}}]
+const WEEK_COLUMNS=[{key:'nextweek',label:'План на неделю',match:function(o){return o.status==='nextweek'||(o.status==='work'&&!effectiveCraftStage(o));}}]
   .concat(CRAFT_STAGES.map(function(s){return {key:s.key,label:s.label,match:function(o){return o.status==='work'&&effectiveCraftStage(o)===s.key;}};}))
   .concat([{key:'ready',label:'Готов',match:function(o){return o.status==='ready';}}]);
 function weekColIndex(o){for(var i=0;i<WEEK_COLUMNS.length;i++){if(WEEK_COLUMNS[i].match(o))return i;}return -1;}
@@ -865,7 +868,9 @@ async function login(r,userName,userLabel,mName){
   document.getElementById('app').style.display='flex';
   document.getElementById('h-role-lbl').textContent=userLabel;
   document.getElementById('h-user-name').textContent=userName;
-  try{sessionStorage.setItem('markovka_role',JSON.stringify({role:r,name:userName,label:userLabel,masterName:mName}));}catch(e){}
+  // localStorage, а не sessionStorage: вход должен переживать полное закрытие
+  // браузера/приложения, а не только вкладку — чтобы пароль не спрашивали заново
+  try{localStorage.setItem('markovka_role',JSON.stringify({role:r,name:userName,label:userLabel,masterName:mName}));}catch(e){}
   realRole=r;isPreviewMode=false;
   document.getElementById('btn-switch-role').style.display=r==='manager'?'inline-flex':'none';
   document.getElementById('h-preview-badge').style.display='none';
@@ -903,7 +908,7 @@ async function login(r,userName,userLabel,mName){
 
 function logout(){
   clearInterval(syncTimer);role=null;masterName=null;
-  try{sessionStorage.removeItem('markovka_role');}catch(e){}
+  try{localStorage.removeItem('markovka_role');}catch(e){}
   document.getElementById('login').style.display='flex';
   document.getElementById('app').style.display='none';
   document.getElementById('login-sub').textContent='новорожденная игрушка';
@@ -1667,7 +1672,9 @@ async function moveNextWeekToWork(){
   if(!nwOrders.length){toast('Нет заказов «След. неделя»');return;}
   var nums=nwOrders.map(function(o){return o.num;}).join(', ');
   if(!confirm('Перевести в «В работе» '+nwOrders.length+' '+pluralZakaz(nwOrders.length)+'?\n\n'+nums+'\n\nЭто изменит статус всех перечисленных заказов.'))return;
-  nwOrders.forEach(function(o){o.status='work';o.craftStage='cut';});
+  // Статус меняется на «В работе», но craftStage не ставим: раскроя ещё не было —
+  // на доске заказ останется в «План на неделю», пока мастер не отметит сама
+  nwOrders.forEach(function(o){o.status='work';delete o.craftStage;});
   await saveOrders(orders);
   renderTab(tab);
   toast('Переведено в работу: '+nwOrders.map(function(o){return o.num;}).join(', '));
@@ -4499,8 +4506,8 @@ document.addEventListener('wheel',function(e){
 
 // Netlify version - password login only
 window.addEventListener('load',function(){
-  // Check if already logged in via sessionStorage
-  const saved=sessionStorage.getItem('markovka_role');
+  // Автовход: если раньше уже входили на этом устройстве — не спрашиваем пароль снова
+  const saved=localStorage.getItem('markovka_role');
   if(saved){
     try{
       const ui=JSON.parse(saved);
