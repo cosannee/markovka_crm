@@ -269,6 +269,39 @@ const STATUSES={
 // Статусы, доступные для выбора руками. «Архив» сюда не входит: архив — это
 // хранилище, а не этап работы; заказ убирается туда кнопкой «В архив».
 const PICKABLE_STATUSES=Object.keys(STATUSES).filter(function(k){return k!=='archived';});
+
+// ═══ «МОЯ НЕДЕЛЯ» — рабочая доска мастера ═══
+// Подстадии живут ВНУТРИ статуса «В работе» (o.craftStage) и не меняют сам
+// статус заказа — выплаты, СДЭК и фильтры в общем списке их не видят.
+// Заказ без сохранённой стадии считается «Раскроен» (первая стадия по умолчанию).
+const CRAFT_STAGES=[
+  {key:'cut',        label:'Раскроен'},
+  {key:'assembling', label:'В сборке'},
+  {key:'assembled',  label:'Собран'},
+  {key:'dressed',    label:'Одежда готова'},
+];
+function effectiveCraftStage(o){return (o&&o.craftStage)||'cut';}
+// Колонки доски в порядке движения заказа слева направо
+const WEEK_COLUMNS=[{key:'nextweek',label:'План на неделю',match:function(o){return o.status==='nextweek';}}]
+  .concat(CRAFT_STAGES.map(function(s){return {key:s.key,label:s.label,match:function(o){return o.status==='work'&&effectiveCraftStage(o)===s.key;}};}))
+  .concat([{key:'ready',label:'Готов',match:function(o){return o.status==='ready';}}]);
+function weekColIndex(o){for(var i=0;i<WEEK_COLUMNS.length;i++){if(WEEK_COLUMNS[i].match(o))return i;}return -1;}
+// Переместить заказ на доске на шаг вперёд/назад (dir=+1/-1)
+async function moveWeekCard(id,dir){
+  var o=orders.find(function(x){return x.id===id;});
+  if(!o)return;
+  var idx=weekColIndex(o);
+  if(idx<0)return;
+  var next=idx+dir;
+  if(next<0||next>=WEEK_COLUMNS.length)return;
+  var col=WEEK_COLUMNS[next].key;
+  if(col==='nextweek'){o.status='nextweek';delete o.craftStage;}
+  else if(col==='ready'){o.status='ready';delete o.craftStage;}
+  else{o.status='work';o.craftStage=col;}
+  weekCol=col;
+  renderTab(tab);
+  await saveOrders(orders);
+}
 // Статусы для выплат мастеру (единый источник правды)
 const PAY_ADV_STATUSES=['new','nextweek','work'];              // аванс в принципе возможен, пока заказ в процессе
 // Аванс выплачивается по заказам, взятым в работу на следующую неделю.
@@ -327,7 +360,7 @@ USERS.forEach(function(u){
   if(u.tgId)ROLE_MAP[u.tgId]=userEntry(u);
   if(u.pass)PASSWORDS[u.pass]=userEntry(u);
 });
-let role=null,masterName=null,tab='list',myTodos=[],fStatus='all',fMonth='all',fMaster='all',fUrgent=false,fSort='date',search='',calDate=new Date(),showArchive=false;
+let role=null,masterName=null,tab='list',myTodos=[],fStatus='all',fMonth='all',fMaster='all',fUrgent=false,fSort='date',search='',calDate=new Date(),showArchive=false,weekCol='nextweek';
 const VALID_SORTS=['date','date_asc','deadline','margin'];
 let expandedCards=new Set();
 let realRole=null,isPreviewMode=false;
@@ -967,10 +1000,11 @@ function renderTabs(){
     bank:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5L8 2.5l6 4"/><line x1="3.5" y1="7" x2="3.5" y2="12"/><line x1="8" y1="7" x2="8" y2="12"/><line x1="12.5" y1="7" x2="12.5" y2="12"/><line x1="2" y1="13.5" x2="14" y2="13.5"/></svg>',
     finance:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,7 9,10 14,4"/></svg>',
     todos:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8 6,11 13,4"/><circle cx="8" cy="8" r="6.5"/></svg>',
+    week:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2" width="4" height="12" rx="1"/><rect x="6" y="2" width="4" height="7.5" rx="1"/><rect x="10.5" y="2" width="4" height="10" rx="1"/></svg>',
     analytics:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="3" height="5" rx="1"/><rect x="6.5" y="5" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></svg>',
   };
   const all=role==='master'
-    ?[{id:'master',label:'Заказы'},{id:'cal-master',label:'Календарь'},{id:'finance',label:'Финансы'},{id:'todos',label:'Задачи'}]
+    ?[{id:'master',label:'Заказы'},{id:'week',label:'Моя неделя'},{id:'finance',label:'Финансы'},{id:'todos',label:'Задачи'}]
     :[
       {id:'list',label:'Заказы'},
       {id:'calendar',label:'Календарь'},
@@ -978,6 +1012,8 @@ function renderTabs(){
       // Банк доступен только Александре (manager) и Дарье (director) — Свете раздел не показывается
       ...(role==='manager'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       ...(role==='director'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
+      // У Даши, как и у мастеров, есть личная рабочая доска по её заказам (без ФИО/телефонов клиентов)
+      ...(role==='director'?[{id:'week',label:'Моя неделя'}]:[]),
       {id:'todos',label:'Задачи'},
     ];
   bar.innerHTML=all.map(function(t){
@@ -1027,6 +1063,7 @@ function renderTab(t){
   if(t==='list'){m.innerHTML=tplList();updateToTop();return;}
   else if(t==='calendar')m.innerHTML=tplCalendar(false);
   else if(t==='cal-master')m.innerHTML=tplCalendar(true);
+  else if(t==='week')m.innerHTML=tplMyWeek(role==='director'?DIRECTOR_MASTER:masterName);
   else if(t==='add')m.innerHTML=tplAdd();
   else if(t==='stats')m.innerHTML=tplStats();
   else if(t==='finance'&&(role==='manager'||role==='director'))m.innerHTML=tplStats();
@@ -1630,7 +1667,7 @@ async function moveNextWeekToWork(){
   if(!nwOrders.length){toast('Нет заказов «След. неделя»');return;}
   var nums=nwOrders.map(function(o){return o.num;}).join(', ');
   if(!confirm('Перевести в «В работе» '+nwOrders.length+' '+pluralZakaz(nwOrders.length)+'?\n\n'+nums+'\n\nЭто изменит статус всех перечисленных заказов.'))return;
-  nwOrders.forEach(function(o){o.status='work';});
+  nwOrders.forEach(function(o){o.status='work';o.craftStage='cut';});
   await saveOrders(orders);
   renderTab(tab);
   toast('Переведено в работу: '+nwOrders.map(function(o){return o.num;}).join(', '));
@@ -3326,6 +3363,59 @@ function todoItem(t){
     +'<button data-tid="'+t.id+'" onclick="deleteTodo(this.dataset.tid)" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;padding:0;line-height:1;flex-shrink:0">×</button>'
     +'</div>';
 }
+// ── «Моя неделя» — доска по стадиям пошива, без личных данных клиента ──
+// targetMaster: имя мастера, чью доску показываем (masterName для мастеров, DIRECTOR_MASTER для Даши)
+function tplMyWeek(targetMaster){
+  var board=orders.filter(function(o){return o.master===targetMaster&&weekColIndex(o)>=0;});
+  var html='';
+  // Сегмент-переключатель стадий со счётчиками — прокручивается вбок, без переноса строк
+  html+='<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:4px;-webkit-overflow-scrolling:touch">';
+  WEEK_COLUMNS.forEach(function(c){
+    var n=board.filter(c.match).length;
+    html+='<button class="chip'+(weekCol===c.key?' active':'')+'" style="flex:0 0 auto" data-wc="'+c.key+'" onclick="weekCol=this.dataset.wc;renderTab(\'week\')">'+c.label+(n?' ('+n+')':'')+'</button>';
+  });
+  html+='</div>';
+
+  var colIdx=WEEK_COLUMNS.findIndex(function(c){return c.key===weekCol;});
+  if(colIdx<0){colIdx=0;weekCol=WEEK_COLUMNS[0].key;}
+  var col=WEEK_COLUMNS[colIdx];
+  var list=board.filter(col.match).sort(function(a,b){return (a.deliveryDay||99)-(b.deliveryDay||99);});
+
+  if(!list.length){html+='<div class="empty">Здесь пока пусто</div>';return html;}
+
+  list.forEach(function(o){
+    var items=getItems(o);
+    var body='';
+    items.forEach(function(it,idx){
+      var gl=it.gender?({boy:'Мальчик',girl:'Девочка'}[it.gender]||it.gender):'';
+      body+='<div style="'+(idx?'margin-top:8px;':'')+'font-size:12px;font-weight:700;color:var(--accent)">'+(it.toyType||'Игрушка')+(((parseInt(it.count)||1)>1)?' ×'+it.count:'')+'</div>';
+      var line=[];
+      if(it.weightG)line.push(it.weightG+'г');
+      if(it.heightCm)line.push(it.heightCm+' см');
+      if(gl)line.push(gl);
+      if(line.length)body+='<div style="font-size:12px;color:var(--text3)">'+line.join(' · ')+'</div>';
+      body+='<div style="font-size:12px;color:var(--text3)">Вышивка: '+(it.embCount?('да ×'+it.embCount+(it.embText?' «'+it.embText+'»':'')):'нет')+'</div>';
+      if(it.clothes)body+='<div style="font-size:12px;color:var(--text3)">Одежда: '+it.clothes+'</div>';
+      if(it.comment)body+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-top:2px">'+it.comment+'</div>';
+    });
+    if(o.comment)body+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
+    html+='<div class="card '+(o.urgent?'urgent':'')+'" style="margin-bottom:10px">'
+      +'<div style="padding:12px 14px">'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
+      +'<span class="card-num">'+o.num+'</span>'
+      +(o.urgent?'<span class="badge b-urgent">Срочно</span>':'')
+      +(o.deliveryDay?'<span style="font-size:12px;color:var(--text3);margin-left:auto">сдать до '+o.deliveryDay+'-го</span>':'')
+      +'</div>'
+      +body
+      +'<div style="display:flex;gap:8px;margin-top:12px">'
+      +(colIdx>0?'<button class="btn btn-sm btn-secondary" style="flex:1;justify-content:center" data-oid="'+o.id+'" onclick="moveWeekCard(this.dataset.oid,-1)">← Назад</button>':'')
+      +(colIdx<WEEK_COLUMNS.length-1?'<button class="btn btn-sm btn-primary" style="flex:1;justify-content:center" data-oid="'+o.id+'" onclick="moveWeekCard(this.dataset.oid,1)">Дальше →</button>':'')
+      +'</div>'
+      +'</div></div>';
+  });
+  return html;
+}
+
 function tplMaster(){
   var myBase=masterName?orders.filter(function(o){return o.master===masterName;}):orders;
   var months=[...new Set(myBase.map(function(o){return o.month;}))].sort();
