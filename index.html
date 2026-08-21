@@ -48,23 +48,12 @@
   --pink:#C08CA0;--pink-ink:#8B5A6D;--pink-bg:#F7EFF2;--pink-tint:#C08CA022;
   --mint:#7BB5AC;--mint-ink:#41756C;--mint-bg:#ECF5F3;--mint-tint:#7BB5AC22;
   --gray:#A9ACB2;--gray-ink:#6E7177;--gray-bg:#F2F1EE;--gray-tint:#A9ACB222;
-  --sky:#B9C6DD;--sky-ink:#4F6A93;--sky-bg:#E8F0FA;
-  --powder:#DFB9C2;--powder-ink:#8F5F6B;--powder-bg:#FAEEF1;
+  --sky:#B9C6DD;
 
   --r:12px;--r2:18px;
   --sh:0 1px 2px rgba(44,46,51,.04),0 6px 18px rgba(44,46,51,.05);
   --sh2:0 2px 6px rgba(44,46,51,.05),0 16px 40px rgba(44,46,51,.08);
 }
-.archive-foot{display:block;width:100%;margin:24px 0 40px;padding:14px;border:1px solid var(--border2);border-radius:14px;background:var(--bg3);color:var(--text2);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
-.archive-foot:hover{color:var(--text1);background:var(--border)}
-.to-top{position:fixed;right:16px;bottom:22px;z-index:390;width:44px;height:44px;border:1px solid var(--border2);border-radius:50%;background:var(--card);color:var(--text2);font-size:20px;line-height:1;font-family:inherit;cursor:pointer;box-shadow:var(--sh2);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .18s}
-.to-top.show{opacity:1;pointer-events:auto}
-.to-top:hover{color:var(--text1)}
-body.has-save-bar .to-top{bottom:76px}
-.archive-back{display:inline-flex;align-items:center;gap:6px;margin-bottom:10px;padding:8px 16px;border:1px solid var(--border2);border-radius:20px;background:var(--bg3);color:var(--text2);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}
-.save-bar{position:fixed;left:0;right:0;bottom:0;z-index:400;display:flex;align-items:center;justify-content:center;gap:10px;padding:10px 14px;background:var(--red-bg);border-top:1px solid var(--red);box-shadow:0 -2px 12px rgba(44,46,51,.10)}
-.save-bar-txt{font-size:12px;font-weight:700;color:var(--red-ink)}
-.save-bar-btn{padding:6px 14px;border:none;border-radius:16px;background:var(--red-ink);color:#fff;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer}
 body{font-family:'Golos Text',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text1);font-size:14px;min-height:100vh;overflow-x:hidden}
 #login{min-height:92vh;display:flex;align-items:center;justify-content:center;background:var(--bg)}
 .login-wrap{width:100%;max-width:320px;padding:32px 24px}
@@ -226,7 +215,7 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}
       <span id="h-user-name" style="font-size:11px;color:var(--text2);font-weight:700"></span>
       <div class="h-role" id="h-role-lbl"></div>
       <div id="h-preview-badge" style="display:none;background:var(--red-bg);color:var(--red-ink);font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px"></div>
-      <button id="btn-switch-role" class="btn-icon" style="display:none;font-size:13px;padding:4px 8px;border-radius:8px" onclick="showRoleSwitcher()"></button>
+      <button id="btn-switch-role" class="btn-icon" style="display:none;font-size:13px;padding:4px 8px;border-radius:8px" onclick="showRoleSwitcher()">👁</button>
       <button class="btn-icon" onclick="logout()">✕</button>
     </div>
   </div>
@@ -234,21 +223,15 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}
   <div class="main" id="main"></div>
 </div>
 <div class="toast" id="toast"></div>
-<button class="to-top" id="to-top" title="Наверх" onclick="scrollTop()">↑</button>
 
 <script>
-// Ставка материалов по заказу, ₽/г.
-// Живые заказы всегда считаются по текущей ставке мастера из MASTER_CFG —
-// поэтому смена мастера и правка ставки сразу меняют себестоимость.
-// Замороженная ставка o.varRate применяется только к архивным заказам,
-// чтобы прошлые периоды в аналитике не пересчитывались задним числом.
-function orderVarRate(o){
-  if(o&&o.status==='archived'&&typeof o.varRate==='number'&&o.varRate>0)return o.varRate;
-  return masterCfg(o&&o.master).varRate;
-}
+const TOY_EMOJI={'Мишка':'🐻','Мышка':'🐭','Зайка':'🐰','Котик':'🐱'};
+function toyEmoji(type){return TOY_EMOJI[type]||'🧸';}
 function calcMatCost(o){
-  // Себестоимость = сумма по всем игрушкам заказа (ставка ₽/г берётся из MASTER_CFG.varRate)
-  return getItems(o).reduce(function(s,it){return s+calcItemMat(it,o.master,orderVarRate(o));},0);
+  // Себестоимость = сумма по всем игрушкам заказа (Даша 250 руб/кг, Света 400 руб/кг)
+  // Архивные заказы могут хранить свою ставку o.varRate (₽/г).
+  var rate=(typeof o.varRate==='number'&&o.varRate>0)?o.varRate:null;
+  return getItems(o).reduce(function(s,it){return s+calcItemMat(it,o.master,rate);},0);
 }
 function calcMargin(o){
   var price=orderTotal(o);
@@ -266,45 +249,6 @@ const STATUSES={
   done:{label:'Доставлен',cls:'b-done'},
   archived:{label:'Архив',cls:'b-gray'},
 };
-// Статусы, доступные для выбора руками. «Архив» сюда не входит: архив — это
-// хранилище, а не этап работы; заказ убирается туда кнопкой «В архив».
-const PICKABLE_STATUSES=Object.keys(STATUSES).filter(function(k){return k!=='archived';});
-
-// ═══ «МОЯ НЕДЕЛЯ» — рабочая доска мастера ═══
-// Подстадии живут ВНУТРИ статуса «В работе» (o.craftStage) и не меняют сам
-// статус заказа — выплаты, СДЭК и фильтры в общем списке их не видят.
-// Заказ без сохранённой стадии считается «Раскроен» (первая стадия по умолчанию).
-const CRAFT_STAGES=[
-  {key:'cut',        label:'Раскроен'},
-  {key:'assembling', label:'В сборке'},
-  {key:'assembled',  label:'Собран'},
-  {key:'dressed',    label:'Одежда готова'},
-];
-// Пока мастер не отметил заказ раскроенным, o.craftStage не выставлен —
-// такой заказ остаётся в «План на неделю», даже если статус уже «В работе»
-// (например, после массового перевода из «След. неделя»).
-function effectiveCraftStage(o){return o&&o.craftStage;}
-// Колонки доски в порядке движения заказа слева направо
-const WEEK_COLUMNS=[{key:'nextweek',label:'План на неделю',match:function(o){return o.status==='nextweek'||(o.status==='work'&&!effectiveCraftStage(o));}}]
-  .concat(CRAFT_STAGES.map(function(s){return {key:s.key,label:s.label,match:function(o){return o.status==='work'&&effectiveCraftStage(o)===s.key;}};}))
-  .concat([{key:'ready',label:'Готов',match:function(o){return o.status==='ready';}}]);
-function weekColIndex(o){for(var i=0;i<WEEK_COLUMNS.length;i++){if(WEEK_COLUMNS[i].match(o))return i;}return -1;}
-// Переместить заказ на доске на шаг вперёд/назад (dir=+1/-1)
-async function moveWeekCard(id,dir){
-  var o=orders.find(function(x){return x.id===id;});
-  if(!o)return;
-  var idx=weekColIndex(o);
-  if(idx<0)return;
-  var next=idx+dir;
-  if(next<0||next>=WEEK_COLUMNS.length)return;
-  var col=WEEK_COLUMNS[next].key;
-  if(col==='nextweek'){o.status='nextweek';delete o.craftStage;}
-  else if(col==='ready'){o.status='ready';delete o.craftStage;}
-  else{o.status='work';o.craftStage=col;}
-  weekCol=col;
-  renderTab(tab);
-  await saveOrders(orders);
-}
 // Статусы для выплат мастеру (единый источник правды)
 const PAY_ADV_STATUSES=['new','nextweek','work'];              // аванс в принципе возможен, пока заказ в процессе
 // Аванс выплачивается по заказам, взятым в работу на следующую неделю.
@@ -325,14 +269,14 @@ const SOURCES={
 //
 //   varRate    — себестоимость материалов, ₽ за грамм (0.40 = 400 ₽/кг)
 //   advancePct — доля аванса от ЗП (0.3 = аванс 30% + доплата 70%; 0 = разовая выплата)
-//   nastya     — начислять ли 350 ₽/игрушку за одежду на аутсорсе
+//   nastya     — начислять ли 300 ₽/игрушку за одежду на аутсорсе
 //   payouts    — показывать ли мастера во вкладке «Выплаты»
 //                (у Даши false — она руководитель и платит себе сама)
 //   tg         — ник для текста выплаты в телеграм
 const MASTER_CFG=[
   {name:'Даша',  varRate:0.25, advancePct:0,   nastya:true,  payouts:false, tg:'',             color:'#3967E8', ink:'#2755D9'},
   {name:'Света', varRate:0.40, advancePct:0.3, nastya:false, payouts:true,  tg:'@svetashevel', color:'#79C68A', ink:'#4F815A'},
-  {name:'Цветочек',varRate:0.19, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#E68DB1', ink:'#A1637C'},
+  {name:'Цветочек',varRate:0.40, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#E68DB1', ink:'#A1637C'},
 ];
 const MASTERS=MASTER_CFG.map(function(m){return m.name;});
 // Мастер, чьи заказы ведёт руководитель (её собственные накладные СДЭК)
@@ -363,7 +307,7 @@ USERS.forEach(function(u){
   if(u.tgId)ROLE_MAP[u.tgId]=userEntry(u);
   if(u.pass)PASSWORDS[u.pass]=userEntry(u);
 });
-let role=null,masterName=null,tab='list',myTodos=[],fStatus='all',fMonth='all',fMaster='all',fUrgent=false,fSort='date',search='',calDate=new Date(),showArchive=false,weekCol='nextweek';
+let role=null,masterName=null,tab='list',myTodos=[],fStatus='all',fMonth='all',fMaster='all',fUrgent=false,fSort='date',search='',calDate=new Date(),showArchive=false;
 const VALID_SORTS=['date','date_asc','deadline','margin'];
 let expandedCards=new Set();
 let realRole=null,isPreviewMode=false;
@@ -386,20 +330,6 @@ function sbHeaders(){return {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};}
 // Снимок последнего синхронизированного состояния (id -> JSON) для диффа при сохранении
 let _sbSnap={orders:{},tasks:{},finance:{}};
 function sbBuildSnap(arr){var m={};(arr||[]).forEach(function(it){if(it&&it.id)m[it.id]=JSON.stringify(it);});return m;}
-
-// ── Кнопка «наверх» ──
-// Появляется, когда список уехал вниз: с середины страницы возврат в один тап.
-function scrollTop(){window.scrollTo({top:0,behavior:'smooth'});}
-function updateToTop(){
-  var btn=document.getElementById('to-top');
-  if(!btn)return;
-  var y=window.pageYOffset||document.documentElement.scrollTop||0;
-  btn.classList.toggle('show',y>320);
-}
-if(typeof window!=='undefined'){
-  window.addEventListener('scroll',updateToTop,{passive:true});
-  window.addEventListener('resize',updateToTop,{passive:true});
-}
 
 // ── Параметры синхронизации ──
 const SYNC_INTERVAL=30000;   // интервал автосинхронизации, мс (30 сек)
@@ -490,10 +420,9 @@ async function saveData(ords,tsks,skipGuard,fins){
   // Иначе пустой/тестовый локальный набор может затереть реальные данные в JsonBin.
   if(!cloudLoadOk){
     console.warn('Запись в облако заблокирована: облако ещё не было загружено в этой сессии');
-    var blocked={orders:ords,tasks:tsks,finance:fins};
-    try{localStorage.setItem('markovka_data',JSON.stringify(blocked));}catch(e){}
-    markUnsaved(blocked,'нет связи с облаком');
-    return false;
+    try{localStorage.setItem('markovka_data',JSON.stringify({orders:ords,tasks:tsks}));}catch(e){}
+    toast('⚠️ Нет связи с облаком — изменения сохранены только локально');
+    return;
   }
   // СТРАЖ МАССОВОГО СТИРАНИЯ: лишний запрос-чтение делаем ТОЛЬКО когда заказов
   // становится меньше, чем мы знаем по облаку (реальный риск потери). При обычных
@@ -505,7 +434,7 @@ async function saveData(ords,tsks,skipGuard,fins){
       const newN=Array.isArray(ords)?ords.length:0;
       if(cloudN>=5 && newN<cloudN-1){
         const lost=cloudN-newN;
-        if(!confirm('ВНИМАНИЕ: в облаке '+cloudN+' заказов, а сохраняется '+newN+' (исчезает '+lost+').\n\nЭто похоже на случайную потерю данных. Сохранить ВСЁ РАВНО?')){
+        if(!confirm('⚠️ ВНИМАНИЕ: в облаке '+cloudN+' заказов, а сохраняется '+newN+' (исчезает '+lost+').\n\nЭто похоже на случайную потерю данных. Сохранить ВСЁ РАВНО?')){
           // Откатываем локальное состояние к облаку, чтобы не терять реальные данные
           cloud.sort(function(a,b){return (b.created||0)-(a.created||0);});
           orders=cloud;cloudOrderCount=orders.length;
@@ -513,7 +442,7 @@ async function saveData(ords,tsks,skipGuard,fins){
           try{localStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks}));}catch(e){}
           renderTabs();renderTab(tab);
           toast('Сохранение отменено — данные из облака восстановлены');
-          return false;
+          return;
         }
       }
     }catch(e){/* если страж не смог прочитать облако — не блокируем, чтобы не терять правки */}
@@ -523,118 +452,12 @@ async function saveData(ords,tsks,skipGuard,fins){
   // Локальная копия считается свежей сразу после сохранения — повторное чтение не требуется
   try{localStorage.setItem('markovka_data',JSON.stringify(payload));lastSyncTime=Date.now();}catch(e){}
   try{
-    await pushToCloud(payload);
-    markSaved();
-    return true;
-  }catch(e){
-    console.warn('save error',e);
-    markUnsaved(payload,e&&e.message?e.message:'ошибка сети');
-    return false;
-  }
-}
-// Запись всех таблиц в облако. Выбрасывает ошибку, если хоть одна не записалась —
-// вызывающий код обязан считать сохранение неуспешным.
-async function pushToCloud(payload){
-  console.log("Supabase sync");
-  await sbSyncTable('orders',payload.orders);
-  await sbSyncTable('tasks',payload.tasks);
-  if(financeTableOk&&payload.finance)await sbSyncTable('finance',payload.finance);
-  if(Array.isArray(payload.orders))cloudOrderCount=payload.orders.length;
-}
-
-// ═══ НАДЁЖНОЕ СОХРАНЕНИЕ ═══
-// Любое сохранение либо доходит до облака, либо остаётся видимой «несохранённой»
-// правкой: она лежит в localStorage, повторяется автоматически, показывается
-// плашкой сверху и переживает перезагрузку страницы.
-var saveState={pending:false,busy:false,attempt:0,timer:null,reason:''};
-const UNSAVED_KEY='markovka_unsaved';
-const RETRY_STEPS=[5000,15000,30000,60000];
-function readUnsaved(){
-  try{var d=localStorage.getItem(UNSAVED_KEY);return d?JSON.parse(d):null;}catch(e){return null;}
-}
-function markUnsaved(payload,reason){
-  try{localStorage.setItem(UNSAVED_KEY,JSON.stringify({ts:Date.now(),payload:payload}));}catch(e){}
-  saveState.pending=true;
-  saveState.reason=reason||'';
-  renderSaveBar();
-  scheduleRetry();
-}
-function markSaved(){
-  try{localStorage.removeItem(UNSAVED_KEY);}catch(e){}
-  saveState.pending=false;saveState.attempt=0;saveState.reason='';
-  if(saveState.timer){clearTimeout(saveState.timer);saveState.timer=null;}
-  renderSaveBar();
-}
-function scheduleRetry(){
-  if(saveState.timer)return;
-  var wait=RETRY_STEPS[Math.min(saveState.attempt,RETRY_STEPS.length-1)];
-  saveState.timer=setTimeout(function(){saveState.timer=null;retrySave(false);},wait);
-}
-// Повторная отправка отложенных изменений. manual=true — нажата кнопка «Сохранить сейчас».
-async function retrySave(manual){
-  if(saveState.busy)return false;
-  var st=readUnsaved();
-  if(!st||!st.payload){markSaved();return true;}
-  saveState.busy=true;renderSaveBar();
-  try{
-    // Облако могли ни разу не прочитать (первый запуск без сети) — читаем перед записью
-    if(!cloudLoadOk){
-      var fresh=await loadData(true);
-      if(!cloudLoadOk)throw new Error('облако недоступно');
-      if(fresh){/* снимок обновлён внутри loadData */}
-    }
-    await pushToCloud(st.payload);
-    markSaved();
-    if(manual)toast('Сохранено в облаке');
-    return true;
-  }catch(e){
-    saveState.attempt++;
-    saveState.reason=e&&e.message?e.message:'ошибка сети';
-    if(manual)toast('Пока не получается сохранить — попробуем ещё раз');
-    renderSaveBar();
-    scheduleRetry();
-    return false;
-  }finally{
-    saveState.busy=false;renderSaveBar();
-  }
-}
-// Плашка «есть несохранённые изменения» — висит сверху, пока данные не уедут в облако
-function renderSaveBar(){
-  var el=document.getElementById('save-bar');
-  if(!saveState.pending){if(el)el.remove();document.body.classList.remove('has-save-bar');return;}
-  document.body.classList.add('has-save-bar');
-  if(!el){
-    el=document.createElement('div');
-    el.id='save-bar';
-    el.className='save-bar';
-    document.body.appendChild(el);
-  }
-  var st=readUnsaved();
-  var when=st?new Date(st.ts).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):'';
-  el.innerHTML='<span class="save-bar-txt">'
-    +(saveState.busy?'Сохраняем…':'Изменения не сохранены'+(when?' (с '+when+')':''))
-    +'</span>'
-    +(saveState.busy?'':'<button class="save-bar-btn" onclick="retrySave(true)">Сохранить сейчас</button>');
-}
-// Восстановление после перезагрузки: если остались неотправленные правки — досылаем
-function resumeUnsaved(){
-  var st=readUnsaved();
-  if(!st||!st.payload)return;
-  saveState.pending=true;
-  saveState.reason='после перезагрузки';
-  renderSaveBar();
-  retrySave(false);
-}
-// Досылаем при возврате связи и при возвращении на вкладку
-if(typeof window!=='undefined'){
-  window.addEventListener('online',function(){if(saveState.pending)retrySave(false);});
-  document.addEventListener('visibilitychange',function(){
-    if(document.visibilityState==='visible'&&saveState.pending)retrySave(false);
-  });
-  window.addEventListener('beforeunload',function(e){
-    if(!saveState.pending)return;
-    e.preventDefault();e.returnValue='';
-  });
+    console.log("Supabase sync");
+    await sbSyncTable('orders',ords);
+    await sbSyncTable('tasks',tsks);
+    if(financeTableOk)await sbSyncTable('finance',fins);
+    cloudOrderCount=Array.isArray(ords)?ords.length:cloudOrderCount;  // облако теперь содержит столько заказов
+  }catch(e){console.warn('save error',e);toast('⚠️ Не удалось сохранить в облако');}
 }
 // Дифф-синхронизация одной таблицы: пишем только изменённые/новые строки и удаляем исчезнувшие.
 // Благодаря этому правки разных людей по разным заказам не затирают друг друга.
@@ -667,11 +490,11 @@ async function sbSyncTable(table,arr){
   }
   _sbSnap[table]=cur;
 }
-async function saveOrders(ords){orders=ords;return await saveData(ords,tasks);}
-async function saveTasks(tsks){tasks=tsks;return await saveData(orders,tsks);}
+async function saveOrders(ords){orders=ords;await saveData(ords,tasks);}
+async function saveTasks(tsks){tasks=tsks;await saveData(orders,tsks);}
 async function saveFinance(fins){
   if(!financeTableOk){
-    toast('Таблица finance не создана в Supabase — см. инструкцию');
+    toast('⚠️ Таблица finance не создана в Supabase — см. инструкцию');
     return false;
   }
   finance=fins;
@@ -703,7 +526,7 @@ async function migrateFromJsonBin(){
     };
     await upsert('orders',o);
     await upsert('tasks',t);
-    alert('Миграция завершена: '+o.length+' заказов, '+t.length+' задач перенесены в Supabase.');
+    alert('✅ Миграция завершена: '+o.length+' заказов, '+t.length+' задач перенесены в Supabase.');
     location.reload();
   }catch(e){alert('Ошибка миграции: '+e.message);console.error(e);}
 }
@@ -747,22 +570,6 @@ function orderTotal(o){return getItems(o).reduce(function(s,it){return s+(parseF
 function orderWeight(o){return getItems(o).reduce(function(s,it){return s+(parseFloat(it.weightG)||0)*(parseInt(it.count)||1);},0);}
 function orderEmbCount(o){return getItems(o).reduce(function(s,it){return s+(parseInt(it.embCount)||0)*(parseInt(it.count)||1);},0);}
 function orderQty(o){return getItems(o).reduce(function(s,it){return s+(parseInt(it.count)||1);},0);}
-// Краткая сводка по одежде заказа — для компактной карточки (видно без раскрытия)
-function orderClothesInfo(o){
-  var items=getItems(o);
-  var parts=items.map(function(it){return (it.clothes||'').trim();}).filter(Boolean);
-  if(!parts.length)return null;
-  var full=parts.join(' · ');
-  // Подложка по полу: мальчик — небесная, девочка — пудровая, смешанный/не указан — нейтральная
-  var gs=items.filter(function(it){return (it.clothes||'').trim();})
-              .map(function(it){return it.gender||'';});
-  var uniq=gs.filter(function(g,i){return g&&gs.indexOf(g)===i;});
-  var g=uniq.length===1?uniq[0]:'';
-  var tone=g==='boy' ?{bg:'var(--sky-bg)',ink:'var(--sky-ink)'}
-         : g==='girl'?{bg:'var(--powder-bg)',ink:'var(--powder-ink)'}
-         :            {bg:'var(--bg2)',ink:'var(--text2)'};
-  return {full:full,short:full.length>34?full.slice(0,32)+'…':full,bg:tone.bg,ink:tone.ink};
-}
 function orderToyLabel(o){
   var items=getItems(o);
   var parts=items.map(function(it){var c=(parseInt(it.count)||1);return(it.toyType||'\u0438\u0433\u0440\u0443\u0448\u043a\u0430')+(c>1?' \u00d7'+c:'');});
@@ -868,9 +675,7 @@ async function login(r,userName,userLabel,mName){
   document.getElementById('app').style.display='flex';
   document.getElementById('h-role-lbl').textContent=userLabel;
   document.getElementById('h-user-name').textContent=userName;
-  // localStorage, а не sessionStorage: вход должен переживать полное закрытие
-  // браузера/приложения, а не только вкладку — чтобы пароль не спрашивали заново
-  try{localStorage.setItem('markovka_role',JSON.stringify({role:r,name:userName,label:userLabel,masterName:mName}));}catch(e){}
+  try{sessionStorage.setItem('markovka_role',JSON.stringify({role:r,name:userName,label:userLabel,masterName:mName}));}catch(e){}
   realRole=r;isPreviewMode=false;
   document.getElementById('btn-switch-role').style.display=r==='manager'?'inline-flex':'none';
   document.getElementById('h-preview-badge').style.display='none';
@@ -899,16 +704,15 @@ async function login(r,userName,userLabel,mName){
     orders=(cached&&Array.isArray(cached.orders))?cached.orders:[];
     tasks=(cached&&Array.isArray(cached.tasks))?cached.tasks:[];
     finance=(cached&&Array.isArray(cached.finance))?cached.finance:[];
-    if(!cached)toast('Нет связи с облаком — данные не загружены');
+    if(!cached)toast('⚠️ Нет связи с облаком — данные не загружены');
   }
   renderTabs();renderTab(tab);
   startSync();
-  resumeUnsaved();   // досылаем правки, не уехавшие в облако в прошлый раз
 }
 
 function logout(){
   clearInterval(syncTimer);role=null;masterName=null;
-  try{localStorage.removeItem('markovka_role');}catch(e){}
+  try{sessionStorage.removeItem('markovka_role');}catch(e){}
   document.getElementById('login').style.display='flex';
   document.getElementById('app').style.display='none';
   document.getElementById('login-sub').textContent='новорожденная игрушка';
@@ -920,8 +724,6 @@ let syncTimer=null;
 function bumpActivity(){lastActivity=Date.now();}
 async function syncFromCloud(){
   if(!role)return;
-  // Пока есть неотправленные правки, тянуть облако нельзя — оно затрёт их в памяти
-  if(saveState.pending){retrySave(false);return;}
   const data=await loadData();
   if(data){
     if(JSON.stringify(data.orders)!==JSON.stringify(orders)){orders=data.orders||[];renderTab(tab);}
@@ -984,7 +786,7 @@ function switchPreview(r,name,label,mName){
     document.getElementById('h-user-name').textContent='';
     document.getElementById('h-role-lbl').textContent=label;
     document.getElementById('h-preview-badge').style.display='inline-block';
-    document.getElementById('h-preview-badge').textContent='просмотр';
+    document.getElementById('h-preview-badge').textContent='👁 просмотр';
   }
   tab=r==='master'?'master':'list';
   fStatus='all';
@@ -1005,11 +807,10 @@ function renderTabs(){
     bank:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5L8 2.5l6 4"/><line x1="3.5" y1="7" x2="3.5" y2="12"/><line x1="8" y1="7" x2="8" y2="12"/><line x1="12.5" y1="7" x2="12.5" y2="12"/><line x1="2" y1="13.5" x2="14" y2="13.5"/></svg>',
     finance:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,12 6,7 9,10 14,4"/></svg>',
     todos:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8 6,11 13,4"/><circle cx="8" cy="8" r="6.5"/></svg>',
-    week:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2" width="4" height="12" rx="1"/><rect x="6" y="2" width="4" height="7.5" rx="1"/><rect x="10.5" y="2" width="4" height="10" rx="1"/></svg>',
     analytics:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="3" height="5" rx="1"/><rect x="6.5" y="5" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></svg>',
   };
   const all=role==='master'
-    ?[{id:'master',label:'Заказы'},{id:'week',label:'Моя неделя'},{id:'finance',label:'Финансы'},{id:'todos',label:'Задачи'}]
+    ?[{id:'master',label:'Заказы'},{id:'cal-master',label:'Календарь'},{id:'finance',label:'Финансы'},{id:'todos',label:'Задачи'}]
     :[
       {id:'list',label:'Заказы'},
       {id:'calendar',label:'Календарь'},
@@ -1017,8 +818,6 @@ function renderTabs(){
       // Банк доступен только Александре (manager) и Дарье (director) — Свете раздел не показывается
       ...(role==='manager'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       ...(role==='director'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
-      // У Даши, как и у мастеров, есть личная рабочая доска по её заказам (без ФИО/телефонов клиентов)
-      ...(role==='director'?[{id:'week',label:'Моя неделя'}]:[]),
       {id:'todos',label:'Задачи'},
     ];
   bar.innerHTML=all.map(function(t){
@@ -1049,7 +848,7 @@ function updateSearch(val){
   if(!cardsEl){renderTab('list');return;}
   const list=getFilteredOrders();
   cardsEl.innerHTML=list.length===0
-    ?'<div class="empty">Заказов не найдено</div>'
+    ?'<div class="empty"><div class="empty-icon">🧸</div>Заказов не найдено</div>'
     :list.map(function(o){return orderCard(o);}).join('');
   // Keep focus on search field
   const sf=document.getElementById('search-field');
@@ -1065,10 +864,9 @@ function renderTab(t){
   if(t==='payments')markPaymentsSeen();
   renderTabs();
   const m=document.getElementById('main');
-  if(t==='list'){m.innerHTML=tplList();updateToTop();return;}
+  if(t==='list'){m.innerHTML=tplList();return;}
   else if(t==='calendar')m.innerHTML=tplCalendar(false);
   else if(t==='cal-master')m.innerHTML=tplCalendar(true);
-  else if(t==='week')m.innerHTML=tplMyWeek(role==='director'?DIRECTOR_MASTER:masterName);
   else if(t==='add')m.innerHTML=tplAdd();
   else if(t==='stats')m.innerHTML=tplStats();
   else if(t==='finance'&&(role==='manager'||role==='director'))m.innerHTML=tplStats();
@@ -1076,9 +874,8 @@ function renderTab(t){
   else if(t==='bank')m.innerHTML=tplBank();
   else if(t==='analytics')m.innerHTML=tplWeeklyAnalytics();
   else if(t==='finance')m.innerHTML=tplSvetaFinance();
-  else if(t==='todos'){m.innerHTML=tplTasks();updateToTop();return;}
+  else if(t==='todos'){m.innerHTML=tplTasks();return;}
   else m.innerHTML=tplMaster();
-  updateToTop();
 }
 
 function moLbl(m){if(!m)return'';const[y,mo]=m.split('-');return new Date(y,mo-1).toLocaleString('ru',{month:'long',year:'numeric'});}
@@ -1125,34 +922,31 @@ function tplList(){
   var archCnt=orders.filter(function(o){return o.status==='archived';}).length;
 
   var html='';
-  // В архиве путь назад должен быть виден сразу, а не после всего списка
-  if(showArchive)html+='<button class="archive-back" onclick="showArchive=false;renderTab(\'list\')">← Вернуться к заказам</button>';
   html+='<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">'
     +'<input class="search-inp" id="search-field" style="flex:1;min-width:0" placeholder="Поиск по номеру, клиенту..." oninput="updateSearch(this.value)" value="'+search+'">'
     +'</div>';
-  // Плашка-напоминание: разослать трек-номера по отправленным заказам (только Александра)
-  html+=trackBanner();
   // Кнопки действий для менеджера/директора
   if(canFinance){
     var plannedCnt=sdekExportList().length;
     var nwCnt=orders.filter(function(o){return o.status==='nextweek';}).length;
-    if(plannedCnt)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:8px;justify-content:center" onclick="openSdekExport()">Выгрузить для СДЭК ('+plannedCnt+')</button>';
+    if(plannedCnt)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:8px;justify-content:center" onclick="openSdekExport()">📦 Выгрузить для СДЭК ('+plannedCnt+')</button>';
     if(nwCnt)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center;background:var(--blue-bg);color:var(--blue-ink);border-color:var(--blue-ink)" onclick="moveNextWeekToWork()">▶ Перевести «След. неделю» в работу ('+nwCnt+')</button>';
   }
 
   // Filter bar
   html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;position:relative">';
+  html+='<button class="chip'+(showArchive?' active':'')+'" onclick="showArchive=!showArchive;renderTab(\'list\')" style="display:inline-flex;align-items:center;gap:4px">'+(showArchive?'← Список':'📦 Архив'+(archCnt?' ('+archCnt+')':''))+'</button>';
 
   // Status filter
   var sAct=fStatus!=='all'||fUrgent;
   html+='<div class="dropdown" style="position:relative">'
     +'<button class="chip'+(sAct?' active':'')+'" data-drop="drop-status" style="display:inline-flex;align-items:center;gap:4px">'
-    +(fStatus!=='all'&&fUrgent?'<span style="width:7px;height:7px;border-radius:50%;background:'+scol[fStatus]+';display:inline-block;margin-right:3px"></span>'+statusLabel+' · срочные':(fUrgent?'Срочные':(fStatus!=='all'?'<span style="width:7px;height:7px;border-radius:50%;background:'+scol[fStatus]+';display:inline-block;margin-right:3px"></span>'+statusLabel:'Статусы')))
+    +(fStatus!=='all'&&fUrgent?'<span style="width:7px;height:7px;border-radius:50%;background:'+scol[fStatus]+';display:inline-block;margin-right:3px"></span>'+statusLabel+' ⚡':(fUrgent?'⚡ Срочные':(fStatus!=='all'?'<span style="width:7px;height:7px;border-radius:50%;background:'+scol[fStatus]+';display:inline-block;margin-right:3px"></span>'+statusLabel:'Статусы')))
     +' ▾</button>'
     +'<div id="drop-status" style="display:none;position:absolute;top:110%;left:0;background:var(--card);border-radius:12px;box-shadow:var(--sh2);z-index:100;min-width:160px;padding:6px">'
     +'<div class="drop-item'+(fStatus==='all'&&!fUrgent?' drop-active':'')+'" data-act="status-all">Все статусы</div>'
     +'<div class="drop-item'+(fUrgent?' drop-active':'')+'" data-act="urgent" style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block"></span>Срочные'+(fUrgent?' ✓':'')+'</div>';
-  PICKABLE_STATUSES.forEach(function(k){
+  Object.keys(STATUSES).forEach(function(k){
     html+='<div class="drop-item'+(fStatus===k?' drop-active':'')+'" data-act="status" data-val="'+k+'" style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:'+scol[k]+';display:inline-block"></span>'+STATUSES[k].label+'</div>';
   });
   html+='</div></div>';
@@ -1191,51 +985,10 @@ function tplList(){
   var listLbl=showArchive?'Архивных заказов':search?'Найдено':('Активных заказов');
   html+='<div style="font-size:12px;color:var(--text3);margin-bottom:10px">'+listLbl+': '+list.length+'</div>';
   html+='<div id="list-cards">';
-  if(!list.length){html+='<div class="empty">Заказов не найдено</div>';}
+  if(!list.length){html+='<div class="empty"><div class="empty-icon">🧸</div>Заказов не найдено</div>';}
   else{list.forEach(function(o){html+=orderCard(o);});}
   html+='</div>';
-  // Архив — подвал списка, а не этап работы: серая кнопка внизу
-  html+='<button class="archive-foot" onclick="showArchive=!showArchive;renderTab(\'list\')">'
-    +(showArchive?'Вернуться к заказам':'Архив'+(archCnt?' · '+archCnt:''))+'</button>';
   return html;
-}
-
-// ─────────────────────────────────────────────────────────────
-//  Плашка «Выслать трек-номера» — только у Александры (manager).
-//  Заказ попадает сюда при статусе «Отправлен», пока не отмечен trackSent.
-// ─────────────────────────────────────────────────────────────
-function trackPendingList(){
-  return orders.filter(function(o){return o.status==='sent'&&!o.trackSent;});
-}
-function trackBanner(){
-  if(role!=='manager'||isPreviewMode)return'';
-  var list=trackPendingList();
-  if(!list.length)return'';
-  var html='<div class="card" style="margin-bottom:10px;border:1.5px solid var(--purple);background:var(--purple-bg)">'
-    +'<div style="padding:12px 14px">'
-    +'<div style="font-size:12px;font-weight:700;color:var(--purple-ink);margin-bottom:8px">Выслать трек-номера — '+list.length+'</div>';
-  list.forEach(function(o){
-    var msg=shipMsgText(o);
-    html+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:6px 0;border-top:1px solid var(--border)">'
-      +'<span class="card-num">'+o.num+'</span>'
-      +'<span style="font-size:12px;color:var(--text2);flex:1;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(o.client||'—')+'</span>'
-      +(o.sdekNum
-        ?'<span style="font-size:11px;color:var(--text3)">'+o.sdekNum+'</span>'
-        :'<span style="font-size:11px;color:var(--red-ink);font-weight:700">нет накладной</span>')
-      +'<button class="btn btn-sm btn-ghost" style="font-size:10px" data-val="'+esc(msg)+'" onclick="copyField(this.dataset.val,this)">Сообщение</button>'
-      +'<button class="btn btn-sm btn-primary" style="font-size:10px" data-oid="'+o.id+'" onclick="markTrackSent(this.dataset.oid)">Выслала</button>'
-      +'</div>';
-  });
-  html+='</div></div>';
-  return html;
-}
-function markTrackSent(id){
-  var o=orders.find(function(x){return x.id===id;});
-  if(!o)return;
-  o.trackSent=true;
-  renderTab(tab);
-  toast('Трек по '+o.num+' отмечен как высланный');
-  saveOrders(orders);
 }
 
 async function addNote(orderId){
@@ -1262,7 +1015,7 @@ function notesBlock(o){
   html+='<div data-noid="'+o.id+'" onclick="toggleNotes(this.dataset.noid)" '
     +'style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:10px 0;user-select:none">';
   html+='<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0">'
-    +'Заметки'+(notes.length?' ('+notes.length+')':'')+'</div>';
+    +'📌 Заметки'+(notes.length?' ('+notes.length+')':'')+'</div>';
   html+='<div id="narr-'+o.id+'" style="font-size:16px;color:var(--text3);line-height:1">⌄</div>';
   html+='</div>';
   // Тело — скрыто по умолчанию
@@ -1320,7 +1073,7 @@ function orderCard(o){
   // Badges
   var closed=isClosed(o);
   var badges='<span class="badge '+st.cls+'">'+st.label+'</span>';
-  if(closed)badges+=' <span class="badge" style="background:var(--green-bg);color:var(--green-ink)">Закрыт</span>';
+  if(closed)badges+=' <span class="badge" style="background:var(--green-bg);color:var(--green-ink)">🔒 Закрыт</span>';
   if(o.urgent)badges+=' <span class="badge b-urgent">Срочно</span>';
   if(paid)badges+=' <span class="badge b-paid">Оплачен</span>';
   else if(o.prepaid>0)badges+=' <span class="badge b-part">Предоплата</span>';
@@ -1340,13 +1093,11 @@ function orderCard(o){
   if(canFinance&&o.client)html+='<span style="font-size:13px;font-weight:600;color:var(--text1)">'+o.client+'</span>';
   var toyLbl=orderToyLabel(o);
   var ig=canFinance?igInfo(o.instagram):null;
-  if(ig)html+='<a href="'+ig.url+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:12px;font-weight:600;color:var(--pink-ink);text-decoration:none;white-space:nowrap;display:inline-flex;align-items:center;gap:3px">'+ig.handle+'</a>';
+  if(ig)html+='<a href="'+ig.url+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:12px;font-weight:600;color:var(--pink-ink);text-decoration:none;white-space:nowrap;display:inline-flex;align-items:center;gap:3px">📷 '+ig.handle+'</a>';
   html+='</div>';
   // Инфо строка — игрушка первой, потом вес/рост/мастер/месяц
   var info=[];
   if(toyLbl)info.push('<span style="font-size:11px;font-weight:700;color:var(--accent2);background:var(--accent-bg);padding:1px 7px;border-radius:7px">'+toyLbl+'</span>');
-  var clInfo=orderClothesInfo(o);
-  if(clInfo)info.push('<span title="'+esc(clInfo.full)+'" style="font-size:11px;font-weight:700;color:'+clInfo.ink+';background:'+clInfo.bg+';padding:1px 7px;border-radius:7px">'+clInfo.short+'</span>');
   if(wt)info.push(wt+'г');
   if(ht)info.push(ht+' см');
   if(o.master)info.push(o.master);
@@ -1356,7 +1107,7 @@ function orderCard(o){
   html+='</div>';
   // Стрелка
   var noteCount=(o.notes||[]).length;
-  var noteInd=noteCount&&(role==='manager'||role==='director')?'<span style="font-size:11px;background:var(--accent);color:var(--on-accent);border-radius:10px;padding:1px 6px;margin-right:4px">'+noteCount+'</span>':'';
+  var noteInd=noteCount&&(role==='manager'||role==='director')?'<span style="font-size:11px;background:var(--accent);color:var(--on-accent);border-radius:10px;padding:1px 6px;margin-right:4px">📌 '+noteCount+'</span>':'';
   html+='<div style="display:flex;align-items:center;gap:4px;flex-shrink:0">'+noteInd+'<div id="arr-'+o.id+'" style="font-size:20px;color:var(--text3);line-height:1">'+(isExpanded?'⌃':'⌄')+'</div></div>';
   html+='</div>';
 
@@ -1398,7 +1149,7 @@ function orderCard(o){
     if(it.gender){var gLbl={boy:'Мальчик',girl:'Девочка'}[it.gender]||it.gender;html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Пол: </span>'+gLbl+'</div>';}
     if(it.clothes)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Одежда: </span>'+it.clothes+'</div>';
     if(canFinance&&it.price)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Цена: </span>'+fmt((parseFloat(it.price)||0)*(parseInt(it.count)||1))+'</div>';
-    if(it.comment)html+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-bottom:4px">'+it.comment+'</div>';
+    if(it.comment)html+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-bottom:4px">💬 '+it.comment+'</div>';
   });
   if(o.comment)html+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
   html+='</div>';
@@ -1432,7 +1183,7 @@ function orderCard(o){
     });
     var igC=igInfo(o.instagram);
     if(igC)html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
-      +'<a href="'+igC.url+'" target="_blank" rel="noopener" style="font-size:12px;color:var(--pink-ink);font-weight:600;text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+igC.handle+'</a>'
+      +'<a href="'+igC.url+'" target="_blank" rel="noopener" style="font-size:12px;color:var(--pink-ink);font-weight:600;text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📷 '+igC.handle+'</a>'
       +'<button class="btn btn-sm btn-ghost" style="font-size:10px;flex-shrink:0" data-val="'+igC.url+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div>';
     html+='<div style="display:flex;align-items:center;gap:8px;margin-top:4px">'
       +'<input type="text" placeholder="Номер накладной СДЭК" value="'+trackNum+'" '
@@ -1445,8 +1196,8 @@ function orderCard(o){
 
   // Готовые сообщения клиенту по статусу
   if(canFinance){
-    if(o.status==='ready')html+=clientMsgBox('Сообщение о доплате',payMsgText(o));
-    else if(o.status==='sent')html+=clientMsgBox('Сообщение об отправке',shipMsgText(o));
+    if(o.status==='ready')html+=clientMsgBox('💬 Сообщение о доплате',payMsgText(o));
+    else if(o.status==='sent')html+=clientMsgBox('💬 Сообщение об отправке',shipMsgText(o));
   }
 
   // Статус + действия
@@ -1454,7 +1205,7 @@ function orderCard(o){
   html+='<div style="display:flex;flex-direction:column;gap:2px">'
     +'<span style="font-size:9px;color:var(--text3);font-weight:700;letter-spacing:0">Статус</span>'
     +'<select class="st-select" data-oid="'+o.id+'" onchange="setStatus(this.dataset.oid,this.value)">';
-  PICKABLE_STATUSES.forEach(function(k){
+  Object.keys(STATUSES).forEach(function(k){
     html+='<option value="'+k+'"'+(o.status===k?' selected':'')+'>'+STATUSES[k].label+'</option>';
   });
   html+='</select></div>';
@@ -1468,14 +1219,10 @@ function orderCard(o){
   if(canEdit){
     if(!o.sdek)html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="markSdek(this.dataset.oid)">СДЭК ✓</button>';
     if(closed)
-      html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="reopenOrder(this.dataset.oid)">Открыть</button>';
+      html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="reopenOrder(this.dataset.oid)">🔓 Открыть</button>';
     else
-      html+='<button class="btn btn-sm btn-green" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="closeOrder(this.dataset.oid)">Закрыть заказ</button>';
-    html+='<button class="btn btn-sm btn-secondary" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="openEdit(this.dataset.oid)">Изменить</button>';
-    if(o.status==='archived')
-      html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="unarchiveOrder(this.dataset.oid)">Вернуть из архива</button>';
-    else
-      html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="archiveOrder(this.dataset.oid)">В архив</button>';
+      html+='<button class="btn btn-sm btn-green" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="closeOrder(this.dataset.oid)">🔒 Закрыть заказ</button>';
+    html+='<button class="btn btn-sm btn-secondary" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="openEdit(this.dataset.oid)">✏️ Изменить</button>';
     html+='<button style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;margin-top:14px;margin-left:auto" data-oid="'+o.id+'" onclick="delOrder(this.dataset.oid)">Удалить</button>';
   }
   html+='</div>';
@@ -1491,8 +1238,6 @@ function setStatus(id,val){
   if(!o)return;
   o.status=val;
   if(val==='sent'&&!o.closedAt){o.closedAt=Date.now();}
-  // Ушёл из «Отправлен» — сбрасываем отметку о высланном треке, чтобы напоминание вернулось
-  if(val!=='sent'&&o.trackSent)delete o.trackSent;
   // Сначала мгновенно обновляем интерфейс и показываем уведомление,
   // затем сохраняем в облако в фоне — пользователь не ждёт сеть.
   renderTab(tab);
@@ -1524,26 +1269,6 @@ async function reopenOrder(id){
   await saveOrders(orders);
   renderTab(tab);
   toast('Заказ '+o.num+' открыт');
-}
-// Архив — хранилище: заказ убирается из работы, прежний статус запоминается
-async function archiveOrder(id){
-  var o=orders.find(function(x){return x.id===id;});
-  if(!o||o.status==='archived')return;
-  if(!confirm('Убрать заказ '+o.num+' в архив? Он пропадёт из списка, но останется в хранилище.'))return;
-  o.prevStatus=o.status;
-  o.status='archived';
-  await saveOrders(orders);
-  renderTab(tab);
-  toast('Заказ '+o.num+' в архиве');
-}
-async function unarchiveOrder(id){
-  var o=orders.find(function(x){return x.id===id;});
-  if(!o)return;
-  o.status=(o.prevStatus&&STATUSES[o.prevStatus]&&o.prevStatus!=='archived')?o.prevStatus:'done';
-  delete o.prevStatus;
-  await saveOrders(orders);
-  renderTab(tab);
-  toast('Заказ '+o.num+' возвращён: '+STATUSES[o.status].label);
 }
 async function markSdek(id){
   const o=orders.find(function(x){return x.id===id;});
@@ -1599,7 +1324,7 @@ function sdekExportList(){
 function sdekExportText(){
   var list=sdekExportList();
   var now=new Date().toLocaleDateString('ru',{day:'numeric',month:'long'});
-  var lines=['СДЭК · '+list.length+' '+pluralPosylka(list.length)+' · '+now,''];
+  var lines=['📦 СДЭК · '+list.length+' '+pluralPosylka(list.length)+' · '+now,''];
   var isMasterCopy=role==='master';
   list.forEach(function(o){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
@@ -1645,7 +1370,7 @@ function openSdekExport(){
   }).join('');
   var content=list.length
     ? '<div id="sdek-export-content" style="background:var(--card);padding:16px;border-radius:12px">'
-        +'<div style="font-weight:700;letter-spacing:-.4px;font-size:16px;color:var(--accent);margin-bottom:4px">СДЭК · '+list.length+' '+pluralPosylka(list.length)+'</div>'
+        +'<div style="font-weight:700;letter-spacing:-.4px;font-size:16px;color:var(--accent);margin-bottom:4px">📦 СДЭК · '+list.length+' '+pluralPosylka(list.length)+'</div>'
         +'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">'+now+'</div>'
         +rows
       +'</div>'
@@ -1657,11 +1382,11 @@ function openSdekExport(){
     +'<div class="modal-title">Выгрузка для СДЭК</div>'
     +content
     +(list.length
-      ? '<button id="sdek-sent-btn" class="btn btn-green btn-full" style="margin-top:12px;justify-content:center;font-size:13px" onclick="markSdekSent(this)">Отправлены</button>'
+      ? '<button class="btn btn-green btn-full" style="margin-top:12px;justify-content:center;font-size:13px" onclick="markSdekSent()">✅ Отправлены</button>'
       : '')
     +'<div class="modal-actions" style="margin-top:8px">'
-    +(list.length?'<button class="btn btn-primary" style="flex:1;justify-content:center" onclick="copySdekText()">Копировать</button>'
-      +'<button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="downloadSdekPng()">Картинка</button>':'')
+    +(list.length?'<button class="btn btn-primary" style="flex:1;justify-content:center" onclick="copySdekText()">📋 Копировать</button>'
+      +'<button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="downloadSdekPng()">🖼 Картинка</button>':'')
     +'<button class="btn btn-ghost" style="flex:'+(list.length?'0 0 auto':'1')+';justify-content:center" onclick="document.getElementById(\'sdek-export-modal\').remove()">Закрыть</button>'
     +'</div></div>';
   document.body.appendChild(el);
@@ -1672,14 +1397,12 @@ async function moveNextWeekToWork(){
   if(!nwOrders.length){toast('Нет заказов «След. неделя»');return;}
   var nums=nwOrders.map(function(o){return o.num;}).join(', ');
   if(!confirm('Перевести в «В работе» '+nwOrders.length+' '+pluralZakaz(nwOrders.length)+'?\n\n'+nums+'\n\nЭто изменит статус всех перечисленных заказов.'))return;
-  // Статус меняется на «В работе», но craftStage не ставим: раскроя ещё не было —
-  // на доске заказ останется в «План на неделю», пока мастер не отметит сама
-  nwOrders.forEach(function(o){o.status='work';delete o.craftStage;});
+  nwOrders.forEach(function(o){o.status='work';});
   await saveOrders(orders);
   renderTab(tab);
   toast('Переведено в работу: '+nwOrders.map(function(o){return o.num;}).join(', '));
 }
-async function markSdekSent(btn){
+async function markSdekSent(){
   var checked=[].slice.call(document.querySelectorAll('.sdek-chk:checked')).map(function(cb){return cb.dataset.oid;});
   if(!checked.length){toast('Выберите хотя бы один заказ');return;}
   var names=[];
@@ -1687,22 +1410,11 @@ async function markSdekSent(btn){
     var o=orders.find(function(x){return x.id===id;});
     if(o){o.status='sent';if(!o.closedAt)o.closedAt=Date.now();names.push(o.num);}
   });
-  // Окно не закрываем, пока не убедимся, что данные реально ушли в облако:
-  // мастер должен видеть результат, а не надеяться, что «вроде нажала».
-  var el=btn||document.getElementById('sdek-sent-btn');
-  if(el){el.disabled=true;el.textContent='Сохраняем…';}
-  var ok=await saveOrders(orders);
+  await saveOrders(orders);
+  var modal=document.getElementById('sdek-export-modal');
+  if(modal)modal.remove();
   renderTab(tab);
-  if(ok){
-    var modal=document.getElementById('sdek-export-modal');
-    if(modal)modal.remove();
-    toast('Сохранено. Отправлены: '+names.join(', '));
-  }else if(el){
-    el.disabled=false;
-    el.textContent='Не сохранилось — нажмите ещё раз';
-    el.className='btn btn-full';
-    el.style.cssText='margin-top:12px;justify-content:center;font-size:13px;background:var(--red-ink);color:#fff';
-  }
+  toast('Отправлены: '+names.join(', ')+' ✓');
 }
 async function copySdekText(){
   var txt=sdekExportText();
@@ -1775,7 +1487,7 @@ function tplCalendar(isMasterView){
       const st=STATUSES[o.status]||STATUSES.new;
       moRows+='<div class="cal-mo-row">'
         +'<span class="cal-mo-num">'+o.num+'</span>'
-        +'<span class="cal-mo-toy">'+o.toys+(o.urgent?' · срочно':'')+(o.deliveryDay?' · '+o.deliveryDay+'-го':'')+'</span>'
+        +'<span class="cal-mo-toy">'+o.toys+(o.urgent?' ⚡':'')+(o.deliveryDay?' · '+o.deliveryDay+'-го':'')+'</span>'
         +'<span class="badge '+st.cls+'" style="font-size:9px">'+st.label+'</span>'
         +'<span style="font-size:11px;color:var(--text3)">'+o.master+'</span>'
         +'</div>';
@@ -1797,7 +1509,7 @@ function tplCalendar(isMasterView){
         +'<div class="section-lbl">Нагрузка по неделям</div>';
       wkeys.forEach(function(wk){
         const cnt=weeksMap[wk];
-        const load=cnt>=4?'много':cnt>=2?'средне':'свободно';
+        const load=cnt>=4?'🔴 много':cnt>=2?'🟡 средне':'🟢 свободно';
         weekSummary+='<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:12px;border-bottom:1px solid var(--border)">'
           +'<span style="font-weight:700;color:var(--text2)">Неделя '+wk+'</span>'
           +'<span style="color:var(--text3)">'+cnt+' заказов</span>'
@@ -1861,7 +1573,7 @@ async function parseOrderWithAI(){
     +'  } ]\n'
     +'}\nЕсли игрушка одна — в массиве items будет один элемент.\n'
     +'\nИГНОРИРУЙ шаблонные фразы об оплате — это НЕ данные заказа:\n'
-    +'— реквизиты для оплаты (карта OZON или Сбер, СБП, «получатель Дарья Андреевна», номер +79776516579) — этот телефон НИКОГДА не бери в поле phone;\n'
+    +'— реквизиты для оплаты (карта Сбер, СБП, «получатель Дарья Андреевна», номер +79776516579) — этот телефон НИКОГДА не бери в поле phone;\n'
     +'— фразу про отправку чека в чат;\n'
     +'— фразу «оплата при получении» — не пиши её в comment и не влияй на prepaid.\n'
     +'\nСообщение:\n'+text;
@@ -1915,12 +1627,12 @@ async function parseOrderWithAI(){
     }
     document.getElementById('ai-block').style.display='none';
     document.getElementById('ai-input').value='';
-    toast('Данные заполнены ('+aiItems.length+' игр.) — проверь и сохрани');
+    toast('✅ Данные заполнены ('+aiItems.length+' игр.) — проверь и сохрани');
   }catch(e){
-    toast('Ошибка: '+e.message);
+    toast('⚠️ Ошибка: '+e.message);
     console.error('Gemini error:', e);
   }finally{
-    btn.disabled=false;btn.textContent='Заполнить автоматически';
+    btn.disabled=false;btn.textContent='✨ Заполнить автоматически';
   }
 }
 
@@ -1934,7 +1646,7 @@ function itemBlockHtml(d){
   var embOn=(parseInt(d.embCount)||0)>0;
   return '<div class="item-block" style="border-radius:12px;padding:12px;margin-bottom:10px;background:var(--bg)">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-    +'<span class="item-title" style="font-size:12px;font-weight:700;color:var(--accent)">Игрушка</span>'
+    +'<span class="item-title" style="font-size:12px;font-weight:700;color:var(--accent)">🧸 Игрушка</span>'
     +'<button type="button" class="it-remove" onclick="removeItemBlock(this)" style="background:none;border:none;color:var(--text3);font-size:22px;line-height:1;cursor:pointer">×</button>'
     +'</div>'
     +'<div class="form-grid">'
@@ -1978,7 +1690,7 @@ function renumberItems(containerId){
   var blocks=document.querySelectorAll('#'+containerId+' .item-block');
   blocks.forEach(function(b,i){
     var t=b.querySelector('.item-title');
-    if(t)t.textContent='Игрушка '+(i+1);
+    if(t)t.textContent='🧸 Игрушка '+(i+1);
     var rm=b.querySelector('.it-remove');
     if(rm)rm.style.display=blocks.length>1?'block':'none';
   });
@@ -2010,13 +1722,13 @@ function tplAdd(){
   return '<div class="form-section" style="margin-bottom:12px">'
     +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
     +'<div class="form-title" style="margin-bottom:0">Новый заказ</div>'
-    +'<button class="btn btn-secondary btn-sm" onclick="var b=document.getElementById(\'ai-block\');b.style.display=b.style.display===\'none\'?\'block\':\'none\'">Вставить сообщение</button>'
+    +'<button class="btn btn-secondary btn-sm" onclick="var b=document.getElementById(\'ai-block\');b.style.display=b.style.display===\'none\'?\'block\':\'none\'">✨ Вставить сообщение</button>'
     +'</div>'
     +'<div id="ai-block" style="display:none;background:var(--accent-bg);border-radius:12px;padding:14px;margin-bottom:16px">'
-    +'<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px">Заполнить через ИИ</div>'
+    +'<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px">✨ Заполнить через ИИ</div>'
     +'<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Вставьте переписку с клиентом — ИИ сам заполнит поля (можно несколько игрушек)</div>'
     +'<textarea id="ai-input" style="width:100%;min-height:90px;padding:10px;border-radius:8px;font-family:inherit;font-size:13px;background:var(--card);resize:vertical" placeholder="Вставьте сообщение от клиента..."></textarea>'
-    +'<button id="ai-btn" class="btn btn-primary btn-full" style="margin-top:8px" onclick="parseOrderWithAI()">Заполнить автоматически</button>'
+    +'<button id="ai-btn" class="btn btn-primary btn-full" style="margin-top:8px" onclick="parseOrderWithAI()">✨ Заполнить автоматически</button>'
     +'</div>'
     // Данные клиента и заказа
     +'<div class="form-grid">'
@@ -2027,7 +1739,7 @@ function tplAdd(){
     +'<div class="fg span2"><label>Instagram (ник или ссылка)</label><input id="fig" placeholder="@nickname или instagram.com/..."></div>'
     +'<div class="fg"><label>Мастер</label><select id="fmas" onchange="previewMasterPay()">'+MASTERS.map(function(m){return'<option>'+m+'</option>';}).join('')+'</select></div>'
     +'<div class="fg"><label>Источник</label><select id="fsrc">'+Object.keys(SOURCES).map(function(k){return'<option value="'+k+'">'+SOURCES[k].label+'</option>';}).join('')+'</select></div>'
-    +'<div class="fg"><label>Статус</label><select id="fst">'+PICKABLE_STATUSES.map(function(k){return'<option value="'+k+'">'+STATUSES[k].label+'</option>';}).join('')+'</select></div>'
+    +'<div class="fg"><label>Статус</label><select id="fst">'+Object.keys(STATUSES).map(function(k){return'<option value="'+k+'">'+STATUSES[k].label+'</option>';}).join('')+'</select></div>'
     +'<div class="fg" style="min-width:0"><label>Месяц производства</label><input id="fm" type="month" style="width:100%" value="'+dm+'" oninput="updateDayMax(\'fm\',\'fdd\')"></div>'
     +'<div class="fg"><label>Предоплата (₽)</label><input id="fpre" type="number" value="0"></div>'
     +'<div class="fg"><label>День сдачи (1–'+maxDay(dm)+')</label><input id="fdd" type="number" min="1" max="'+maxDay(dm)+'" placeholder="15" oninput="updateDayMax(\'fm\',\'fdd\')"></div>'
@@ -2109,7 +1821,7 @@ async function addOrder(){
   renderTab('list');
   toast('Сохраняем заказ '+o.num+'...');
   await saveOrders(orders);
-  toast('Заказ '+o.num+' добавлен');
+  toast('✅ Заказ '+o.num+' добавлен');
   offerOrderIncome(o,parseFloat(o.prepaid)||0);   // если внесли предоплату — предложить провести её по банку
 }
 
@@ -2120,7 +1832,7 @@ function openEdit(id){
   el.className='modal-bg';el.id='edit-modal';
   let masOpts=MASTERS.map(function(m){return'<option'+(o.master===m?' selected':'')+'>'+m+'</option>';}).join('');
   let srcOpts=Object.keys(SOURCES).map(function(k){return'<option value="'+k+'"'+(o.source===k?' selected':'')+'>'+SOURCES[k].label+'</option>';}).join('');
-  let stOpts=PICKABLE_STATUSES.filter(function(k){return k!=='archived'||o.status==='archived';}).map(function(k){return'<option value="'+k+'"'+(o.status===k?' selected':'')+'>'+STATUSES[k].label+'</option>';}).join('');
+  let stOpts=Object.keys(STATUSES).map(function(k){return'<option value="'+k+'"'+(o.status===k?' selected':'')+'>'+STATUSES[k].label+'</option>';}).join('');
   var itemsHtml=getItems(o).map(itemBlockHtml).join('');
   el.innerHTML='<div class="modal">'
     +'<div class="modal-title">Редактировать '+o.num+'</div>'
@@ -2210,11 +1922,11 @@ function urgentBonusPct(o){
 }
 function urgentBonusLbl(o){var p=urgentBonusPct(o);return p?' · срочный +'+Math.round(p*100)+'%':'';}
 
-const NASTYA_PER_TOY = 350;       // Настя (швея одежды на аутсорсе) — 350₽ за комплект одежды (одна игрушка Даши = один комплект)
+const NASTYA_PER_TOY = 300;       // Настя (швея одежды на аутсорсе) — 300₽ с каждой игрушки Даши
 const TAX_PCT = 0;                // налог (0 = не учитываем)
 const DARYA_DIVIDEND_PCT = 0.05;  // дивиденды Дарьи как автора проекта — 5% от чистой прибыли
 
-// Стоимость Насти: 350₽ за комплект одежды на каждую игрушку, сшитую Дашей (у Светы — своя одежда)
+// Стоимость Насти: 300₽ за каждую игрушку, сшитую Дашей (у Светы — своя одежда)
 function calcNastya(o){
   if(!masterCfg(o.master).nastya)return 0;
   return NASTYA_PER_TOY*orderQty(o);
@@ -2222,7 +1934,11 @@ function calcNastya(o){
 
 function calcCosts(o){
   // Считаем по каждой игрушке отдельно, затем суммируем
-  var varPerG = orderVarRate(o);
+  // Архивные заказы могут хранить свою ставку расхода по весу (o.varRate, ₽/г).
+  // Новые заказы поля не имеют — считаются по текущим ставкам (250/400 ₽/кг).
+  var varPerG = (typeof o.varRate==='number' && o.varRate>0)
+    ? o.varRate
+    : masterCfg(o.master).varRate;
   var items = getItems(o);
   var fixed=0, variable=0;
   items.forEach(function(it){
@@ -2375,7 +2091,7 @@ function tplStats(){
     +'<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">'
     +'<div>'
     +'<div style="font-weight:700;letter-spacing:-.6px;font-size:26px;color:var(--accent2)">'+fmt(futurePrepaid)+'</div>'
-    +'<div style="font-size:11px;color:var(--text1);margin-top:2px;font-weight:700">Предоплаты за будущие заказы</div>'
+    +'<div style="font-size:11px;color:var(--text1);margin-top:2px;font-weight:700">🔒 Предоплаты за будущие заказы</div>'
     +'</div>'
     +'<div style="font-size:11px;color:var(--text1);text-align:right">'+futureGroup.length+' '+pluralZakaz(futureGroup.length)+'<br>не выполнено</div>'
     +'</div>'
@@ -2384,7 +2100,7 @@ function tplStats(){
 
   // ── ИТОГО ЗА ПЕРИОД ──
   html+='<div style="background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
-  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0;margin-bottom:14px">Итого · '+r.label+' <span style="color:var(--text2)">('+workGroup.length+' активных + '+closedGroup.length+' закрыто)</span></div>';
+  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0;margin-bottom:14px">📋 Итого · '+r.label+'  <span style="color:var(--text2)">('+workGroup.length+' активных + '+closedGroup.length+' закрыто)</span></div>';
   if(!combined.length){
     html+='<div style="text-align:center;padding:14px;color:var(--text3);font-size:13px">Нет заказов в этом периоде</div>';
   }else{
@@ -2416,7 +2132,7 @@ function tplStats(){
     html+='<div style="display:flex;flex-direction:column;gap:6px">';
     var nastyaFor=MASTER_CFG.filter(function(m){return m.nastya;}).map(function(m){return m.name;}).join(', ');
     T.byMaster.map(function(b){return [b.name,b.n+' зак.',b.zp,b.color];})
-     .concat([['Настя · одежда','350₽/игр. '+(nastyaFor||'—'),T.nastya,'var(--pink)'],
+     .concat([['Настя · одежда','300₽/игр. '+(nastyaFor||'—'),T.nastya,'var(--pink)'],
               ['Александра','20%',T.sasha,'var(--orange)']]).forEach(function(row){
       html+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg);border-radius:8px">'
         +'<div style="display:flex;align-items:center;gap:8px">'
@@ -2447,8 +2163,8 @@ function tplStats(){
       +'<div id="mclosed-'+key+'" style="display:none;flex-wrap:wrap;gap:6px;margin-top:10px">'+chips+'</div>'
       +'</div>';
   }
-  html+=chipList('fwork','В работе',workGroup,'var(--blue-bg)','var(--blue-ink)',true);
-  html+=chipList('fclosed','Закрыто за период',closedGroup,'var(--green-bg)','var(--green-ink)',false);
+  html+=chipList('fwork','🛠 В работе',workGroup,'var(--blue-bg)','var(--blue-ink)',true);
+  html+=chipList('fclosed','🔒 Закрыто за период',closedGroup,'var(--green-bg)','var(--green-ink)',false);
 
   // ── ВСЕГО К ПОЛУЧЕНИЮ (все незакрытые) ──
   var pendingRev=openOrders.reduce(function(s,o){return s+orderTotal(o);},0);
@@ -2473,7 +2189,7 @@ function tplStats(){
       +'<div id="mclosed-'+key+'" style="display:none;flex-wrap:wrap;gap:6px;margin-top:10px">'+chips+'</div>'
       +'</div>';
   }
-  var alertsHtml=alertBlock('alurgent','var(--red-bg)','var(--red-ink)','Срочные не закрыты',aUrgent,'var(--red)')
+  var alertsHtml=alertBlock('alurgent','var(--red-bg)','var(--red-ink)','⚡ Срочные не закрыты',aUrgent,'var(--red)')
     +alertBlock('alnopre','var(--red-bg)','var(--red-ink)','Без предоплаты',aNoPre,'var(--red)')
     +alertBlock('alnosdek','var(--orange-bg)','var(--orange-ink)','Готовы/планируются без СДЭК',aNoSdek,'var(--orange)');
   if(alertsHtml){
@@ -2594,7 +2310,7 @@ function tplWeeklyAnalytics(){
   }
 
   if(!closed.length){
-    html+='<div class="empty" style="padding:32px">Нет закрытых заказов за период</div>';
+    html+='<div class="empty" style="padding:32px"><div class="empty-icon">📊</div>Нет закрытых заказов за период</div>';
     html+='</div>';
     return html;
   }
@@ -2687,8 +2403,8 @@ function tplWeeklyAnalytics(){
 
   // Экспорт
   html+='<div style="display:flex;gap:8px;margin-bottom:16px">'
-    +'<button class="btn btn-primary" style="flex:1;justify-content:center" onclick="downloadAnalyticsPng()">Скачать PNG</button>'
-    +'<button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="exportAnalyticsCsv()">Скачать CSV</button>'
+    +'<button class="btn btn-primary" style="flex:1;justify-content:center" onclick="downloadAnalyticsPng()">📷 Скачать PNG</button>'
+    +'<button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="exportAnalyticsCsv()">📊 Скачать CSV</button>'
     +'</div>';
 
   html+='</div>';
@@ -2772,52 +2488,21 @@ function exportAnalyticsCsv(){
 }
 
 
-// Какой мастер сейчас показан во вкладке «Выплаты» (переключатель сверху)
-var payMasterView=null;
-function setPayMaster(m){payMasterView=m;renderTab('payments');}
-// Раскрытие списка «Полностью выплачено» по мастерам (по умолчанию свёрнут)
-var payDoneOpen={};
-// Показывать ли в авансах заказы в статусе «Новый» (по умолчанию скрыты)
-var showNewAdv=false;
-function toggleNewAdv(){showNewAdv=!showNewAdv;renderTab('payments');}
-function togglePayDone(m){payDoneOpen[m]=!payDoneOpen[m];renderTab('payments');}
-// Сумма к выплате мастеру сейчас (авансы «След. неделя» + готовые)
-function payoutTotalFor(m){
-  return advNeedFor(m).reduce(function(s,o){return s+calcAdvance(o);},0)
-       + postNeedFor(m).reduce(function(s,o){return s+remainingPay(o);},0);
-}
 function tplPayments(){
   var html='';
   // Сообщение для телеграма после выплаты
   if(window.lastPayout&&((window.lastPayout.advOrders||[]).length||(window.lastPayout.postOrders||[]).length)){
     html+='<div class="card" style="margin-bottom:12px;border:1.5px solid var(--accent)"><div style="padding:12px 14px">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-      +'<span style="font-size:11px;color:var(--accent);font-weight:700;letter-spacing:0">Текст для телеграма</span>'
+      +'<span style="font-size:11px;color:var(--accent);font-weight:700;letter-spacing:0">✅ Текст для телеграма</span>'
       +'<button onclick="window.lastPayout=null;renderTab(\'payments\')" style="background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;line-height:1">×</button></div>'
       +'<textarea readonly onclick="this.select()" style="width:100%;box-sizing:border-box;min-height:130px;padding:8px 10px;border-radius:8px;font-size:12px;background:var(--bg);color:var(--text1);resize:vertical;font-family:inherit;line-height:1.5">'+esc(buildPayoutMsg(window.lastPayout))+'</textarea>'
-      +'<button class="btn btn-sm btn-primary btn-full" style="margin-top:6px;justify-content:center" data-val="'+esc(buildPayoutMsg(window.lastPayout))+'" onclick="copyField(this.dataset.val,this)">Копировать текст</button>'
+      +'<button class="btn btn-sm btn-primary btn-full" style="margin-top:6px;justify-content:center" data-val="'+esc(buildPayoutMsg(window.lastPayout))+'" onclick="copyField(this.dataset.val,this)">📋 Копировать текст</button>'
       +'</div></div>';
   }
   // Блок на каждого мастера, участвующего в выплатах (см. MASTER_CFG.payouts)
-  var pms=payoutMasters();
-  var anyOne=pms.length===1;
-  // Переключатель мастеров — чтобы не листать страницу до нижнего мастера
-  if(!anyOne){
-    if(pms.map(function(x){return x.name;}).indexOf(payMasterView)<0)payMasterView=pms[0].name;
-    html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
-    pms.forEach(function(mc){
-      var tot=payoutTotalFor(mc.name);
-      var act=payMasterView===mc.name;
-      html+='<button class="chip'+(act?' active':'')+'" style="display:inline-flex;align-items:center;gap:6px;flex:1;min-width:130px;justify-content:center" data-pm="'+mc.name+'" onclick="setPayMaster(this.dataset.pm)">'
-        +'<span style="width:8px;height:8px;border-radius:50%;background:'+mc.color+';display:inline-block"></span>'
-        +'<span style="font-weight:700">'+mc.name+'</span>'
-        +'<span style="font-size:11px;opacity:.8">'+(tot>0?fmt(tot):'✓')+'</span>'
-        +'</button>';
-    });
-    html+='</div>';
-    pms=pms.filter(function(mc){return mc.name===payMasterView;});
-  }
-  pms.forEach(function(mc){
+  var anyOne=payoutMasters().length===1;
+  payoutMasters().forEach(function(mc){
     var m=mc.name;
     // Аванс можно выплачивать пока заказ ещё в процессе (новый / след. неделя / в работе)
     var needAdv=advNeedFor(m);
@@ -2827,7 +2512,7 @@ function tplPayments(){
     var advSum=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0);
     var postSum=needPost.reduce(function(s,o){return s+remainingPay(o);},0);
     var grandTotal=advSum+postSum;
-    var hasAny=grandTotal>0||advDone.length||allDone.length||advLaterFor(m,true).length;
+    var hasAny=grandTotal>0||advDone.length||allDone.length||advLaterFor(m).length;
     var pct=advPctLbl(m);
 
     // Заголовок мастера — когда мастер в выплатах один, лишний разделитель не нужен
@@ -2857,34 +2542,23 @@ function tplPayments(){
       if(!needAdv.length)html+='<div class="empty" style="padding:12px 0"><div style="font-size:20px">✓</div>Авансов к выплате нет</div>';
       else needAdv.forEach(function(o){html+=payRow(o,'advance');});
       // Заказы, по которым аванс возможен, но неделя ещё не подошла
-      var later=advLaterFor(m,showNewAdv);
-      var newCnt=advNewCount(m);
-      if(later.length||newCnt){
+      var later=advLaterFor(m);
+      if(later.length){
         var laterSum=later.reduce(function(s2,o){return s2+calcAdvance(o);},0);
         html+='<div class="section-lbl" style="margin-top:14px">Аванс позже · другие статусы — '+later.length+' · '+fmt(laterSum)+'</div>'
           +'<div style="font-size:11px;color:var(--text3);margin:-4px 0 8px">Не входят в сводку и в кнопку «Только авансы». Выплатить можно по одному.</div>';
-        if(newCnt){
-          html+='<button class="chip'+(showNewAdv?' active':'')+'" style="margin-bottom:8px" onclick="toggleNewAdv()">'
-            +(showNewAdv?'Скрыть статус «Новый» ('+newCnt+')':'Показать статус «Новый» ('+newCnt+')')+'</button>';
-        }
         later.forEach(function(o){html+=payRow(o,'advance');});
       }
     }
 
     html+='<div class="section-lbl" style="margin-top:16px">'+(pct>0?'Доплаты':'Выплаты')+' (готовы) — '+needPost.length+'</div>';
-    // Заказы, по которым аванс так и не выплатили: он не теряется — входит в сумму за готовый заказ
-    var carry=needPost.filter(function(o){return !o.advancePaid&&calcAdvance(o)>0;});
-    if(carry.length){
-      var carrySum=carry.reduce(function(s2,o){return s2+calcAdvance(o);},0);
-      html+='<div style="font-size:11px;color:var(--orange-ink);margin:-4px 0 8px">Невыплаченный аванс по '+carry.length+' '+pluralZakaz(carry.length)+' ('+fmt(carrySum)+') включён в сумму к выплате</div>';
-    }
     if(!needPost.length)html+='<div class="empty" style="padding:12px 0"><div style="font-size:20px">✓</div>Всё выплачено</div>';
     else needPost.forEach(function(o){html+=payRow(o,'postpay');});
 
     // Забытые долги: заказ с невыплаченными деньгами, выпавший из всех статусов (например «Архив»)
     var lost=orders.filter(function(o){return o.master===m&&remainingPay(o)>0&&PAY_ADV_STATUSES.indexOf(o.status)<0&&PAY_POST_STATUSES.indexOf(o.status)<0;});
     if(lost.length){
-      html+='<div class="section-lbl" style="margin-top:16px;color:var(--red-ink)">Не выплачено (архив/прочее) — '+lost.length+'</div>';
+      html+='<div class="section-lbl" style="margin-top:16px;color:var(--red-ink)">⚠️ Не выплачено (архив/прочее) — '+lost.length+'</div>';
       lost.forEach(function(o){html+=payRow(o,'postpay');});
     }
     if(advDone.length){
@@ -2892,15 +2566,8 @@ function tplPayments(){
       advDone.forEach(function(o){html+=payRow(o,'adv-done');});
     }
     if(allDone.length){
-      // История полных выплат прячется под раскрывающийся список, чтобы не мешала работе
-      var doneOpen=!!payDoneOpen[m];
-      var doneSum=allDone.reduce(function(s2,o){return s2+calcMasterPay(o);},0);
-      html+='<div class="section-lbl" style="margin-top:16px;cursor:pointer;display:flex;align-items:center;gap:6px" data-pm="'+m+'" onclick="togglePayDone(this.dataset.pm)">'
-        +'<span style="font-size:12px">'+(doneOpen?'⌃':'⌄')+'</span>'
-        +'<span>Полностью выплачено — '+allDone.length+'</span>'
-        +'<span style="margin-left:auto;color:var(--green-ink);font-weight:700">'+fmt(doneSum)+'</span>'
-        +'</div>';
-      if(doneOpen)allDone.forEach(function(o){html+=payRow(o,'pay-done');});
+      html+='<div class="section-lbl" style="margin-top:16px">Полностью выплачено — '+allDone.length+'</div>';
+      allDone.forEach(function(o){html+=payRow(o,'pay-done');});
     }
     if(!hasAny)html+='<div class="empty" style="padding:16px 0">Заказов нет</div>';
   });
@@ -2989,7 +2656,7 @@ function remainingPay(o){
 function payMsgText(o){
   var rest=Math.max(0,orderTotal(o)-(o.prepaid||0));
   return 'К доплате '+rest.toLocaleString('ru')+'₽,\n\n'
-    +'Оплатить можно на карту OZON Банк по номеру телефона ниже, получатель Дарья Андреевна С. К СБП подключён.\n\n'
+    +'Оплатить можно на карту Сбер по номеру телефона ниже, получатель Дарья Андреевна С. К СБП подключён.\n\n'
     +'+79776516579';
 }
 // Сообщение клиенту при статусе «Отправлен» — по гендеру/количеству + ссылка на отслеживание
@@ -3010,7 +2677,7 @@ function clientMsgBox(title,text){
   return '<div style="padding:12px 16px;border-bottom:1px solid var(--border)">'
     +'<div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:0;margin-bottom:8px">'+title+'</div>'
     +'<textarea readonly onclick="this.select()" style="width:100%;box-sizing:border-box;min-height:70px;padding:8px 10px;border-radius:8px;font-size:12px;background:var(--bg);color:var(--text1);resize:vertical;font-family:inherit;line-height:1.5">'+esc(text)+'</textarea>'
-    +'<button class="btn btn-sm btn-secondary" style="margin-top:6px;font-size:11px" data-val="'+esc(text)+'" onclick="copyField(this.dataset.val,this)">Копировать сообщение</button>'
+    +'<button class="btn btn-sm btn-secondary" style="margin-top:6px;font-size:11px" data-val="'+esc(text)+'" onclick="copyField(this.dataset.val,this)">📋 Копировать сообщение</button>'
     +'</div>';
 }
 
@@ -3022,15 +2689,7 @@ function undoPayBtn(el){undoPay(el.dataset.id,el.dataset.type);}
 // К выплате сейчас: только заказы со статусом «След. неделя»
 function advNeedFor(m){return orders.filter(function(o){return o.master===m&&o.status===ADV_PAY_STATUS&&!o.advancePaid&&calcAdvance(o)>0;});}
 // Аванс возможен, но неделя ещё не подошла — справочный список
-// Заказы в статусе «Новый» по умолчанию скрыты: они ещё могут перейти к другому мастеру.
-// Показать их можно переключателем в разделе авансов (showNewAdv).
-function advLaterFor(m,withNew){return orders.filter(function(o){
-  if(o.master!==m||o.status===ADV_PAY_STATUS)return false;
-  if(o.status==='new'&&!withNew)return false;
-  return PAY_ADV_STATUSES.indexOf(o.status)>=0&&!o.advancePaid&&calcAdvance(o)>0;
-});}
-// Сколько авансов спрятано фильтром «Новый» — для подписи на переключателе
-function advNewCount(m){return orders.filter(function(o){return o.master===m&&o.status==='new'&&!o.advancePaid&&calcAdvance(o)>0;}).length;}
+function advLaterFor(m){return orders.filter(function(o){return o.master===m&&o.status!==ADV_PAY_STATUS&&PAY_ADV_STATUSES.indexOf(o.status)>=0&&!o.advancePaid&&calcAdvance(o)>0;});}
 function postNeedFor(m){return orders.filter(function(o){return o.master===m&&PAY_POST_STATUSES.indexOf(o.status)>=0&&!o.postpayPaid;});}
 // Сообщение для телеграма после выплаты
 function buildPayoutMsg(p){
@@ -3158,7 +2817,7 @@ async function updateShipDate(id,val){
   if(!o)return;
   o.shipDate=val;
   await saveOrders(orders);
-  toast('Дата отправки сохранена');
+  toast('📬 Дата отправки сохранена');
 }
 
 function tplSvetaFinance(){
@@ -3284,7 +2943,7 @@ function tplSvetaFinance(){
   html+='</div>';
 
   html+='<div class="section-lbl">История заказов'+(rangeLabel?' · '+rangeLabel:'')+'</div>';
-  if(!myOrders.length){html+='<div class="empty">Нет заказов за период</div>';}
+  if(!myOrders.length){html+='<div class="empty"><div class="empty-icon">🧸</div>Нет заказов за период</div>';}
   myOrders.slice().sort(function(a,b){return b.created-a.created;}).forEach(function(o){
     var total=calcMasterPay(o),adv=calcAdvance(o),post=calcPostpay(o);
     var wInfo=orderWeight(o)?orderWeight(o)+'г':'—';
@@ -3292,7 +2951,7 @@ function tplSvetaFinance(){
       +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
       +'<span style="font-family:serif;font-size:14px;color:var(--accent);font-weight:600">'+o.num+'</span>'
       +'<span class="badge '+(STATUSES[o.status]||STATUSES.new).cls+'">'+(STATUSES[o.status]||STATUSES.new).label+'</span>'
-      +(isClosed(o)?' <span class="badge" style="background:var(--green-bg);color:var(--green-ink)">Закрыт</span>':'')
+      +(isClosed(o)?' <span class="badge" style="background:var(--green-bg);color:var(--green-ink)">🔒 Закрыт</span>':'')
       +'</div>'
       +'<div style="font-size:12px;color:var(--text3);margin-bottom:8px">'+orderToyLabel(o)+' · '+wInfo+' · '+moLbl(o.month)+'</div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:12px">'
@@ -3348,7 +3007,7 @@ function tplTodos(){
   if(active.length){
     active.forEach(function(t){html+=todoItem(t);});
   }else{
-    html+='<div class="empty" style="padding:24px 0">Нет активных задач</div>';
+    html+='<div class="empty" style="padding:24px 0"><div class="empty-icon">🎉</div>Нет активных задач</div>';
   }
   if(done.length){
     html+='<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0;margin:8px 0">Выполнено ('+done.length+')</div>';
@@ -3370,59 +3029,6 @@ function todoItem(t){
     +'<button data-tid="'+t.id+'" onclick="deleteTodo(this.dataset.tid)" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;padding:0;line-height:1;flex-shrink:0">×</button>'
     +'</div>';
 }
-// ── «Моя неделя» — доска по стадиям пошива, без личных данных клиента ──
-// targetMaster: имя мастера, чью доску показываем (masterName для мастеров, DIRECTOR_MASTER для Даши)
-function tplMyWeek(targetMaster){
-  var board=orders.filter(function(o){return o.master===targetMaster&&weekColIndex(o)>=0;});
-  var html='';
-  // Сегмент-переключатель стадий со счётчиками — прокручивается вбок, без переноса строк
-  html+='<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:4px;-webkit-overflow-scrolling:touch">';
-  WEEK_COLUMNS.forEach(function(c){
-    var n=board.filter(c.match).length;
-    html+='<button class="chip'+(weekCol===c.key?' active':'')+'" style="flex:0 0 auto" data-wc="'+c.key+'" onclick="weekCol=this.dataset.wc;renderTab(\'week\')">'+c.label+(n?' ('+n+')':'')+'</button>';
-  });
-  html+='</div>';
-
-  var colIdx=WEEK_COLUMNS.findIndex(function(c){return c.key===weekCol;});
-  if(colIdx<0){colIdx=0;weekCol=WEEK_COLUMNS[0].key;}
-  var col=WEEK_COLUMNS[colIdx];
-  var list=board.filter(col.match).sort(function(a,b){return (a.deliveryDay||99)-(b.deliveryDay||99);});
-
-  if(!list.length){html+='<div class="empty">Здесь пока пусто</div>';return html;}
-
-  list.forEach(function(o){
-    var items=getItems(o);
-    var body='';
-    items.forEach(function(it,idx){
-      var gl=it.gender?({boy:'Мальчик',girl:'Девочка'}[it.gender]||it.gender):'';
-      body+='<div style="'+(idx?'margin-top:8px;':'')+'font-size:12px;font-weight:700;color:var(--accent)">'+(it.toyType||'Игрушка')+(((parseInt(it.count)||1)>1)?' ×'+it.count:'')+'</div>';
-      var line=[];
-      if(it.weightG)line.push(it.weightG+'г');
-      if(it.heightCm)line.push(it.heightCm+' см');
-      if(gl)line.push(gl);
-      if(line.length)body+='<div style="font-size:12px;color:var(--text3)">'+line.join(' · ')+'</div>';
-      body+='<div style="font-size:12px;color:var(--text3)">Вышивка: '+(it.embCount?('да ×'+it.embCount+(it.embText?' «'+it.embText+'»':'')):'нет')+'</div>';
-      if(it.clothes)body+='<div style="font-size:12px;color:var(--text3)">Одежда: '+it.clothes+'</div>';
-      if(it.comment)body+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-top:2px">'+it.comment+'</div>';
-    });
-    if(o.comment)body+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
-    html+='<div class="card '+(o.urgent?'urgent':'')+'" style="margin-bottom:10px">'
-      +'<div style="padding:12px 14px">'
-      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
-      +'<span class="card-num">'+o.num+'</span>'
-      +(o.urgent?'<span class="badge b-urgent">Срочно</span>':'')
-      +(o.deliveryDay?'<span style="font-size:12px;color:var(--text3);margin-left:auto">сдать до '+o.deliveryDay+'-го</span>':'')
-      +'</div>'
-      +body
-      +'<div style="display:flex;gap:8px;margin-top:12px">'
-      +(colIdx>0?'<button class="btn btn-sm btn-secondary" style="flex:1;justify-content:center" data-oid="'+o.id+'" onclick="moveWeekCard(this.dataset.oid,-1)">← Назад</button>':'')
-      +(colIdx<WEEK_COLUMNS.length-1?'<button class="btn btn-sm btn-primary" style="flex:1;justify-content:center" data-oid="'+o.id+'" onclick="moveWeekCard(this.dataset.oid,1)">Дальше →</button>':'')
-      +'</div>'
-      +'</div></div>';
-  });
-  return html;
-}
-
 function tplMaster(){
   var myBase=masterName?orders.filter(function(o){return o.master===masterName;}):orders;
   var months=[...new Set(myBase.map(function(o){return o.month;}))].sort();
@@ -3453,7 +3059,7 @@ function tplMaster(){
   html+='</div>';
   // Кнопка СДЭК для мастера (только свои заказы «отправка планируется»)
   if(sdekCnt>0){
-    html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center" onclick="openSdekExport()">Выгрузить для СДЭК ('+sdekCnt+')</button>';
+    html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center" onclick="openSdekExport()">📦 Выгрузить для СДЭК ('+sdekCnt+')</button>';
   }
   var statusLblM=fStatus==='all'?'Статусы':(STATUSES[fStatus]?STATUSES[fStatus].label:'Статусы');
   var monthLblM=fMonth==='all'?'Месяц':moLbl(fMonth);
@@ -3461,7 +3067,7 @@ function tplMaster(){
 
   html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;position:relative">';
   // Архив — все выполненные заказы мастера
-  html+='<button class="chip'+(showArchive?' active':'')+'" onclick="showArchive=!showArchive;renderTab(\'master\')" style="display:inline-flex;align-items:center;gap:4px">'+(showArchive?'← К работе':'Архив'+(doneList.length?' ('+doneList.length+')':''))+'</button>';
+  html+='<button class="chip'+(showArchive?' active':'')+'" onclick="showArchive=!showArchive;renderTab(\'master\')" style="display:inline-flex;align-items:center;gap:4px">'+(showArchive?'← К работе':'📦 Архив'+(doneList.length?' ('+doneList.length+')':''))+'</button>';
   // Status dropdown
   html+='<div class="dropdown" style="position:relative">'
     +'<button class="chip'+(fStatus!=='all'?' active':'')+'" data-drop="drop-mstatus" style="display:inline-flex;align-items:center;gap:4px">'+statusLblM+' ▾</button>'
@@ -3486,7 +3092,7 @@ function tplMaster(){
   if(showArchive){
     var arch=doneList.filter(function(o){return fMonth==='all'||o.month===fMonth;})
       .sort(function(a,b){return (b.month||'').localeCompare(a.month||'')||((b.created||0)-(a.created||0));});
-    if(!arch.length){html+='<div class="empty">Архив пуст</div>';return html;}
+    if(!arch.length){html+='<div class="empty"><div class="empty-icon">📦</div>Архив пуст</div>';return html;}
     arch.forEach(function(o){
       var aItems=getItems(o);
       var params='';
@@ -3500,7 +3106,7 @@ function tplMaster(){
         if(line.length)params+='<div style="font-size:12px;color:var(--text3)">'+line.join(' · ')+'</div>';
         if(gl)params+='<div style="font-size:12px;color:var(--text3)">Пол: '+gl+'</div>';
         if(it.clothes)params+='<div style="font-size:12px;color:var(--text3)">Одежда: '+it.clothes+'</div>';
-        if(it.comment)params+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic">'+it.comment+'</div>';
+        if(it.comment)params+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic">💬 '+it.comment+'</div>';
       });
       if(o.comment)params+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:4px">'+o.comment+'</div>';
       html+='<div class="card" id="c-'+o.id+'" style="margin-bottom:8px;opacity:.85">'
@@ -3516,14 +3122,14 @@ function tplMaster(){
     return html;
   }
 
-  if(!filtered.length){html+='<div class="empty">Нет заказов</div>';return html;}
+  if(!filtered.length){html+='<div class="empty"><div class="empty-icon">🎉</div>Нет заказов</div>';return html;}
   filtered.forEach(function(o){
     var st=STATUSES[o.status]||STATUSES.new;
     // Ship date field for planned status
     var shipDateField='';
     if(o.status==='planned'){
       shipDateField='<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text3)">'
-        +'<span>Дата отправки:</span>'
+        +'<span>📬 Дата отправки:</span>'
         +'<input type="date" value="'+(o.shipDate||'')+'" '
         +'style="padding:3px 6px;border-radius:6px;font-size:12px;background:var(--bg)" '
         +'data-oid="'+o.id+'" onchange="updateShipDate(this.dataset.oid,this.value)">'
@@ -3545,7 +3151,7 @@ function tplMaster(){
       if(line.length)paramsM+='<div style="font-size:12px;color:var(--text3);margin-bottom:2px">'+line.join(' · ')+'</div>';
       if(gl)paramsM+='<div style="font-size:12px;margin-bottom:2px"><span style="color:var(--text3)">Пол: </span>'+gl+'</div>';
       if(it.clothes)paramsM+='<div style="font-size:12px;margin-bottom:2px"><span style="color:var(--text3)">Одежда: </span>'+it.clothes+'</div>';
-      if(it.comment)paramsM+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-bottom:2px">'+it.comment+'</div>';
+      if(it.comment)paramsM+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-bottom:2px">💬 '+it.comment+'</div>';
     });
     if(o.comment)paramsM+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
     paramsM+='</div>';
@@ -3553,7 +3159,7 @@ function tplMaster(){
       +'<div style="padding:12px 14px">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
       +'<span class="card-num">'+o.num+'</span><span class="badge '+st.cls+'">'+st.label+'</span>'
-      +(o.urgent?'<span class="badge b-urgent">Срочно</span>':'')
+      +(o.urgent?'<span class="badge b-urgent">⚡ Срочно</span>':'')
       +(orderToyLabel(o)?'<span style="font-size:11px;font-weight:700;color:var(--accent2);background:var(--accent-bg);padding:2px 8px;border-radius:8px">'+orderToyLabel(o)+'</span>':'')
       +'</div>'
       +'<div style="font-size:12px;color:var(--text3);margin-top:2px">'+orderQty(o)+' шт. · '+moLbl(o.month)+'</div>'
@@ -3837,6 +3443,8 @@ var bankPeriod='month';     // 'week' | 'month' | 'all'
 var bankMonthKey='';        // выбранный месяц YYYY-MM
 var bankFilterAcc='all';
 var bankFilterDir='all';
+var bankFilterType='all';   // all | income | expense | transfer
+var bankFilterCat='';       // выбранная категория внутри типа
 var bankAiDraft=null;       // распознанные ИИ операции, ждущие подтверждения
 
 function canSeeBank(){return role==='manager'||role==='director';}
@@ -3915,7 +3523,9 @@ function bankRange(){
   }
   return {start:new Date(2000,0,1),end:new Date(2999,0,1),label:'Всё время'};
 }
-function bankPeriodTx(){
+// Период, счёт, направление. По этой выборке считаются итоги и разбивка —
+// иначе выбор «Расход» обнулял бы плитку «Доход».
+function bankScopeTx(){
   var r=bankRange();
   return bankTxAll().filter(function(t){
     var d=new Date(t.date+'T12:00:00');
@@ -3925,10 +3535,27 @@ function bankPeriodTx(){
     return true;
   });
 }
+// То же плюс тип и категория — это и есть лента операций
+function bankListTx(){
+  return bankScopeTx().filter(function(t){
+    if(bankFilterType!=='all'&&t.type!==bankFilterType)return false;
+    if(bankFilterCat&&(t.category||'')!==bankFilterCat)return false;
+    return true;
+  });
+}
+function bankPeriodTx(){return bankListTx();}   // прежнее имя — для сверки с заказами
+// Повторный тап по активной плитке снимает фильтр
+function setBankType(t){bankFilterType=(bankFilterType===t?'all':t);bankFilterCat='';renderTab('bank');}
+function setBankCat(type,cat){
+  if(bankFilterCat===cat&&bankFilterType===type){bankFilterCat='';bankFilterType='all';}
+  else{bankFilterType=type;bankFilterCat=cat;}
+  renderTab('bank');
+}
+function resetBankFilters(){bankFilterType='all';bankFilterCat='';bankFilterAcc='all';bankFilterDir='all';renderTab('bank');}
 function setBankPeriod(p){bankPeriod=p;if(p!=='month')bankMonthKey='';renderTab('bank');}
 function setBankMonth(m){bankMonthKey=m;bankPeriod='month';renderTab('bank');}
-function setBankAcc(id){bankFilterAcc=id;renderTab('bank');}
-function setBankDir(d){bankFilterDir=d;renderTab('bank');}
+function setBankAcc(id){bankFilterAcc=id;bankFilterCat='';renderTab('bank');}
+function setBankDir(d){bankFilterDir=d;bankFilterCat='';renderTab('bank');}
 
 function todayISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function dLbl(iso){
@@ -3950,7 +3577,7 @@ async function bankSetupDefaults(){
 
 // ═══ ЭКРАН ═══
 function tplBank(){
-  if(!canSeeBank())return '<div class="empty">Раздел недоступен</div>';
+  if(!canSeeBank())return '<div class="empty"><div class="empty-icon">🔒</div>Раздел недоступен</div>';
 
   if(!financeTableOk){
     return '<div class="card" style="padding:16px">'
@@ -3964,6 +3591,7 @@ function tplBank(){
   var accs=bankAccounts();
   if(!accs.length){
     return '<div class="card" style="padding:20px;text-align:center">'
+      +'<div class="empty-icon" style="font-size:32px">🏦</div>'
       +'<div style="font-size:14px;color:var(--text2);margin:8px 0 14px">Счета ещё не заведены</div>'
       +'<button class="btn btn-primary" onclick="bankSetupDefaults()">Создать: Озон, Сбер, Вклад</button>'
       +'</div>';
@@ -3994,7 +3622,7 @@ function tplBank(){
     var bal=accBalance(a.id);
     var isSav=a.type==='savings';
     html+='<div onclick="openAccountEdit(\''+a.id+'\')" style="background:'+(isSav?'var(--bg2)':'var(--card)')+';border-radius:14px;box-shadow:var(--sh);padding:12px;cursor:pointer">'
-      +'<div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px">'+a.name+(isSav?'':'')+'</div>'
+      +'<div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px">'+a.name+(isSav?' 🔒':'')+'</div>'
       +'<div style="font-size:16px;font-weight:700;color:'+(bal>=0?'var(--accent)':'var(--red-ink)')+'">'+fmt(bal)+'</div>'
       +'</div>';
   });
@@ -4043,28 +3671,50 @@ function tplBank(){
   });
   html+='</div>';
 
-  // ── Итоги периода ──
-  var list=bankPeriodTx();
-  var inc=list.filter(function(x){return x.type==='income';}).reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0);
-  var exp=list.filter(function(x){return x.type==='expense';}).reduce(function(s,x){return s+(parseFloat(x.amount)||0);},0);
-  html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">'
-    +'<div style="background:var(--green-bg);border-radius:12px;padding:10px;text-align:center"><div style="font-size:14px;font-weight:700;color:var(--green-ink)">'+fmt(inc)+'</div><div style="font-size:10px;color:var(--text3)">Доход</div></div>'
-    +'<div style="background:var(--red-bg);border-radius:12px;padding:10px;text-align:center"><div style="font-size:14px;font-weight:700;color:var(--red-ink)">'+fmt(exp)+'</div><div style="font-size:10px;color:var(--text3)">Расход</div></div>'
-    +'<div style="background:var(--bg2);border-radius:12px;padding:10px;text-align:center"><div style="font-size:14px;font-weight:700;color:'+(inc-exp>=0?'var(--green-ink)':'var(--red-ink)')+'">'+fmt(inc-exp)+'</div><div style="font-size:10px;color:var(--text3)">Итог</div></div>'
+  // ── Итоги периода. Плитки работают переключателем типа ──
+  var scope=bankScopeTx();
+  var list=bankListTx();
+  var sumBy=function(t){return scope.filter(function(x){return x.type===t;})
+      .reduce(function(s2,x){return s2+(parseFloat(x.amount)||0);},0);};
+  var inc=sumBy('income'), exp=sumBy('expense');
+  var tile=function(type,val,lbl,color,bg){
+    var on=bankFilterType===type;
+    return '<div onclick="setBankType(\''+type+'\')" style="background:'+bg+';border-radius:12px;padding:10px;text-align:center;cursor:pointer'
+      +(on?';box-shadow:0 0 0 2px var(--accent)':'')+'">'
+      +'<div style="font-size:14px;font-weight:700;color:'+color+'">'+fmt(val)+'</div>'
+      +'<div style="font-size:10px;color:var(--text3)">'+lbl+'</div></div>';
+  };
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'
+    +tile('income',inc,'Доход','var(--green-ink)','var(--green-bg)')
+    +tile('expense',exp,'Расход','var(--red-ink)','var(--red-bg)')
+    +tile('all',inc-exp,'Итог · всё',(inc-exp>=0?'var(--green-ink)':'var(--red-ink)'),'var(--bg2)')
     +'</div>';
+
+  // Что сейчас выбрано + сброс
+  if(bankFilterType!=='all'||bankFilterCat||bankFilterAcc!=='all'||bankFilterDir!=='all'){
+    var parts=[];
+    if(bankFilterType!=='all')parts.push({income:'Доходы',expense:'Расходы',transfer:'Переводы'}[bankFilterType]);
+    if(bankFilterCat)parts.push('«'+bankFilterCat+'»');
+    if(bankFilterAcc!=='all')parts.push(accName(bankFilterAcc));
+    if(bankFilterDir!=='all')parts.push(DIR_LBL[bankFilterDir]);
+    html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--text2)">'
+      +'<span>Показано: '+parts.join(' · ')+'</span>'
+      +'<button class="chip" onclick="resetBankFilters()">Сбросить</button></div>';
+  }
+
+  // ── Разбивка по категориям: сначала структура, потом детали ──
+  html+=tplBankBreakdown(scope);
 
   // ── Лента ──
   html+='<div class="section-lbl" style="margin-bottom:6px">Операции — '+list.length+'</div>';
   if(!list.length){
-    html+='<div class="empty" style="padding:24px">Операций за период нет</div>';
+    html+='<div class="empty" style="padding:24px"><div class="empty-icon">💸</div>Операций нет</div>';
   }else{
     html+=list.map(txRow).join('');
   }
 
-  // ── Расходы по категориям ──
-  html+=tplBankByCategory(list);
   // ── Сверка с заказами ──
-  html+=tplBankReconcile(list);
+  html+=tplBankReconcile(scope);   // сверка считает доход и расход целиком, фильтр типа её не касается
 
   html+='</div>';
   return html;
@@ -4088,24 +3738,44 @@ function txRow(t){
     +'</div>';
 }
 
-function tplBankByCategory(list){
-  var exp=list.filter(function(t){return t.type==='expense';});
-  if(!exp.length)return '';
-  var by={};
-  exp.forEach(function(t){var c=t.category||'Прочее';by[c]=(by[c]||0)+(parseFloat(t.amount)||0);});
-  var rows=Object.keys(by).map(function(c){return {c:c,v:by[c]};}).sort(function(a,b){return b.v-a.v;});
-  var tot=rows.reduce(function(s,r){return s+r.v;},0);
-  var html='<div class="card" style="padding:14px;margin-top:14px">'
-    +'<div class="section-lbl" style="margin-bottom:10px">Расходы по категориям</div>';
-  rows.forEach(function(r){
-    var p=tot>0?Math.round(r.v/tot*100):0;
-    html+='<div style="margin-bottom:8px">'
-      +'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:3px"><span>'+r.c+'</span><span style="font-weight:700">'+fmt(r.v)+' · '+p+'%</span></div>'
-      +'<div style="height:6px;background:var(--bg2);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+p+'%;background:var(--accent)"></div></div>'
+// Разбивка по категориям — отдельно доходы и расходы.
+// Строка кликабельна: тап фильтрует ленту по этой категории.
+function tplBankBreakdown(scope){
+  var out='';
+  [['income','Доходы по категориям','var(--green-ink)','var(--green)'],
+   ['expense','Расходы по категориям','var(--red-ink)','var(--red)']].forEach(function(cfg){
+    var type=cfg[0];
+    if(bankFilterType!=='all'&&bankFilterType!==type)return;
+    var list=scope.filter(function(t){return t.type===type;});
+    if(!list.length)return;
+    var by={};
+    list.forEach(function(t){var c=t.category||'Прочее';
+      if(!by[c])by[c]={sum:0,n:0};
+      by[c].sum+=parseFloat(t.amount)||0;by[c].n++;});
+    var rows=Object.keys(by).map(function(c){return {c:c,v:by[c].sum,n:by[c].n};})
+      .sort(function(a,b){return b.v-a.v;});
+    var tot=rows.reduce(function(s2,r){return s2+r.v;},0);
+    out+='<div class="card" style="padding:14px;margin-bottom:10px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">'
+        +'<span class="section-lbl" style="margin:0">'+cfg[1]+'</span>'
+        +'<span style="font-size:13px;font-weight:700;color:'+cfg[2]+'">'+fmt(tot)+'</span>'
       +'</div>';
+    rows.forEach(function(r){
+      var pc=tot>0?Math.round(r.v/tot*100):0;
+      var on=bankFilterCat===r.c&&bankFilterType===type;
+      out+='<div onclick="setBankCat(\''+type+'\',\''+esc(r.c).replace(/'/g,"&#39;")+'\')" '
+        +'style="margin-bottom:9px;cursor:pointer;padding:4px 6px;margin-left:-6px;margin-right:-6px;border-radius:8px'
+        +(on?';background:var(--accent-bg)':'')+'">'
+        +'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text1);margin-bottom:4px">'
+          +'<span>'+r.c+' <span style="color:var(--text3)">· '+r.n+'</span></span>'
+          +'<span style="font-weight:700">'+fmt(r.v)+' · '+pc+'%</span></div>'
+        +'<div style="height:6px;background:var(--bg2);border-radius:3px;overflow:hidden">'
+          +'<div style="height:100%;width:'+pc+'%;background:'+cfg[3]+'"></div></div>'
+        +'</div>';
+    });
+    out+='</div>';
   });
-  html+='</div>';
-  return html;
+  return out;
 }
 
 // Сверка: расчётная прибыль по закрытым заказам против фактического денежного потока.
@@ -4139,7 +3809,7 @@ function tplBankAi(){
   var html='<div class="card" style="padding:12px;margin-bottom:10px">'
     +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0;margin-bottom:6px">Быстрый ввод</div>'
     +'<textarea id="fin-ai-input" placeholder="Например: оплата материалов с озон 4500, вчера пришла предоплата 7000 на сбер по М-015" style="width:100%;min-height:56px;padding:9px 12px;border-radius:12px;background:var(--input-bg);font-family:\'Golos Text\',sans-serif;font-size:13px;color:var(--text1);outline:none;resize:vertical"></textarea>'
-    +'<button id="fin-ai-btn" class="btn btn-primary btn-full btn-sm" style="margin-top:8px" onclick="parseFinanceWithAI()">Распознать</button>';
+    +'<button id="fin-ai-btn" class="btn btn-primary btn-full btn-sm" style="margin-top:8px" onclick="parseFinanceWithAI()">✨ Распознать</button>';
   if(bankAiDraft&&bankAiDraft.length)html+=tplAiDraft();
   html+='</div>';
   return html;
@@ -4266,12 +3936,12 @@ async function parseFinanceWithAI(){
       };
     }).filter(function(d){return d.amount>0;});
     if(!bankAiDraft.length){bankAiDraft=null;toast('Не удалось распознать сумму');}
-    else{document.getElementById('fin-ai-input').value='';toast('Распознано операций: '+bankAiDraft.length);}
+    else{document.getElementById('fin-ai-input').value='';toast('✅ Распознано операций: '+bankAiDraft.length);}
     renderTab('bank');
   }catch(e){
-    toast('Ошибка: '+e.message);
+    toast('⚠️ Ошибка: '+e.message);
     console.error('Finance AI error:',e);
-    btn.disabled=false;btn.textContent='Распознать';
+    btn.disabled=false;btn.textContent='✨ Распознать';
   }
 }
 
@@ -4291,7 +3961,7 @@ async function commitAiDraft(){
   bankAiDraft=null;
   var ok=await saveFinance(finance.concat(recs));
   renderTab('bank');
-  if(ok)toast('Добавлено операций: '+n);
+  if(ok)toast('✅ Добавлено операций: '+n);
 }
 
 // ═══ РУЧНАЯ ФОРМА ═══
@@ -4457,9 +4127,8 @@ function offerOrderIncome(order,delta){
     .reduce(function(s,t){return s+(parseFloat(t.amount)||0);},0);
   var el=document.createElement('div');
   el.id='oi-modal';
-  // Окно по центру экрана: кнопка «Внести» у нижнего края слишком неудобна для нажатия
-  el.style.cssText='position:fixed;inset:0;background:rgba(60,48,32,.5);z-index:320;display:flex;align-items:center;justify-content:center;padding:16px';
-  el.innerHTML='<div style="background:var(--card);border-radius:20px;padding:20px;width:100%;max-width:420px;max-height:85vh;overflow-y:auto;box-shadow:var(--sh2)">'
+  el.style.cssText='position:fixed;inset:0;background:rgba(60,48,32,.5);z-index:320;display:flex;align-items:flex-end;justify-content:center';
+  el.innerHTML='<div style="background:var(--card);border-radius:20px 20px 0 0;padding:20px;width:100%;max-width:480px">'
     +'<div style="font-weight:700;letter-spacing:-.4px;font-size:17px;color:var(--accent);margin-bottom:4px">Внести деньги в банк?</div>'
     +'<div style="font-size:12px;color:var(--text3);margin-bottom:14px">По заказу '+order.num+' оплата выросла на <b style="color:var(--green-ink)">'+fmt(delta)+'</b>.'
       +(already>0?'<br>Ранее по этому заказу уже проведено '+fmt(already)+'.':'')+'</div>'
@@ -4492,7 +4161,7 @@ async function confirmOrderIncome(orderId){
   };
   closeOiModal();
   var ok=await saveFinance(finance.concat([rec]));
-  if(ok)toast('Доход '+fmt(amount)+' внесён в банк');
+  if(ok)toast('Доход '+fmt(amount)+' внесён в банк ✓');
 }
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
@@ -4506,8 +4175,8 @@ document.addEventListener('wheel',function(e){
 
 // Netlify version - password login only
 window.addEventListener('load',function(){
-  // Автовход: если раньше уже входили на этом устройстве — не спрашиваем пароль снова
-  const saved=localStorage.getItem('markovka_role');
+  // Check if already logged in via sessionStorage
+  const saved=sessionStorage.getItem('markovka_role');
   if(saved){
     try{
       const ui=JSON.parse(saved);
