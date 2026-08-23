@@ -1233,8 +1233,11 @@ function markTrackSent(id){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
   o.trackSent=true;
+  // Трек выслан — заказу больше нечего делать в работе, сразу в архив.
+  o.prevStatus=o.status;
+  o.status='archived';
   renderTab(tab);
-  toast('Трек по '+o.num+' отмечен как высланный');
+  toast('Трек по '+o.num+' выслан, заказ в архиве');
   saveOrders(orders);
 }
 
@@ -1363,6 +1366,14 @@ function orderCard(o){
   // Бейджи
   html+='<div data-toggle-id="'+o.id+'"  onclick="toggleCard(this.dataset.toggleId)" style="padding:8px 16px 0 16px;cursor:pointer;display:flex;flex-wrap:wrap;gap:4px">'+badges+'</div>';
 
+  // «В архив» — видна сразу, без разворачивания карточки, но только пока заказ «Отправлен».
+  // До этого статуса убирать заказ из работы рано.
+  if(canEdit&&o.status==='sent'){
+    html+='<div style="padding:6px 16px 0 16px">'
+      +'<button class="btn btn-sm btn-ghost" style="font-size:11px" data-oid="'+o.id+'" onclick="event.stopPropagation();archiveOrder(this.dataset.oid)">В архив</button>'
+      +'</div>';
+  }
+
   // Стоимость + маржа
   html+='<div data-toggle-id="'+o.id+'"  onclick="toggleCard(this.dataset.toggleId)" style="padding:8px 16px 12px 16px;cursor:pointer;display:flex;align-items:center;justify-content:flex-end;gap:16px">';
   if(canFinance){
@@ -1474,8 +1485,7 @@ function orderCard(o){
     html+='<button class="btn btn-sm btn-secondary" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="openEdit(this.dataset.oid)">Изменить</button>';
     if(o.status==='archived')
       html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="unarchiveOrder(this.dataset.oid)">Вернуть из архива</button>';
-    else
-      html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="archiveOrder(this.dataset.oid)">В архив</button>';
+    // Ручной перенос «В архив» — на компактном виде карточки (см. orderCard), не здесь
     html+='<button style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;margin-top:14px;margin-left:auto" data-oid="'+o.id+'" onclick="delOrder(this.dataset.oid)">Удалить</button>';
   }
   html+='</div>';
@@ -3267,6 +3277,12 @@ async function undoPay(id,type){
 
 
 
+async function updateMasterNoteEl(el){
+  var o=orders.find(function(x){return x.id===el.dataset.oid;});
+  if(!o)return;
+  o.masterNote=el.value;
+  await saveOrders(orders);
+}
 function updateDeliveryDayEl(el){updateDeliveryDay(el.dataset.oid,el.value);}
 function updateDeliveryMonthEl(el){updateDeliveryMonth(el.dataset.oid,el.value);}
 async function updateDeliveryMonth(id,val){
@@ -3569,6 +3585,10 @@ function tplMyWeek(targetMaster){
       if(it.comment)body+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-top:2px">'+it.comment+'</div>';
     });
     if(o.comment)body+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
+    // Заметка мастера себе — почему заказ застрял, что докупить и т.п. Видна только мастеру.
+    body+='<input type="text" data-oid="'+o.id+'" value="'+esc(o.masterNote)+'" placeholder="Заметка себе: жду ткань, обрезать нить..." '
+      +'onclick="event.stopPropagation()" onchange="updateMasterNoteEl(this)" '
+      +'style="width:100%;box-sizing:border-box;margin-top:8px;padding:7px 10px;border-radius:8px;font-size:12px;background:var(--bg);font-family:inherit;outline:none">';
     html+='<div class="card '+(o.urgent?'urgent':'')+'" style="margin-bottom:10px">'
       +'<div style="padding:12px 14px">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
@@ -3594,7 +3614,15 @@ function tplMaster(){
     if(fStatus!=='all'&&o.status!==fStatus)return false;
     if(fMonth!=='all'&&o.month!==fMonth)return false;
     return o.status!=='done'&&o.status!=='sent';
-  }).sort(function(a,b){var r={work:0,ready:1,new:2};return(r[a.status]||3)-(r[b.status]||3);});
+  }).sort(function(a,b){
+    // Сначала — у кого раньше срок сдачи (месяц+день, не просто число дня).
+    // Без срока — в конец, среди них по дате добавления заказа (кто раньше взят).
+    var da=planDate(a), db=planDate(b);
+    if(da&&db){if(da.getTime()!==db.getTime())return da-db;return(a.created||0)-(b.created||0);}
+    if(da&&!db)return -1;
+    if(!da&&db)return 1;
+    return (a.created||0)-(b.created||0);
+  });
   var sdekCnt=myBase.filter(function(o){return o.status==='planned';}).length;
   var html='';
   // Инструкция по статусам (раскрывающаяся)
@@ -3696,7 +3724,7 @@ function tplMaster(){
       ?'<div style="margin-top:6px;padding:6px 10px;background:var(--orange-bg);border-radius:8px;font-size:12px;color:var(--orange-ink)">⏳ Аванс пока не выплачен</div>':'';
     // Блок параметров для мастера по каждой игрушке (без ФИО/телефона/адреса/сумм)
     var mItems=getItems(o);
-    var paramsM='<div style="padding:10px 14px;border-top:1px solid var(--border)">'
+    var paramsM='<div style="padding:8px 12px;border-top:1px solid var(--border)">'
       +'<div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:0;margin-bottom:6px">Параметры</div>';
     mItems.forEach(function(it,idx){
       var gl=it.gender?({boy:'Мальчик',girl:'Девочка'}[it.gender]||it.gender):'';
@@ -3712,22 +3740,18 @@ function tplMaster(){
     });
     if(o.comment)paramsM+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
     paramsM+='</div>';
-    html+='<div class="card '+(o.urgent?'urgent':'')+'" id="c-'+o.id+'" style="margin-bottom:10px">'
-      +'<div style="padding:12px 14px">'
-      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
+    // Срок сдачи — только читает: мастеру нечего в нём отмечать, дату двигает офис.
+    var deadline=planDate(o);
+    var dLbl2=o.deliveryDay?(o.deliveryDay+'-го'+(deadline&&deadline<new Date()?' · просрочен':'')):'без срока';
+    html+='<div class="card '+(o.urgent?'urgent':'')+'" id="c-'+o.id+'" style="margin-bottom:8px">'
+      +'<div style="padding:10px 12px">'
+      +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
       +'<span class="card-num">'+o.num+'</span><span class="badge '+st.cls+'">'+st.label+'</span>'
       +(o.urgent?'<span class="badge b-urgent">Срочно</span>':'')
-      +(orderToyLabel(o)?'<span style="font-size:11px;font-weight:700;color:var(--accent2);background:var(--accent-bg);padding:2px 8px;border-radius:8px">'+orderToyLabel(o)+'</span>':'')
+      +'<span style="margin-left:auto;font-size:12px;font-weight:700;color:'+(o.deliveryDay?'var(--accent2)':'var(--text3)')+'">'+dLbl2+'</span>'
       +'</div>'
-      +'<div style="font-size:12px;color:var(--text3);margin-top:2px">'+orderQty(o)+' шт. · '+moLbl(o.month)+'</div>'
-      +'<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;color:var(--text3);flex-wrap:wrap">'
-      +'<span>Сдать:</span>'
-      +'<input type="number" min="1" max="'+maxDay(o.month)+'" value="'+(o.deliveryDay||'')+'" placeholder="день" '
-      +'style="width:54px;padding:3px 6px;border-radius:6px;font-size:12px;background:var(--bg)" '
-      +'data-oid="'+o.id+'" onchange="updateDeliveryDayEl(this)">-го'
-      +'<input type="month" value="'+(o.month||'')+'" '
-      +'style="padding:3px 6px;border-radius:6px;font-size:12px;background:var(--bg)" '
-      +'data-oid="'+o.id+'" onchange="updateDeliveryMonthEl(this)"></div>'
+      +'<div style="font-size:12px;color:var(--text3);margin-top:3px">'
+      +(orderToyLabel(o)?orderToyLabel(o)+' · ':'')+orderQty(o)+' шт. · '+moLbl(o.month)+'</div>'
       +advWarn+'</div>'
       +paramsM
       +'<div class="card-foot">'
