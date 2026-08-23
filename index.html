@@ -1017,14 +1017,14 @@ function renderTabs(){
     ?[{id:'master',label:'Заказы'},{id:'week',label:'Моя неделя'},{id:'finance',label:'Финансы'},{id:'todos',label:'Задачи'}]
     :[
       {id:'list',label:'Заказы'},
-      {id:'calendar',label:'Календарь'},
+      // У Даши и Александры, как и у мастеров, есть личная рабочая доска по их заказам как мастера
+      // (без ФИО/телефонов клиентов) — по заказам, которые они шьют сами. Календаря у них нет —
+      // не нужен ни Даше, ни Александре.
+      ...((role==='director'||role==='manager')?[{id:'week',label:'Моя неделя'}]:[]),
       ...(canEdit?[{id:'add',label:'Добавить'}]:[]),
       // Банк доступен только Александре (manager) и Дарье (director) — Свете раздел не показывается
       ...(role==='manager'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       ...(role==='director'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
-      // У Даши и Александры, как и у мастеров, есть личная рабочая доска по их заказам как мастера
-      // (без ФИО/телефонов клиентов) — по заказам, которые они шьют сами.
-      ...((role==='director'||role==='manager')?[{id:'week',label:'Моя неделя'}]:[]),
       {id:'todos',label:'Задачи'},
     ];
   bar.innerHTML=all.map(function(t){
@@ -4795,7 +4795,12 @@ window.addEventListener('load',function(){
   if(saved){
     try{
       const ui=JSON.parse(saved);
-      login(ui.role,ui.name,ui.label,ui.masterName);
+      // Берём актуальные role/label/masterName из USERS по кэшированным role+name,
+      // а не то, что сохранилось в localStorage при прошлом входе — иначе правки
+      // справочника (например, у кого какая masterName) не подхватятся без ручного
+      // выхода и повторного входа.
+      const fresh=USERS.find(function(u){return u.role===ui.role&&u.name===ui.name;});
+      login(ui.role,ui.name,fresh?fresh.label:ui.label,fresh?fresh.masterName:ui.masterName);
     }catch(e){/* ignore */}
   }
 });
