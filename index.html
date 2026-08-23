@@ -333,8 +333,13 @@ const MASTER_CFG=[
   {name:'Даша',  varRate:0.25, advancePct:0,   nastya:true,  payouts:true,  tg:'',             color:'#3967E8', ink:'#2755D9', closedOnly:true, payoutFrom:Date.parse('2026-08-17T00:00:00')},
   {name:'Света', varRate:0.40, advancePct:0.3, nastya:false, payouts:true,  tg:'@svetashevel', color:'#79C68A', ink:'#4F815A'},
   {name:'Цветочек',varRate:0.19, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#E68DB1', ink:'#A1637C'},
+  {name:'Александра',varRate:0.19, advancePct:0, nastya:false, payouts:true, tg:'',             color:'#8E86AE', ink:'#5E5780'},
 ];
 const MASTERS=MASTER_CFG.map(function(m){return m.name;});
+// Мастеров, которых можно назначить на заказ, может назначать себе только сама Александра
+// (COO): остальным её нет в выпадающем списке «Мастер» при создании/правке заказа.
+const SELF_ASSIGN_ONLY_MASTERS=['Александра'];
+function assignableMasters(){return MASTERS.filter(function(m){return SELF_ASSIGN_ONLY_MASTERS.indexOf(m)<0||role==='manager';});}
 // Мастер, чьи заказы ведёт руководитель (её собственные накладные СДЭК)
 const DIRECTOR_MASTER='Даша';
 // Кому уходит заказ с пометкой «мастер проекта» — правило для ИИ-разбора
@@ -351,7 +356,7 @@ function payoutMasters(){return MASTER_CFG.filter(function(m){return m.payouts;}
 // ═══ УЧЁТНЫЕ ЗАПИСИ ═══
 // Один список на все способы входа: пароль, Telegram, переключатель просмотра.
 const USERS=[
-  {pass:'sasha2024', tgId:'461599258',  role:'manager', name:'Александра', label:'COO',          masterName:null},
+  {pass:'sasha2024', tgId:'461599258',  role:'manager', name:'Александра', label:'COO',          masterName:'Александра'},
   {pass:'dasha2024', tgId:'5158981366', role:'director',name:'Даша',       label:'Руководитель', masterName:null},
   {pass:'sveta2024', tgId:'5273106995', role:'master',  name:'Света',      label:'Мастер',       masterName:'Света'},
   {pass:'flower2024', tgId:'',           role:'master',  name:'Цветочек',   label:'Мастер',       masterName:'Цветочек'},
@@ -975,7 +980,7 @@ function showRoleSwitcher(){
 function switchPreview(r,name,label,mName){
   const modal=document.getElementById('role-switcher-modal');if(modal)modal.remove();
   if(r==='manager'){
-    role='manager';masterName=null;isPreviewMode=false;
+    role='manager';masterName=mName||null;isPreviewMode=false;
     document.getElementById('h-user-name').textContent='Александра';
     document.getElementById('h-role-lbl').textContent='COO';
     document.getElementById('h-preview-badge').style.display='none';
@@ -1017,8 +1022,9 @@ function renderTabs(){
       // Банк доступен только Александре (manager) и Дарье (director) — Свете раздел не показывается
       ...(role==='manager'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       ...(role==='director'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
-      // У Даши, как и у мастеров, есть личная рабочая доска по её заказам (без ФИО/телефонов клиентов)
-      ...(role==='director'?[{id:'week',label:'Моя неделя'}]:[]),
+      // У Даши и Александры, как и у мастеров, есть личная рабочая доска по их заказам как мастера
+      // (без ФИО/телефонов клиентов) — по заказам, которые они шьют сами.
+      ...((role==='director'||role==='manager')?[{id:'week',label:'Моя неделя'}]:[]),
       {id:'todos',label:'Задачи'},
     ];
   bar.innerHTML=all.map(function(t){
@@ -1855,7 +1861,7 @@ async function parseOrderWithAI(){
     +'  "urgent": true или false,\n'
     +'  "source": "whatsapp, telegram или max — угадай по контексту или оставь whatsapp",\n'
     +'  "comment": "общие пожелания к заказу КРОМЕ одежды и вышивки, или пустая строка",\n'
-    +'  "master": "'+MASTERS.join(' или ')+' или пустая строка. ВАЖНО: если в тексте есть пометка «мастер проекта» (или «мастер: проект»), это ВСЕГДА означает заказ для '+PROJECT_MASTER+'",\n'
+    +'  "master": "'+assignableMasters().join(' или ')+' или пустая строка. ВАЖНО: если в тексте есть пометка «мастер проекта» (или «мастер: проект»), это ВСЕГДА означает заказ для '+PROJECT_MASTER+'",\n'
     +'  "month": "месяц производства в формате YYYY-MM, определи из текста (к августу = '+currentYearMonth+'-08, в сентябре = '+currentYearMonth+'-09 и т.д.) или пустая строка если не упоминается",\n'
     +'  "items": [ {\n'
     +'    "toyType": "один из: Мишка, Мышка, Зайка, Котик",\n'
@@ -2035,7 +2041,7 @@ function tplAdd(){
     +'<div class="fg"><label>Телефон</label><input id="fp" type="tel" placeholder="+7 900 000-00-00"></div>'
     +'<div class="fg"><label>Город и адрес</label><input id="fa" placeholder="Москва, ул. Ленина 1"></div>'
     +'<div class="fg span2"><label>Instagram (ник или ссылка)</label><input id="fig" placeholder="@nickname или instagram.com/..."></div>'
-    +'<div class="fg"><label>Мастер</label><select id="fmas" onchange="previewMasterPay()">'+MASTERS.map(function(m){return'<option>'+m+'</option>';}).join('')+'</select></div>'
+    +'<div class="fg"><label>Мастер</label><select id="fmas" onchange="previewMasterPay()">'+assignableMasters().map(function(m){return'<option>'+m+'</option>';}).join('')+'</select></div>'
     +'<div class="fg"><label>Источник</label><select id="fsrc">'+Object.keys(SOURCES).map(function(k){return'<option value="'+k+'">'+SOURCES[k].label+'</option>';}).join('')+'</select></div>'
     +'<div class="fg"><label>Статус</label><select id="fst">'+PICKABLE_STATUSES.map(function(k){return'<option value="'+k+'">'+STATUSES[k].label+'</option>';}).join('')+'</select></div>'
     +'<div class="fg" style="min-width:0"><label>Месяц производства</label><input id="fm" type="month" style="width:100%" value="'+dm+'" oninput="updateDayMax(\'fm\',\'fdd\')"></div>'
@@ -2128,7 +2134,11 @@ function openEdit(id){
   if(!o)return;
   const el=document.createElement('div');
   el.className='modal-bg';el.id='edit-modal';
-  let masOpts=MASTERS.map(function(m){return'<option'+(o.master===m?' selected':'')+'>'+m+'</option>';}).join('');
+  // Если заказ уже назначен на Александру, но правит его сейчас Даша — оставляем
+  // текущий выбор в списке, иначе правка формы молча перекинула бы заказ на другого.
+  var masOptsList=assignableMasters();
+  if(o.master&&masOptsList.indexOf(o.master)<0)masOptsList=masOptsList.concat([o.master]);
+  let masOpts=masOptsList.map(function(m){return'<option'+(o.master===m?' selected':'')+'>'+m+'</option>';}).join('');
   let srcOpts=Object.keys(SOURCES).map(function(k){return'<option value="'+k+'"'+(o.source===k?' selected':'')+'>'+SOURCES[k].label+'</option>';}).join('');
   let stOpts=PICKABLE_STATUSES.filter(function(k){return k!=='archived'||o.status==='archived';}).map(function(k){return'<option value="'+k+'"'+(o.status===k?' selected':'')+'>'+STATUSES[k].label+'</option>';}).join('');
   var itemsHtml=getItems(o).map(itemBlockHtml).join('');
@@ -2827,7 +2837,9 @@ function tplPayments(){
   }
   var masterList=payoutMasters();
   var officeDefs=(role==='manager'||role==='director')?[
-    {kind:'sasha',key:'Александра',name:'Александра',color:'#E9BE58',
+    // Ключ и имя отличаются от мастера «Александра» (её ЗП за пошив) — иначе два
+    // пункта переключателя схлопнулись бы в один и оба блока показывались вместе.
+    {kind:'sasha',key:'Александра — комиссия',name:'Александра — комиссия',color:'#E9BE58',
      list:sashaNeedList(),amtFn:function(o){return calcCosts(o).sasha;},btnLabel:'Выплатить',onClick:'paySashaAll()'},
     {kind:'dividend',key:'Дарья — дивиденды',name:'Дарья — дивиденды',color:'#3967E8',
      list:dividendNeedList(),amtFn:calcDividend,btnLabel:'Выплатить',onClick:'payDividendAll()'}
@@ -3139,7 +3151,7 @@ function payoutDate(){return new Date().toLocaleDateString('ru');}
 // поэтому сначала спрашивает счёт, потом вызывает onConfirm(accId).
 var _payoutCtx=null;
 function openPayoutModal(person,category,amount,orderNums,tg,onConfirm){
-  var accs=bankAccounts().filter(function(a){return a.type!=='savings';});
+  var accs=bankAccounts().filter(function(a){return a.type!=='savings'&&a.type!=='debt';});
   if(!financeTableOk||!accs.length){toast('Сначала создайте счета в разделе «Банк»');return;}
   _payoutCtx={onConfirm:onConfirm};
   var el=document.createElement('div');
@@ -3241,17 +3253,19 @@ async function markAllPayments(m){
   });
 }
 // ── Александра: комиссия 20% с закрытых заказов ──
+// Категория «ЗП Александра — комиссия» отдельная от «ЗП Александра» (её выплаты
+// как мастера-швеи), чтобы в банке и аналитике комиссия COO не смешивалась с ЗП за пошив.
 async function paySashaAll(){
   var list=sashaNeedList();
   if(!list.length){toast('Нечего выплачивать');return;}
   var total=list.reduce(function(s,o){return s+calcCosts(o).sasha;},0);
   var nums=list.map(function(o){return o.num;});
-  openPayoutModal('Александра','ЗП Александра',total,nums,'',async function(accId){
+  openPayoutModal('Александра — комиссия','ЗП Александра — комиссия',total,nums,'',async function(accId){
     list.forEach(function(o){o.sashaPaid=true;});
-    window.lastPayout={date:payoutDate(),person:'Александра',tg:'',accName:accId?accName(accId):'',
+    window.lastPayout={date:payoutDate(),person:'Александра — комиссия',tg:'',accName:accId?accName(accId):'',
       lines:[{sum:total,label:'комиссия 20% по заказам',orderNums:nums}]};
     await saveOrders(orders);
-    await recordPayoutExpense(accId,'ЗП Александра',total,'Комиссия 20% · '+nums.join(', '));
+    await recordPayoutExpense(accId,'ЗП Александра — комиссия',total,'Комиссия 20% · '+nums.join(', '));
     renderTab('payments');toast('Выплачено: '+fmt(total)+' ✓');
   });
 }
@@ -4012,8 +4026,8 @@ const INCOME_CATS=['Предоплата заказа','Доплата зака�
 // появился в списке. Старые операции с прежними названиями категорий не ломаются.
 const EXPENSE_CATS=['Материалы','Гранулят','Одежда (Настя)']
   .concat(MASTERS.map(function(m){return 'ЗП '+m;}))
-  .concat(['ЗП Александра','Дивиденды/выводы','Доставка/СДЭК','Упаковка и полиграфия','Сервисы','Налоги','Прочее']);
-const TRANSFER_CATS=['Между счетами','Пополнение вклада','Снятие с вклада'];
+  .concat(['ЗП Александра — комиссия','Дивиденды/выводы','Доставка/СДЭК','Упаковка и полиграфия','Сервисы','Налоги','Прочее']);
+const TRANSFER_CATS=['Между счетами','Пополнение вклада','Снятие с вклада','Выдача в долг','Погашение долга'];
 
 // Счета, которые создаются при первом открытии раздела
 const DEFAULT_ACCOUNTS=[
@@ -4080,7 +4094,8 @@ function dirBalance(dir){
 function bankTotals(){
   var accs=bankAccounts();
   var phys=accs.reduce(function(s,a){return s+accBalance(a.id);},0);
-  var liquid=accs.filter(function(a){return a.type!=='savings';})
+  // Долг — тоже актив (входит в котёл), но не деньги на руках, поэтому не в «доступно к трате».
+  var liquid=accs.filter(function(a){return a.type!=='savings'&&a.type!=='debt';})
                  .reduce(function(s,a){return s+accBalance(a.id);},0);
   var mk=dirBalance('mk');
   return {
@@ -4204,11 +4219,13 @@ function tplBank(){
   accs.forEach(function(a){
     var bal=accBalance(a.id);
     var isSav=a.type==='savings';
-    html+='<div onclick="openAccountEdit(\''+a.id+'\')" style="background:'+(isSav?'var(--bg2)':'var(--card)')+';border-radius:14px;box-shadow:var(--sh);padding:12px;cursor:pointer">'
-      +'<div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px">'+a.name+(isSav?'':'')+'</div>'
-      +'<div style="font-size:16px;font-weight:700;color:'+(bal>=0?'var(--accent)':'var(--red-ink)')+'">'+fmt(bal)+'</div>'
+    var isDebt=a.type==='debt';
+    html+='<div onclick="openAccountEdit(\''+a.id+'\')" style="background:'+((isSav||isDebt)?'var(--bg2)':'var(--card)')+';border-radius:14px;box-shadow:var(--sh);padding:12px;cursor:pointer">'
+      +'<div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px">'+a.name+'</div>'
+      +'<div style="font-size:16px;font-weight:700;color:'+(bal>=0?(isDebt?'var(--orange-ink)':'var(--accent)'):'var(--red-ink)')+'">'+fmt(bal)+(isDebt?' <span style="font-size:10px;font-weight:600;color:var(--text3)">должны</span>':'')+'</div>'
       +'</div>';
   });
+  html+='<div onclick="openAccountEdit(null)" style="border-radius:14px;border:1.5px dashed var(--border2);padding:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;font-weight:700;min-height:56px">+ Счёт</div>';
   html+='</div>';
 
   // ── ИИ-ввод ──
@@ -4468,7 +4485,8 @@ async function parseFinanceWithAI(){
     +'3. direction="mk" ставь ТОЛЬКО если речь о мастер-классе (МК, мастер-класс, обучение, ученица, набор для МК). Во всех остальных случаях "toys".\n'
     +'4. Наполнитель, холлофайбер, гранулят, пеллетс — категория «Гранулят». Мех, ткань, фурнитура, глазки, нитки — «Материалы».\n'
     +'5. Перевод на вклад / отложили / накопления = type "transfer", category «Пополнение вклада», toAccount «Вклад Сбербанк». Это НЕ расход.\n'
-    +'6. Выплата мастеру = «ЗП <имя>» ('+MASTERS.map(function(m){return 'ЗП '+m;}).join(', ')+'), Александре = «ЗП Александра», Насте за одежду = «Одежда (Настя)».\n'
+    +'5а. Дали в долг (заняла на что-то, взяла в долг) = type "transfer", category «Выдача в долг», toAccount — долговой счёт этого человека. Вернула долг / погасила = type "transfer", category «Погашение долга», account — долговой счёт, toAccount — куда пришли деньги. Это НЕ доход и НЕ расход.\n'
+    +'6. Выплата мастеру = «ЗП <имя>» ('+MASTERS.map(function(m){return 'ЗП '+m;}).join(', ')+'), комиссия Александры (20% COO) = «ЗП Александра — комиссия», Насте за одежду = «Одежда (Настя)».\n'
     +'7. Если операций несколько — верни несколько элементов массива.\n'
     +'\nТекст:\n'+text;
   try{
@@ -4550,7 +4568,8 @@ function openTxForm(txId,presetType){
   if(!accs.length){toast('Сначала создайте счета');return;}
   var t=txId?finance.find(function(x){return x.id===txId;}):null;
   var isNew=!t;
-  var d=t||{type:presetType||'expense',date:todayISO(),amount:'',accountId:accs[0].id,toAccountId:(accs[1]||accs[0]).id,category:'',direction:'toys',comment:'',merchant:'',orderId:''};
+  var plainAccs=accs.filter(function(a){return a.type!=='debt';});
+  var d=t||{type:presetType||'expense',date:todayISO(),amount:'',accountId:(plainAccs[0]||accs[0]).id,toAccountId:(accs[1]||accs[0]).id,category:'',direction:'toys',comment:'',merchant:'',orderId:''};
   var el=document.createElement('div');
   el.id='tx-modal';
   el.style.cssText='position:fixed;inset:0;background:rgba(60,48,32,.5);z-index:300;display:flex;align-items:flex-end;justify-content:center;overflow-y:auto';
@@ -4590,12 +4609,15 @@ function txSetType(tp){
 }
 function renderTxFields(){
   var d=window._txDraft,accs=bankAccounts(),isTr=d.type==='transfer';
+  // Долговой счёт участвует только в переводах (выдали/вернули долг) — как обычный
+  // доход/расход он не бывает, поэтому в этих селектах его нет.
+  var accOpts=isTr?accs:accs.filter(function(a){return a.type!=='debt';});
   var cats=bankCatsFor(d.type);
   var openOrders=orders.filter(function(o){return o.status!=='archived';}).slice(0,80);
   document.getElementById('tx-fields').innerHTML='<div class="form-grid">'
     +'<div class="fg"><label>Сумма (₽)</label><input id="tx-amount" type="number" value="'+(d.amount||'')+'" placeholder="4500"></div>'
     +'<div class="fg"><label>Дата</label><input id="tx-date" type="date" value="'+(d.date||todayISO())+'"></div>'
-    +'<div class="fg"><label>'+(isTr?'Откуда':'Счёт')+'</label><select id="tx-acc">'+accs.map(function(a){return '<option value="'+a.id+'"'+(d.accountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
+    +'<div class="fg"><label>'+(isTr?'Откуда':'Счёт')+'</label><select id="tx-acc">'+accOpts.map(function(a){return '<option value="'+a.id+'"'+(d.accountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
     +(isTr
       ?'<div class="fg"><label>Куда</label><select id="tx-acc2">'+accs.map(function(a){return '<option value="'+a.id+'"'+(d.toAccountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
       :'<div class="fg"><label>Направление</label><select id="tx-dir">'+BANK_DIRS.map(function(x){return '<option value="'+x.id+'"'+((d.direction||'toys')===x.id?' selected':'')+'>'+x.label+'</option>';}).join('')+'</select></div>')
@@ -4643,30 +4665,35 @@ async function deleteTx(id){
 
 // ═══ НАСТРОЙКИ СЧЁТА ═══
 function openAccountEdit(id){
-  var a=accById(id);
+  var isNew=!id;
+  var a=isNew?{name:'',startBalance:0,startDate:todayISO(),type:'bank'}:accById(id);
   if(!a)return;
   var el=document.createElement('div');
   el.id='acc-modal';
   el.style.cssText='position:fixed;inset:0;background:rgba(60,48,32,.5);z-index:300;display:flex;align-items:flex-end;justify-content:center';
   el.innerHTML='<div style="background:var(--card);border-radius:20px 20px 0 0;padding:20px;width:100%;max-width:480px">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
-      +'<div style="font-weight:700;letter-spacing:-.4px;font-size:17px;color:var(--accent)">'+a.name+'</div>'
+      +'<div style="font-weight:700;letter-spacing:-.4px;font-size:17px;color:var(--accent)">'+(isNew?'Новый счёт':a.name)+'</div>'
       +'<button onclick="closeAccModal()" style="background:none;border:none;color:var(--text3);font-size:24px;line-height:1;cursor:pointer">×</button>'
     +'</div>'
-    +'<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Текущий баланс: <b style="color:var(--accent)">'+fmt(accBalance(a.id))+'</b></div>'
+    +(isNew?'':'<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Текущий баланс: <b style="color:var(--accent)">'+fmt(accBalance(a.id))+'</b></div>')
     +'<div class="form-grid">'
-      +'<div class="fg span2"><label>Название</label><input id="acc-name" value="'+esc(a.name)+'"></div>'
+      +'<div class="fg span2"><label>Название</label><input id="acc-name" value="'+esc(a.name)+'" placeholder="Например: Долг — Цветочек"></div>'
       +'<div class="fg"><label>Начальный остаток (₽)</label><input id="acc-start" type="number" value="'+(a.startBalance||0)+'"></div>'
       +'<div class="fg"><label>На дату</label><input id="acc-date" type="date" value="'+(a.startDate||todayISO())+'"></div>'
       +'<div class="fg span2"><label>Тип счёта</label><select id="acc-type">'
         +'<option value="bank"'+(a.type==='bank'?' selected':'')+'>Расчётный — входит в «доступно к трате»</option>'
         +'<option value="savings"'+(a.type==='savings'?' selected':'')+'>Накопительный — в котле, но тратить нельзя</option>'
+        +'<option value="debt"'+(a.type==='debt'?' selected':'')+'>Долг — кто-то должен вернуть, в котле, но не тратим</option>'
       +'</select></div>'
     +'</div>'
-    +'<div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:12px">Начальный остаток — сколько было на счету на указанную дату. Все операции считаются поверх него.</div>'
+    +'<div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:12px">'
+      +(isNew?'Долг заводится с нулевым остатком: сумму, которую дали в долг, проведите переводом с реального счёта на этот — появится во вкладке «Перевод», категория «Выдача в долг».'
+             :'Начальный остаток — сколько было на счету на указанную дату. Все операции считаются поверх него.')
+    +'</div>'
     +'<div style="display:flex;gap:8px">'
-      +'<button class="btn btn-danger btn-sm" onclick="archiveAccount(\''+a.id+'\')">Скрыть счёт</button>'
-      +'<button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="saveAccount(\''+a.id+'\')">Сохранить</button>'
+      +(isNew?'':'<button class="btn btn-danger btn-sm" onclick="archiveAccount(\''+a.id+'\')">Скрыть счёт</button>')
+      +'<button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="saveAccount('+(isNew?'null':"'"+a.id+"'")+')">Сохранить</button>'
     +'</div>'
     +'</div>';
   document.body.appendChild(el);
@@ -4677,14 +4704,21 @@ async function saveAccount(id){
   var v=function(x){var e=document.getElementById(x);return e?e.value:'';};
   var name=v('acc-name').trim();
   if(!name){toast('Укажите название');return;}
-  var next=finance.map(function(r){
-    if(r.id!==id)return r;
-    return Object.assign({},r,{name:name,startBalance:parseFloat(v('acc-start'))||0,startDate:v('acc-date')||todayISO(),type:v('acc-type')});
-  });
+  var next;
+  if(!id){
+    var rec={id:uid(),kind:'account',name:name,type:v('acc-type'),startBalance:parseFloat(v('acc-start'))||0,
+      startDate:v('acc-date')||todayISO(),ord:bankAccounts().length,archived:false,created:Date.now()};
+    next=finance.concat([rec]);
+  }else{
+    next=finance.map(function(r){
+      if(r.id!==id)return r;
+      return Object.assign({},r,{name:name,startBalance:parseFloat(v('acc-start'))||0,startDate:v('acc-date')||todayISO(),type:v('acc-type')});
+    });
+  }
   closeAccModal();
   var ok=await saveFinance(next);
   renderTab('bank');
-  if(ok)toast('Счёт сохранён ✓');
+  if(ok)toast(id?'Счёт сохранён ✓':'Счёт создан ✓');
 }
 async function archiveAccount(id){
   var n=bankTxAll().filter(function(t){return t.accountId===id||t.toAccountId===id;}).length;
@@ -4716,7 +4750,7 @@ function offerOrderIncome(order,delta){
     +'<div class="form-grid">'
       +'<div class="fg"><label>Сумма (₽)</label><input id="oi-amount" type="number" value="'+Math.round(delta)+'"></div>'
       +'<div class="fg"><label>Дата</label><input id="oi-date" type="date" value="'+todayISO()+'"></div>'
-      +'<div class="fg span2"><label>На какой счёт пришли</label><select id="oi-acc">'+accs.filter(function(a){return a.type!=='savings';}).map(function(a){return '<option value="'+a.id+'">'+a.name+'</option>';}).join('')+'</select></div>'
+      +'<div class="fg span2"><label>На какой счёт пришли</label><select id="oi-acc">'+accs.filter(function(a){return a.type!=='savings'&&a.type!=='debt';}).map(function(a){return '<option value="'+a.id+'">'+a.name+'</option>';}).join('')+'</select></div>'
       +'<div class="fg span2"><label>Категория</label><select id="oi-cat">'
         +'<option>Предоплата заказа</option><option'+(already>0?' selected':'')+'>Доплата заказа</option>'
       +'</select></div>'
