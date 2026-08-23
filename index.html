@@ -3110,7 +3110,10 @@ function postNeedFor(m){
   return orders.filter(function(o){
     if(o.master!==m||o.postpayPaid)return false;
     if(cfg.payoutFrom&&closedDate(o)<cfg.payoutFrom)return false;
-    return cfg.closedOnly ? isClosed(o) : PAY_POST_STATUSES.indexOf(o.status)>=0;
+    // 'archived' — тоже допустимый статус: заказ мог уйти в архив (вручную или
+    // автоматически после «Выслала») ДО того, как мастеру заплатили. Перекладывание
+    // бумажки в архив не должно списывать деньги, которые ему причитаются.
+    return cfg.closedOnly ? isClosed(o) : (PAY_POST_STATUSES.indexOf(o.status)>=0||o.status==='archived');
   });
 }
 // Сообщение для телеграма после выплаты
