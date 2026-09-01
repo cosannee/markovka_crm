@@ -281,11 +281,11 @@ const CRAFT_STAGES=[
   {key:'dressed',    label:'Одежда готова'},
 ];
 // Пока мастер не отметил заказ раскроенным, o.craftStage не выставлен —
-// такой заказ остаётся в «План на неделю», даже если статус уже «В работе»
-// (например, после массового перевода из «След. неделя»).
+// такой заказ остаётся в «План на неделю», пока статус не станет «В работе».
+// Доска показывает только «В работе» — «След. неделя» на неё не попадает.
 function effectiveCraftStage(o){return o&&o.craftStage;}
 // Колонки доски в порядке движения заказа слева направо
-const WEEK_COLUMNS=[{key:'nextweek',label:'План на неделю',match:function(o){return o.status==='nextweek'||(o.status==='work'&&!effectiveCraftStage(o));}}]
+const WEEK_COLUMNS=[{key:'nextweek',label:'План на неделю',match:function(o){return o.status==='work'&&!effectiveCraftStage(o);}}]
   .concat(CRAFT_STAGES.map(function(s){return {key:s.key,label:s.label,match:function(o){return o.status==='work'&&effectiveCraftStage(o)===s.key;}};}))
   .concat([{key:'ready',label:'Готов',match:function(o){return o.status==='ready';}}]);
 function weekColIndex(o){for(var i=0;i<WEEK_COLUMNS.length;i++){if(WEEK_COLUMNS[i].match(o))return i;}return -1;}
