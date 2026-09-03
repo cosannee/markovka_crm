@@ -329,8 +329,11 @@ const SOURCES={
 //   payouts    — показывать ли мастера во вкладке «Выплаты»
 //                (у Даши false — она руководитель и платит себе сама)
 //   tg         — ник для текста выплаты в телеграм
+//   zpBonus    — личная прибавка мастера сверх общей таблицы ЗП (calcZpTable),
+//                ₽ за игрушку. Складывается ДО надбавки за срочность — на
+//                срочных заказах прибавка тоже растёт на 50%, как и остальная ЗП.
 const MASTER_CFG=[
-  {name:'Даша',  varRate:0.25, advancePct:0,   nastya:true,  payouts:true,  tg:'',             color:'#3967E8', ink:'#2755D9', closedOnly:true, payoutFrom:Date.parse('2026-08-17T00:00:00')},
+  {name:'Даша',  varRate:0.25, advancePct:0,   nastya:true,  payouts:true,  tg:'',             color:'#3967E8', ink:'#2755D9', closedOnly:true, payoutFrom:Date.parse('2026-08-17T00:00:00'), zpBonus:300},
   {name:'Света', varRate:0.40, advancePct:0.3, nastya:false, payouts:true,  tg:'@svetashevel', color:'#79C68A', ink:'#4F815A'},
   {name:'Цветочек',varRate:0.19, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#E68DB1', ink:'#A1637C'},
   {name:'Александра',varRate:0.19, advancePct:0, nastya:false, payouts:true, tg:'',             color:'#8E86AE', ink:'#5E5780'},
@@ -742,6 +745,10 @@ function getItems(o){
     heightCm:parseFloat(o&&(o.heightCm||o.height))||0,
     embCount:parseInt(o&&o.embCount)||0,
     embText:(o&&o.embText)||'',
+    bandOn:!!(o&&o.bandOn),
+    bandColor:(o&&o.bandColor)||'',
+    capOn:!!(o&&o.capOn),
+    capColor:(o&&o.capColor)||'',
     price:parseFloat(o&&o.price)||0,
     gender:(o&&o.gender)||'',
     clothes:(o&&o.clothes)||'',
@@ -804,9 +811,14 @@ function calcItemMat(item,master,rate){
 // \u0417\u041f \u043c\u0430\u0441\u0442\u0435\u0440\u0430 \u0437\u0430 \u043e\u0434\u043d\u0443 \u043f\u043e\u0437\u0438\u0446\u0438\u044e (\u0441 \u0443\u0447\u0451\u0442\u043e\u043c \u043a\u043e\u043b-\u0432\u0430)
 // Таблица ставок ЗП одна на всех мастеров (см. calcZpTable). Раньше имена были
 // зашиты здесь, а незнакомый мастер молча получал плоские 2500 ₽ — теперь нет.
+// Доп. аксессуары — целиком уходят мастеру, у всех мастеров одинаково
+const BAND_PRICE=200;   // повязка-бантик на голову
+const CAP_PRICE=300;    // колпачок праздничный
 function calcItemMasterPay(item,master){
   var cnt=parseInt(item.count)||1;
-  return calcZpTable(item.weightG,item.embCount)*cnt;
+  var bonus=masterCfg(master).zpBonus||0;
+  var accessories=(item.bandOn?BAND_PRICE:0)+(item.capOn?CAP_PRICE:0);
+  return (calcZpTable(item.weightG,item.embCount)+bonus+accessories)*cnt;
 }
 
 function seedOrders(){
@@ -1412,6 +1424,8 @@ function orderCard(o){
     if(it.heightCm)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Рост: </span>'+it.heightCm+' см</div>';
     if(oItems.length===1)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Кол-во: </span>'+(it.count||1)+' шт.</div>';
     if(it.embCount)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Вышивка: </span>×'+it.embCount+(it.embText?' «'+it.embText+'»':'')+'</div>';
+    if(it.bandOn)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Повязка-бантик: </span>'+(it.bandColor||'цвет не указан')+'</div>';
+    if(it.capOn)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Колпачок: </span>'+(it.capColor||'цвет не указан')+'</div>';
     if(it.gender){var gLbl={boy:'Мальчик',girl:'Девочка'}[it.gender]||it.gender;html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Пол: </span>'+gLbl+'</div>';}
     if(it.clothes)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Одежда: </span>'+it.clothes+'</div>';
     if(canFinance&&it.price)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Цена: </span>'+fmt((parseFloat(it.price)||0)*(parseInt(it.count)||1))+'</div>';
@@ -1871,6 +1885,8 @@ async function parseOrderWithAI(){
     +'    "price": число или null,\n'
     +'    "embCount": число вышивок или 0,\n'
     +'    "embText": "что именно вышить (имя, дата) или пустая строка",\n'
+    +'    "bandColor": "цвет повязки-бантика на голову, если она упомянута, иначе пустая строка",\n'
+    +'    "capColor": "цвет праздничного колпачка, если он упомянут, иначе пустая строка",\n'
     +'    "clothes": "одежда — Ромпер, шортики, воротничок с их номерами/размерами/цветом, или пустая строка",\n'
     +'    "gender": "boy, girl или пустая строка — определи по контексту (мальчик/сын/он/его = boy, девочка/дочь/она/её = girl)",\n'
     +'    "comment": "важные детали именно по этой игрушке (например: шкурка потемнее, особый оттенок) или пустая строка"\n'
@@ -1918,13 +1934,15 @@ async function parseOrderWithAI(){
     // Игрушки — пересобираем контейнер
     var aiItems=Array.isArray(parsed.items)&&parsed.items.length?parsed.items:[{
       toyType:parsed.toyType,weightG:parsed.weightG,heightCm:parsed.heightCm,count:parsed.count,
-      price:parsed.price,embCount:parsed.embCount,embText:parsed.embText,clothes:parsed.clothes,gender:parsed.gender,comment:parsed.itemComment
+      price:parsed.price,embCount:parsed.embCount,embText:parsed.embText,bandColor:parsed.bandColor,capColor:parsed.capColor,clothes:parsed.clothes,gender:parsed.gender,comment:parsed.itemComment
     }];
     var cont=document.getElementById('items-container');
     if(cont){
       cont.innerHTML=aiItems.map(function(it){return itemBlockHtml({
         toyType:it.toyType||'',weightG:it.weightG||'',heightCm:it.heightCm||'',count:it.count||1,
-        price:it.price||'',embCount:it.embCount||0,embText:it.embText||'',clothes:it.clothes||'',gender:it.gender||'',comment:it.comment||''
+        price:it.price||'',embCount:it.embCount||0,embText:it.embText||'',
+        bandOn:!!it.bandColor,bandColor:it.bandColor||'',capOn:!!it.capColor,capColor:it.capColor||'',
+        clothes:it.clothes||'',gender:it.gender||'',comment:it.comment||''
       });}).join('');
       renumberItems('items-container');
       previewMasterPay();
@@ -1968,12 +1986,26 @@ function itemBlockHtml(d){
     +'<div class="fg"><label>Кол-во вышивок</label><input class="it-embc" type="number" min="1" value="'+(d.embCount||1)+'" style="max-width:120px" oninput="previewMasterPay()"></div>'
     +'<div class="fg" style="flex:1;min-width:140px"><label>Что вышивать</label><input class="it-embtext" placeholder="Имя, дата..." value="'+esc(d.embText)+'"></div>'
     +'</div></div>'
+    +'<label class="checkbox-row"><input type="checkbox" class="it-band"'+(d.bandOn?' checked':'')+' onchange="toggleItemAccessory(this,\'band\')"> Повязка-бантик на голову (+'+BAND_PRICE+'₽ мастеру)</label>'
+    +'<div class="it-band-row" style="display:'+(d.bandOn?'block':'none')+';padding:4px 0 4px 24px">'
+    +'<div class="fg"><label>Цвет повязки</label><input class="it-bandcolor" placeholder="Белый, бежевый..." value="'+esc(d.bandColor)+'"></div>'
+    +'</div>'
+    +'<label class="checkbox-row"><input type="checkbox" class="it-cap"'+(d.capOn?' checked':'')+' onchange="toggleItemAccessory(this,\'cap\')"> Колпачок праздничный (+'+CAP_PRICE+'₽ мастеру)</label>'
+    +'<div class="it-cap-row" style="display:'+(d.capOn?'block':'none')+';padding:4px 0 4px 24px">'
+    +'<div class="fg"><label>Цвет колпачка</label><input class="it-capcolor" placeholder="Белый, бежевый..." value="'+esc(d.capColor)+'"></div>'
+    +'</div>'
     +'<div class="fg" style="margin-top:4px"><label>Комментарий к игрушке</label><input class="it-comment" placeholder="Шкурка потемнее, особенности..." value="'+esc(d.comment)+'"></div>'
     +'</div>';
 }
 function toggleItemEmb(cb){
   var block=cb.closest('.item-block');
   var row=block&&block.querySelector('.it-emb-row');
+  if(row)row.style.display=cb.checked?'block':'none';
+  previewMasterPay();
+}
+function toggleItemAccessory(cb,kind){
+  var block=cb.closest('.item-block');
+  var row=block&&block.querySelector('.it-'+kind+'-row');
   if(row)row.style.display=cb.checked?'block':'none';
   previewMasterPay();
 }
@@ -2004,6 +2036,8 @@ function readItemsFrom(containerId){
   var items=[];
   blocks.forEach(function(b){
     var embOn=b.querySelector('.it-emb').checked;
+    var bandOn=b.querySelector('.it-band').checked;
+    var capOn=b.querySelector('.it-cap').checked;
     items.push({
       toyType:b.querySelector('.it-toy').value,
       count:parseInt(b.querySelector('.it-count').value)||1,
@@ -2014,6 +2048,10 @@ function readItemsFrom(containerId){
       clothes:b.querySelector('.it-clothes').value.trim(),
       embCount:embOn?(parseInt(b.querySelector('.it-embc').value)||1):0,
       embText:embOn?b.querySelector('.it-embtext').value.trim():'',
+      bandOn:bandOn,
+      bandColor:bandOn?b.querySelector('.it-bandcolor').value.trim():'',
+      capOn:capOn,
+      capColor:capOn?b.querySelector('.it-capcolor').value.trim():'',
       comment:(b.querySelector('.it-comment')?b.querySelector('.it-comment').value.trim():'')
     });
   });
@@ -3598,6 +3636,8 @@ function tplMyWeek(targetMaster){
       if(gl)line.push(gl);
       if(line.length)body+='<div style="font-size:12px;color:var(--text3)">'+line.join(' · ')+'</div>';
       body+='<div style="font-size:12px;color:var(--text3)">Вышивка: '+(it.embCount?('да ×'+it.embCount+(it.embText?' «'+it.embText+'»':'')):'нет')+'</div>';
+      if(it.bandOn)body+='<div style="font-size:12px;color:var(--text3)">Повязка-бантик: '+(it.bandColor||'цвет не указан')+'</div>';
+      if(it.capOn)body+='<div style="font-size:12px;color:var(--text3)">Колпачок: '+(it.capColor||'цвет не указан')+'</div>';
       if(it.clothes)body+='<div style="font-size:12px;color:var(--text3)">Одежда: '+it.clothes+'</div>';
       if(it.comment)body+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-top:2px">'+it.comment+'</div>';
     });
@@ -3705,6 +3745,8 @@ function tplMaster(){
         if(it.weightG)line.push(it.weightG+'г');
         if(it.heightCm)line.push(it.heightCm+' см');
         if(it.embCount)line.push('вышивка ×'+it.embCount+(it.embText?' «'+it.embText+'»':''));
+        if(it.bandOn)line.push('повязка-бантик'+(it.bandColor?' ('+it.bandColor+')':''));
+        if(it.capOn)line.push('колпачок'+(it.capColor?' ('+it.capColor+')':''));
         if(line.length)params+='<div style="font-size:12px;color:var(--text3)">'+line.join(' · ')+'</div>';
         if(gl)params+='<div style="font-size:12px;color:var(--text3)">Пол: '+gl+'</div>';
         if(it.clothes)params+='<div style="font-size:12px;color:var(--text3)">Одежда: '+it.clothes+'</div>';
