@@ -3646,7 +3646,11 @@ function tplMyWeek(targetMaster){
     body+='<input type="text" data-oid="'+o.id+'" value="'+esc(o.masterNote)+'" placeholder="Заметка себе: жду ткань, обрезать нить..." '
       +'onclick="event.stopPropagation()" onchange="updateMasterNoteEl(this)" '
       +'style="width:100%;box-sizing:border-box;margin-top:8px;padding:7px 10px;border-radius:8px;font-size:12px;background:var(--bg);font-family:inherit;outline:none">';
-    html+='<div class="card '+(o.urgent?'urgent':'')+'" style="margin-bottom:10px">'
+    // Александре и Даше карточка открывает полную карточку заказа (там же, где и в
+    // «Заказах») — им нужны клиент/телефон/цена и т.п. Остальным мастерам это
+    // не нужно: у них и так вся нужная им информация уже на доске.
+    var canOpenFull=(role==='director'||role==='manager');
+    html+='<div class="card '+(o.urgent?'urgent':'')+'" style="margin-bottom:10px'+(canOpenFull?';cursor:pointer':'')+'"'+(canOpenFull?' onclick="openEdit(\''+o.id+'\')"':'')+'>'
       +'<div style="padding:12px 14px">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
       +'<span class="card-num">'+o.num+'</span>'
@@ -3655,8 +3659,8 @@ function tplMyWeek(targetMaster){
       +'</div>'
       +body
       +'<div style="display:flex;gap:8px;margin-top:12px">'
-      +(colIdx>0?'<button class="btn btn-sm btn-secondary" style="flex:1;justify-content:center" data-oid="'+o.id+'" onclick="moveWeekCard(this.dataset.oid,-1)">← Назад</button>':'')
-      +(colIdx<WEEK_COLUMNS.length-1?'<button class="btn btn-sm btn-primary" style="flex:1;justify-content:center" data-oid="'+o.id+'" onclick="moveWeekCard(this.dataset.oid,1)">Дальше →</button>':'')
+      +(colIdx>0?'<button class="btn btn-sm btn-secondary" style="flex:1;justify-content:center" data-oid="'+o.id+'" onclick="event.stopPropagation();moveWeekCard(this.dataset.oid,-1)">← Назад</button>':'')
+      +(colIdx<WEEK_COLUMNS.length-1?'<button class="btn btn-sm btn-primary" style="flex:1;justify-content:center" data-oid="'+o.id+'" onclick="event.stopPropagation();moveWeekCard(this.dataset.oid,1)">Дальше →</button>':'')
       +'</div>'
       +'</div></div>';
   });
