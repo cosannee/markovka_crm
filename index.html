@@ -337,6 +337,7 @@ const MASTER_CFG=[
   {name:'Света', varRate:0.40, advancePct:0.3, nastya:false, payouts:true,  tg:'@svetashevel', color:'#79C68A', ink:'#4F815A'},
   {name:'Цветочек',varRate:0.19, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#E68DB1', ink:'#A1637C'},
   {name:'Александра',varRate:0.19, advancePct:0, nastya:false, payouts:true, tg:'',             color:'#8E86AE', ink:'#5E5780'},
+  {name:'Стажёр', varRate:0.40, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#E0A458', ink:'#A9793A'},
 ];
 const MASTERS=MASTER_CFG.map(function(m){return m.name;});
 // Мастеров, которых можно назначить на заказ, может назначать себе только сама Александра
@@ -363,6 +364,7 @@ const USERS=[
   {pass:'dasha2024', tgId:'5158981366', role:'director',name:'Даша',       label:'Руководитель', masterName:null},
   {pass:'sveta2024', tgId:'5273106995', role:'master',  name:'Света',      label:'Мастер',       masterName:'Света'},
   {pass:'flower2024', tgId:'',           role:'master',  name:'Цветочек',   label:'Мастер',       masterName:'Цветочек'},
+  {pass:'stajer2024', tgId:'',           role:'master',  name:'Стажёр',     label:'Мастер',       masterName:'Стажёр'},
 ];
 function userEntry(u){return {role:u.role,name:u.name,label:u.label,masterName:u.masterName};}
 const ROLE_MAP={};
@@ -3646,11 +3648,11 @@ function tplMyWeek(targetMaster){
     body+='<input type="text" data-oid="'+o.id+'" value="'+esc(o.masterNote)+'" placeholder="Заметка себе: жду ткань, обрезать нить..." '
       +'onclick="event.stopPropagation()" onchange="updateMasterNoteEl(this)" '
       +'style="width:100%;box-sizing:border-box;margin-top:8px;padding:7px 10px;border-radius:8px;font-size:12px;background:var(--bg);font-family:inherit;outline:none">';
-    // Александре и Даше карточка открывает полную карточку заказа (там же, где и в
-    // «Заказах») — им нужны клиент/телефон/цена и т.п. Остальным мастерам это
-    // не нужно: у них и так вся нужная им информация уже на доске.
+    // Александре и Даше карточка переходит в «Заказы» на этот же заказ, раскрытый —
+    // там видны контакты клиента. Остальным мастерам это не нужно: у них и так вся
+    // нужная им информация уже на доске.
     var canOpenFull=(role==='director'||role==='manager');
-    html+='<div class="card '+(o.urgent?'urgent':'')+'" style="margin-bottom:10px'+(canOpenFull?';cursor:pointer':'')+'"'+(canOpenFull?' onclick="openEdit(\''+o.id+'\')"':'')+'>'
+    html+='<div class="card '+(o.urgent?'urgent':'')+'" style="margin-bottom:10px'+(canOpenFull?';cursor:pointer':'')+'"'+(canOpenFull?' onclick="jumpTo(\''+o.id+'\')"':'')+'>'
       +'<div style="padding:12px 14px">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
       +'<span class="card-num">'+o.num+'</span>'
