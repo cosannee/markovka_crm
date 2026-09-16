@@ -374,6 +374,9 @@ USERS.forEach(function(u){
   if(u.pass)PASSWORDS[u.pass]=userEntry(u);
 });
 let role=null,masterName=null,tab='list',myTodos=[],fStatus='all',fMonth='all',fMaster='all',fUrgent=false,fSort='date',search='',calDate=new Date(),showArchive=false,weekCol='nextweek';
+// Список заказов рисуем не весь сразу — на телефоне сборка сотен карточек ощущается как подвисание.
+const LIST_PAGE_SIZE=40;
+let listShown=LIST_PAGE_SIZE;
 const VALID_SORTS=['date','date_asc','deadline','margin'];
 let expandedCards=new Set();
 let realRole=null,isPreviewMode=false;
@@ -1076,16 +1079,14 @@ function renderTabs(){
 let _searchDebounce=null;
 function updateSearch(val){
   search=val;
+  listShown=LIST_PAGE_SIZE;   // новый запрос — список показываем сначала
   clearTimeout(_searchDebounce);
   // На слабом телефоне пересборка списка на каждую букву ощущается как подвисание —
   // ждём короткую паузу в наборе, а не перерисовываем на каждое нажатие клавиши.
   _searchDebounce=setTimeout(function(){
     const cardsEl=document.getElementById('list-cards');
     if(!cardsEl){renderTab('list');return;}
-    const list=getFilteredOrders();
-    cardsEl.innerHTML=list.length===0
-      ?'<div class="empty">Заказов не найдено</div>'
-      :list.map(function(o){return orderCard(o);}).join('');
+    renderListCards();
     // Keep focus on search field
     const sf=document.getElementById('search-field');
     if(sf&&document.activeElement!==sf){sf.focus();}
@@ -1148,6 +1149,29 @@ function getFilteredOrders(){
   });
 }
 
+function listCardsHtml(list){
+  if(!list.length)return'<div class="empty">Заказов не найдено</div>';
+  return list.slice(0,listShown).map(function(o){return orderCard(o);}).join('');
+}
+function listMoreBtnHtml(list){
+  if(list.length<=listShown)return'';
+  var rest=list.length-listShown;
+  return '<button class="btn btn-secondary" style="width:100%;margin-top:4px" onclick="showMoreOrders()">Показать ещё ('+Math.min(rest,LIST_PAGE_SIZE)+' из '+rest+')</button>';
+}
+function showMoreOrders(){
+  listShown+=LIST_PAGE_SIZE;
+  renderListCards();
+}
+function renderListCards(){
+  var cardsEl=document.getElementById('list-cards');
+  var moreEl=document.getElementById('list-more');
+  if(!cardsEl){renderTab('list');return;}
+  var list=getFilteredOrders();
+  cardsEl.innerHTML=listCardsHtml(list);
+  if(moreEl)moreEl.innerHTML=listMoreBtnHtml(list);
+  var lbl=document.getElementById('list-count-lbl');
+  if(lbl)lbl.textContent=(showArchive?'Архивных заказов':search?'Найдено':'Активных заказов')+': '+list.length;
+}
 function tplList(){
   var months=[...new Set(orders.map(function(o){return o.month;}))].sort();
   var list=getFilteredOrders();
@@ -1162,7 +1186,7 @@ function tplList(){
 
   var html='';
   // В архиве путь назад должен быть виден сразу, а не после всего списка
-  if(showArchive)html+='<button class="archive-back" onclick="showArchive=false;renderTab(\'list\')">← Вернуться к заказам</button>';
+  if(showArchive)html+='<button class="archive-back" onclick="showArchive=false;listShown=LIST_PAGE_SIZE;renderTab(\'list\')">← Вернуться к заказам</button>';
   html+='<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">'
     +'<input class="search-inp" id="search-field" style="flex:1;min-width:0" placeholder="Поиск по номеру, клиенту..." oninput="updateSearch(this.value)" value="'+search+'">'
     +'</div>';
@@ -1225,13 +1249,11 @@ function tplList(){
 
   html+='</div>';
   var listLbl=showArchive?'Архивных заказов':search?'Найдено':('Активных заказов');
-  html+='<div style="font-size:12px;color:var(--text3);margin-bottom:10px">'+listLbl+': '+list.length+'</div>';
-  html+='<div id="list-cards">';
-  if(!list.length){html+='<div class="empty">Заказов не найдено</div>';}
-  else{list.forEach(function(o){html+=orderCard(o);});}
-  html+='</div>';
+  html+='<div id="list-count-lbl" style="font-size:12px;color:var(--text3);margin-bottom:10px">'+listLbl+': '+list.length+'</div>';
+  html+='<div id="list-cards">'+listCardsHtml(list)+'</div>';
+  html+='<div id="list-more">'+listMoreBtnHtml(list)+'</div>';
   // Архив — подвал списка, а не этап работы: серая кнопка внизу
-  html+='<button class="archive-foot" onclick="showArchive=!showArchive;renderTab(\'list\')">'
+  html+='<button class="archive-foot" onclick="showArchive=!showArchive;listShown=LIST_PAGE_SIZE;renderTab(\'list\')">'
     +(showArchive?'Вернуться к заказам':'Архив'+(archCnt?' · '+archCnt:''))+'</button>';
   return html;
 }
@@ -4056,6 +4078,7 @@ document.addEventListener('click',function(e){
     else if(act==='sort'){fSort=val;}
     else if(act==='mstatus'){fStatus=val;closeAllDrops();renderTab('master');return;}
     else if(act==='mmonth'){fMonth=val;closeAllDrops();renderTab('master');return;}
+    listShown=LIST_PAGE_SIZE;   // сменился фильтр — список показываем сначала
     closeAllDrops();
     renderTab('list');
     return;
