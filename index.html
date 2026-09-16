@@ -375,7 +375,7 @@ USERS.forEach(function(u){
 });
 let role=null,masterName=null,tab='list',myTodos=[],fStatus='all',fMonth='all',fMaster='all',fUrgent=false,fSort='date',search='',calDate=new Date(),showArchive=false,weekCol='nextweek';
 // Список заказов рисуем не весь сразу — на телефоне сборка сотен карточек ощущается как подвисание.
-const LIST_PAGE_SIZE=40;
+const LIST_PAGE_SIZE=20;
 let listShown=LIST_PAGE_SIZE;
 const VALID_SORTS=['date','date_asc','deadline','margin'];
 let expandedCards=new Set();
