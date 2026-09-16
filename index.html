@@ -234,7 +234,7 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}
   <div class="main" id="main"></div>
 </div>
 <div class="toast" id="toast"></div>
-<button class="to-top" id="to-top" title="Наверх" onclick="scrollTop()">↑</button>
+<button class="to-top" id="to-top" title="Наверх" onclick="scrollToTop()">↑</button>
 
 <script>
 // Ставка материалов по заказу, ₽/г.
@@ -402,7 +402,7 @@ function sbBuildSnap(arr){var m={};(arr||[]).forEach(function(it){if(it&&it.id)m
 
 // ── Кнопка «наверх» ──
 // Появляется, когда список уехал вниз: с середины страницы возврат в один тап.
-function scrollTop(){window.scrollTo({top:0,behavior:'smooth'});}
+function scrollToTop(){window.scrollTo({top:0,behavior:'smooth'});}
 function updateToTop(){
   var btn=document.getElementById('to-top');
   if(!btn)return;
