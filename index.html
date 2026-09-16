@@ -937,12 +937,22 @@ function logout(){
 
 let syncTimer=null;
 function bumpActivity(){lastActivity=Date.now();}
+// Пока человек печатает в поле или открыто модальное окно — фоновая синхронизация
+// не должна перерисовывать экран поверх него: это стирало бы несохранённый ввод.
+function isUserEditing(){
+  var ae=document.activeElement;
+  if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return true;
+  if(document.querySelector('.modal-bg'))return true;
+  return false;
+}
 async function syncFromCloud(){
   if(!role)return;
   // Пока есть неотправленные правки, тянуть облако нельзя — оно затрёт их в памяти
   if(saveState.pending){retrySave(false);return;}
+  if(isUserEditing())return;
   const data=await loadData();
   if(data){
+    if(isUserEditing())return;   // могла начать печатать, пока данные грузились
     if(JSON.stringify(data.orders)!==JSON.stringify(orders)){orders=data.orders||[];renderTab(tab);}
     if(JSON.stringify(data.tasks)!==JSON.stringify(tasks)){tasks=data.tasks||[];if(tab==='todos')renderTab(tab);else renderTabs();}
     if(financeTableOk&&JSON.stringify(data.finance)!==JSON.stringify(finance)){finance=data.finance||[];if(tab==='bank')renderTab(tab);}
@@ -1063,17 +1073,23 @@ function renderTabs(){
   }).join('');
 }
 
+let _searchDebounce=null;
 function updateSearch(val){
   search=val;
-  const cardsEl=document.getElementById('list-cards');
-  if(!cardsEl){renderTab('list');return;}
-  const list=getFilteredOrders();
-  cardsEl.innerHTML=list.length===0
-    ?'<div class="empty">Заказов не найдено</div>'
-    :list.map(function(o){return orderCard(o);}).join('');
-  // Keep focus on search field
-  const sf=document.getElementById('search-field');
-  if(sf&&document.activeElement!==sf){sf.focus();}
+  clearTimeout(_searchDebounce);
+  // На слабом телефоне пересборка списка на каждую букву ощущается как подвисание —
+  // ждём короткую паузу в наборе, а не перерисовываем на каждое нажатие клавиши.
+  _searchDebounce=setTimeout(function(){
+    const cardsEl=document.getElementById('list-cards');
+    if(!cardsEl){renderTab('list');return;}
+    const list=getFilteredOrders();
+    cardsEl.innerHTML=list.length===0
+      ?'<div class="empty">Заказов не найдено</div>'
+      :list.map(function(o){return orderCard(o);}).join('');
+    // Keep focus on search field
+    const sf=document.getElementById('search-field');
+    if(sf&&document.activeElement!==sf){sf.focus();}
+  },150);
 }
 
 function renderTab(t){
@@ -4057,7 +4073,7 @@ document.addEventListener('click',function(e){
 //    kind:'account' — счёт   {id,kind,name,type:'bank'|'savings',startBalance,startDate,ord,archived}
 //    kind:'tx'      — операция {id,kind,date,type:'income'|'expense'|'transfer',amount,
 //                               accountId,toAccountId,category,merchant,comment,
-//                               direction:'toys'|'mk',orderId,author,source,created}
+//                               direction:'toys' (историческое поле, раньше было ещё 'mk'),orderId,author,source,created}
 //
 //  ВАЖНО: баланс нигде не хранится полем — он всегда пересчитывается из
 //  начального остатка счёта и операций. Иначе при параллельной работе
@@ -4066,15 +4082,14 @@ document.addEventListener('click',function(e){
 
 // Направления учёта. МК (мастер-классы) — отдельное направление: деньги лежат
 // физически на счёте (обычно Озон), но в «общий котёл» игрушек не входят.
-const BANK_DIRS=[{id:'toys',label:'Игрушки'},{id:'mk',label:'Мастер-классы'}];
-const DIR_LBL={toys:'Игрушки',mk:'МК'};
+// Направление «МК» убрано — больше не ведём отдельным учётом, всё в общем котле.
 
-const INCOME_CATS=['Предоплата заказа','Доплата заказа','Продажа МК','Возврат/компенсация','Прочий доход'];
+const INCOME_CATS=['Предоплата заказа','Доплата заказа','Продажа МК','Возврат/компенсация','Прочий доход','Корректировка'];
 // Категории ЗП собираются из справочника мастеров, чтобы новый мастер сразу
 // появился в списке. Старые операции с прежними названиями категорий не ломаются.
 const EXPENSE_CATS=['Материалы','Гранулят','Одежда (Настя)']
   .concat(MASTERS.map(function(m){return 'ЗП '+m;}))
-  .concat(['ЗП Александра — комиссия','Дивиденды/выводы','Доставка/СДЭК','Упаковка и полиграфия','Сервисы','Налоги','Прочее']);
+  .concat(['ЗП Александра — комиссия','Дивиденды/выводы','Доставка/СДЭК','Упаковка и полиграфия','Сервисы','Налоги','Корректировка','Прочее']);
 const TRANSFER_CATS=['Между счетами','Пополнение вклада','Снятие с вклада','Выдача в долг','Погашение долга'];
 
 // Счета, которые создаются при первом открытии раздела
@@ -4088,7 +4103,6 @@ const DEFAULT_ACCOUNTS=[
 var bankPeriod='month';     // 'week' | 'month' | 'all'
 var bankMonthKey='';        // выбранный месяц YYYY-MM
 var bankFilterAcc='all';
-var bankFilterDir='all';
 var bankFilterType='all';   // all | income | expense | transfer
 var bankFilterCat='';       // выбранная категория внутри типа
 var bankAiDraft=null;       // распознанные ИИ операции, ждущие подтверждения
@@ -4130,27 +4144,19 @@ function accBalance(accId){
 }
 // Сальдо направления: доходы минус расходы. Переводы между своими счетами
 // направление не меняют, поэтому в расчёт не идут.
-function dirBalance(dir){
-  return bankTxAll().reduce(function(s,t){
-    if((t.direction||'toys')!==dir)return s;
-    var amt=parseFloat(t.amount)||0;
-    if(t.type==='income')return s+amt;
-    if(t.type==='expense')return s-amt;
-    return s;
-  },0);
-}
 function bankTotals(){
   var accs=bankAccounts();
   var phys=accs.reduce(function(s,a){return s+accBalance(a.id);},0);
   // Долг — тоже актив (входит в котёл), но не деньги на руках, поэтому не в «доступно к трате».
   var liquid=accs.filter(function(a){return a.type!=='savings'&&a.type!=='debt';})
                  .reduce(function(s,a){return s+accBalance(a.id);},0);
-  var mk=dirBalance('mk');
+  var debt=accs.filter(function(a){return a.type==='debt';})
+               .reduce(function(s,a){return s+accBalance(a.id);},0);
   return {
     phys:phys,          // сколько денег физически на всех счетах
-    mk:mk,              // из них относится к направлению МК
-    pot:phys-mk,        // общий котёл игрушек (МК исключён)
-    spendable:liquid-mk // доступно к трате: без вклада и без денег МК
+    debt:debt,          // из них — в долгах, не на руках
+    pot:phys,           // общий котёл — все счета целиком
+    spendable:liquid    // доступно к трате: без вклада и без долга
   };
 }
 
@@ -4178,7 +4184,6 @@ function bankScopeTx(){
     var d=new Date(t.date+'T12:00:00');
     if(d<r.start||d>r.end)return false;
     if(bankFilterAcc!=='all'&&t.accountId!==bankFilterAcc&&t.toAccountId!==bankFilterAcc)return false;
-    if(bankFilterDir!=='all'&&(t.direction||'toys')!==bankFilterDir)return false;
     return true;
   });
 }
@@ -4198,11 +4203,10 @@ function setBankCat(type,cat){
   else{bankFilterType=type;bankFilterCat=cat;}
   renderTab('bank');
 }
-function resetBankFilters(){bankFilterType='all';bankFilterCat='';bankFilterAcc='all';bankFilterDir='all';renderTab('bank');}
+function resetBankFilters(){bankFilterType='all';bankFilterCat='';bankFilterAcc='all';renderTab('bank');}
 function setBankPeriod(p){bankPeriod=p;if(p!=='month')bankMonthKey='';renderTab('bank');}
 function setBankMonth(m){bankMonthKey=m;bankPeriod='month';renderTab('bank');}
 function setBankAcc(id){bankFilterAcc=id;bankFilterCat='';renderTab('bank');}
-function setBankDir(d){bankFilterDir=d;bankFilterCat='';renderTab('bank');}
 
 function todayISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function dLbl(iso){
@@ -4256,10 +4260,10 @@ function tplBank(){
       +'<span>Доступно к трате (без вклада)</span>'
       +'<span style="font-weight:700;color:'+(t.spendable>=0?'var(--accent2)':'var(--red-ink)')+'">'+fmt(t.spendable)+'</span>'
     +'</div>'
-    +'<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--text1);margin-top:3px">'
-      +'<span>Направление МК (отдельно)</span>'
-      +'<span style="font-weight:700;color:var(--accent2)">'+fmt(t.mk)+'</span>'
-    +'</div>'
+    +(t.debt>0?('<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--text1);margin-top:3px">'
+      +'<span>Из них в долгах (не на руках)</span>'
+      +'<span style="font-weight:700;color:var(--orange-ink)">'+fmt(t.debt)+'</span>'
+    +'</div>'):'')
     +'</div>';
 
   // ── Плитки счетов ──
@@ -4312,13 +4316,6 @@ function tplBank(){
   });
   html+='</div>';
 
-  html+='<div class="filters">'
-    +'<button class="chip '+(bankFilterDir==='all'?'active':'')+'" onclick="setBankDir(\'all\')">Все направления</button>';
-  BANK_DIRS.forEach(function(d){
-    html+='<button class="chip '+(bankFilterDir===d.id?'active':'')+'" onclick="setBankDir(\''+d.id+'\')">'+d.label+'</button>';
-  });
-  html+='</div>';
-
   // ── Итоги периода. Плитки работают переключателем типа ──
   var scope=bankScopeTx();
   var list=bankListTx();
@@ -4339,12 +4336,11 @@ function tplBank(){
     +'</div>';
 
   // Что сейчас выбрано + сброс
-  if(bankFilterType!=='all'||bankFilterCat||bankFilterAcc!=='all'||bankFilterDir!=='all'){
+  if(bankFilterType!=='all'||bankFilterCat||bankFilterAcc!=='all'){
     var parts=[];
     if(bankFilterType!=='all')parts.push({income:'Доходы',expense:'Расходы',transfer:'Переводы'}[bankFilterType]);
     if(bankFilterCat)parts.push('«'+bankFilterCat+'»');
     if(bankFilterAcc!=='all')parts.push(accName(bankFilterAcc));
-    if(bankFilterDir!=='all')parts.push(DIR_LBL[bankFilterDir]);
     html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--text2)">'
       +'<span>Показано: '+parts.join(' · ')+'</span>'
       +'<button class="chip" onclick="resetBankFilters()">Сбросить</button></div>';
@@ -4374,7 +4370,6 @@ function txRow(t){
   var color=isTr?'var(--blue-ink)':(isInc?'var(--green-ink)':'var(--red-ink)');
   var where=isTr?(accName(t.accountId)+' → '+accName(t.toAccountId)):accName(t.accountId);
   var meta=[dLbl(t.date),where];
-  if((t.direction||'toys')==='mk')meta.push('МК');
   if(t.orderId){var o=orders.find(function(x){return x.id===t.orderId;});if(o)meta.push('заказ '+o.num);}
   return '<div onclick="openTxForm(\''+t.id+'\')" style="background:var(--card);border-radius:12px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer">'
     +'<div style="min-width:0;flex:1">'
@@ -4477,7 +4472,7 @@ function tplAiDraft(){
         +'<div class="fg"><label>'+(isTr?'Откуда':'Счёт')+'</label><select onchange="editAiDraft('+i+',\'accountId\',this.value)">'+accs.map(function(a){return '<option value="'+a.id+'"'+(d.accountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
         +(isTr
           ?'<div class="fg"><label>Куда</label><select onchange="editAiDraft('+i+',\'toAccountId\',this.value)">'+accs.map(function(a){return '<option value="'+a.id+'"'+(d.toAccountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
-          :'<div class="fg"><label>Направление</label><select onchange="editAiDraft('+i+',\'direction\',this.value)">'+BANK_DIRS.map(function(x){return '<option value="'+x.id+'"'+((d.direction||'toys')===x.id?' selected':'')+'>'+x.label+'</option>';}).join('')+'</select></div>')
+          :'')
         +'<div class="fg span2"><label>Категория</label><select onchange="editAiDraft('+i+',\'category\',this.value)">'+bankCatsFor(d.type).map(function(c){return '<option'+(d.category===c?' selected':'')+'>'+c+'</option>';}).join('')+'</select></div>'
         +'<div class="fg span2"><label>Комментарий</label><input value="'+esc(d.merchant||d.comment)+'" oninput="editAiDraft('+i+',\'comment\',this.value)"></div>'
       +'</div>'
@@ -4520,7 +4515,6 @@ async function parseFinanceWithAI(){
     +'  "account": "название счёта откуда/куда идут деньги — строго одно из: '+accs.map(function(a){return a.name;}).join(' | ')+'",\n'
     +'  "toAccount": "только для type=transfer — счёт-получатель из того же списка, иначе пустая строка",\n'
     +'  "category": "строго одно значение из списка ниже",\n'
-    +'  "direction": "toys" или "mk",\n'
     +'  "merchant": "у кого купили / от кого пришло, свободный текст, или пустая строка",\n'
     +'  "orderNum": "номер заказа вида М-015, если упомянут, иначе пустая строка"\n'
     +'}\n'
@@ -4530,7 +4524,6 @@ async function parseFinanceWithAI(){
     +'\nПРАВИЛА:\n'
     +'1. Категорию БЕРИ ТОЛЬКО из списка. Ничего не выдумывай. Не подходит — ставь «Прочее» (или «Прочий доход»), а исходные слова положи в merchant.\n'
     +'2. Различай счёт и продавца: «с озон», «с озон банка», «озоном» = счёт «Озон Банк». «с Озона», «на Озоне», «заказала на озоне» = маркетплейс Ozon, это merchant, а счёт определи из остального текста (по умолчанию «Озон Банк»).\n'
-    +'3. direction="mk" ставь ТОЛЬКО если речь о мастер-классе (МК, мастер-класс, обучение, ученица, набор для МК). Во всех остальных случаях "toys".\n'
     +'4. Наполнитель, холлофайбер, гранулят, пеллетс — категория «Гранулят». Мех, ткань, фурнитура, глазки, нитки — «Материалы».\n'
     +'5. Перевод на вклад / отложили / накопления = type "transfer", category «Пополнение вклада», toAccount «Вклад Сбербанк». Это НЕ расход.\n'
     +'5а. Дали в долг (заняла на что-то, взяла в долг) = type "transfer", category «Выдача в долг», toAccount — долговой счёт этого человека. Вернула долг / погасила = type "transfer", category «Погашение долга», account — долговой счёт, toAccount — куда пришли деньги. Это НЕ доход и НЕ расход.\n'
@@ -4575,7 +4568,7 @@ async function parseFinanceWithAI(){
         accountId:findAcc(p.account),
         toAccountId:type==='transfer'?findAcc(p.toAccount):'',
         category:cats.indexOf(p.category)>=0?p.category:cats[cats.length-1],
-        direction:p.direction==='mk'?'mk':'toys',
+        direction:'toys',
         merchant:p.merchant||'',
         comment:p.merchant||'',
         orderId:ord?ord.id:''
@@ -4668,7 +4661,7 @@ function renderTxFields(){
     +'<div class="fg"><label>'+(isTr?'Откуда':'Счёт')+'</label><select id="tx-acc">'+accOpts.map(function(a){return '<option value="'+a.id+'"'+(d.accountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
     +(isTr
       ?'<div class="fg"><label>Куда</label><select id="tx-acc2">'+accs.map(function(a){return '<option value="'+a.id+'"'+(d.toAccountId===a.id?' selected':'')+'>'+a.name+'</option>';}).join('')+'</select></div>'
-      :'<div class="fg"><label>Направление</label><select id="tx-dir">'+BANK_DIRS.map(function(x){return '<option value="'+x.id+'"'+((d.direction||'toys')===x.id?' selected':'')+'>'+x.label+'</option>';}).join('')+'</select></div>')
+      :'')
     +'<div class="fg span2"><label>Категория</label><select id="tx-cat">'+cats.map(function(c){return '<option'+(d.category===c?' selected':'')+'>'+c+'</option>';}).join('')+'</select></div>'
     +(isTr?'':'<div class="fg span2"><label>Заказ (необязательно)</label><select id="tx-order"><option value="">— не привязан —</option>'+openOrders.map(function(o){return '<option value="'+o.id+'"'+(d.orderId===o.id?' selected':'')+'>'+o.num+' · '+o.client+'</option>';}).join('')+'</select></div>')
     +'<div class="fg span2"><label>Комментарий</label><input id="tx-comment" value="'+esc(d.comment)+'" placeholder="У кого купили, за что..."></div>'
@@ -4688,7 +4681,7 @@ function saveTx(){
     accountId:accId,toAccountId:toAcc,
     category:v('tx-cat')||'Прочее',
     merchant:'',comment:v('tx-comment'),
-    direction:type==='transfer'?'toys':(v('tx-dir')||'toys'),
+    direction:'toys',
     orderId:type==='transfer'?'':v('tx-order'),
     author:bankAuthor(),source:'manual',created:Date.now()
   };
@@ -4716,6 +4709,7 @@ function openAccountEdit(id){
   var isNew=!id;
   var a=isNew?{name:'',startBalance:0,startDate:todayISO(),type:'bank'}:accById(id);
   if(!a)return;
+  window._accCorrectOpen=false;   // сворачиваем корректировку при каждом открытии — она не про этот счёт по умолчанию
   var el=document.createElement('div');
   el.id='acc-modal';
   el.style.cssText='position:fixed;inset:0;background:rgba(60,48,32,.5);z-index:300;display:flex;align-items:flex-end;justify-content:center';
@@ -4724,7 +4718,16 @@ function openAccountEdit(id){
       +'<div style="font-weight:700;letter-spacing:-.4px;font-size:17px;color:var(--accent)">'+(isNew?'Новый счёт':a.name)+'</div>'
       +'<button onclick="closeAccModal()" style="background:none;border:none;color:var(--text3);font-size:24px;line-height:1;cursor:pointer">×</button>'
     +'</div>'
-    +(isNew?'':'<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Текущий баланс: <b style="color:var(--accent)">'+fmt(accBalance(a.id))+'</b></div>')
+    +(isNew?'':'<div style="font-size:12px;color:var(--text3);margin-bottom:6px">Текущий баланс: <b style="color:var(--accent)">'+fmt(accBalance(a.id))+'</b> '
+      +'<button type="button" onclick="toggleAccCorrect()" style="background:none;border:none;color:var(--accent);font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;padding:0">исправить</button></div>')
+    +(isNew?'':'<div id="acc-correct-box" style="display:none;background:var(--bg2);border-radius:10px;padding:10px;margin-bottom:14px">'
+      +'<div style="font-size:11px;color:var(--text2);margin-bottom:6px">Сколько на самом деле сейчас на счету (по банковскому приложению)?</div>'
+      +'<div style="display:flex;gap:8px">'
+        +'<input id="acc-correct-val" type="number" placeholder="'+Math.round(accBalance(a.id))+'" style="flex:1;padding:8px 10px;border-radius:8px;font-size:13px">'
+        +'<button class="btn btn-sm btn-primary" onclick="applyAccCorrection(\''+a.id+'\')">Применить</button>'
+      +'</div>'
+      +'<div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.4">Разница запишется отдельной операцией «Корректировка» с сегодняшней датой — расхождение останется в истории, а не потеряется молча.</div>'
+    +'</div>')
     +'<div class="form-grid">'
       +'<div class="fg span2"><label>Название</label><input id="acc-name" value="'+esc(a.name)+'" placeholder="Например: Долг — Цветочек"></div>'
       +'<div class="fg"><label>Начальный остаток (₽)</label><input id="acc-start" type="number" value="'+(a.startBalance||0)+'"></div>'
@@ -4748,6 +4751,29 @@ function openAccountEdit(id){
   el.addEventListener('click',function(e){if(e.target===el)closeAccModal();});
 }
 function closeAccModal(){var m=document.getElementById('acc-modal');if(m)m.remove();}
+function toggleAccCorrect(){
+  window._accCorrectOpen=!window._accCorrectOpen;
+  var b=document.getElementById('acc-correct-box');
+  if(b)b.style.display=window._accCorrectOpen?'block':'none';
+}
+// Ручная корректировка: пишем не тихую правку баланса, а видимую операцию —
+// иначе через месяц опять «откуда это расхождение» и уже не разобраться.
+async function applyAccCorrection(id){
+  var v=document.getElementById('acc-correct-val');
+  var target=v?parseFloat(v.value):NaN;
+  if(isNaN(target)){toast('Укажите сумму');return;}
+  var diff=Math.round(target-accBalance(id));
+  if(!diff){toast('Расхождения нет — баланс уже такой');return;}
+  var rec={id:uid(),kind:'tx',date:todayISO(),type:diff>0?'income':'expense',amount:Math.abs(diff),
+    accountId:id,toAccountId:'',category:'Корректировка',merchant:'',
+    comment:'Ручная корректировка: должно быть '+fmt(target),direction:'toys',orderId:'',
+    author:bankAuthor(),source:'correction',created:Date.now()};
+  window._accCorrectOpen=false;
+  closeAccModal();
+  var ok=await saveFinance(finance.concat([rec]));
+  renderTab('bank');
+  if(ok)toast((diff>0?'Досчитано ':'Списано ')+fmt(Math.abs(diff))+' — баланс исправлен ✓');
+}
 async function saveAccount(id){
   var v=function(x){var e=document.getElementById(x);return e?e.value:'';};
   var name=v('acc-name').trim();
