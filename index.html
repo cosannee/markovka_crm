@@ -401,6 +401,12 @@ function sbHeaders(){return {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};}
 // Снимок последнего синхронизированного состояния (id -> JSON) для диффа при сохранении
 let _sbSnap={orders:{},tasks:{},finance:{}};
 function sbBuildSnap(arr){var m={};(arr||[]).forEach(function(it){if(it&&it.id)m[it.id]=JSON.stringify(it);});return m;}
+// ЯВНЫЙ список id на удаление из облака. КРИТИЧЕСКИ ВАЖНО: облако никогда не удаляет
+// строку из-за того, что её «не оказалось» в локальном массиве при сохранении — это
+// однажды уже стёрло всю таблицу finance из-за неполной локальной копии. Удаление
+// возможно ТОЛЬКО через явное действие пользователя (кнопка «Удалить» с подтверждением),
+// которое кладёт id сюда. Всё остальное — только добавление/обновление (upsert).
+let pendingDeletes={orders:[],tasks:[],finance:[]};
 
 // ── Кнопка «наверх» ──
 // Появляется, когда список уехал вниз: с середины страницы возврат в один тап.
@@ -492,8 +498,8 @@ async function restoreBackup(idx){
     if(!arr.length){toast('Нет резервных копий');return;}
     var b=arr[(typeof idx==='number')?idx:arr.length-1];
     if(!confirm('Восстановить копию от '+new Date(b.ts).toLocaleString('ru')+' ('+b.n+' заказов)? Текущие данные в облаке будут заменены.'))return;
-    orders=b.data.orders||[];tasks=b.data.tasks||[];
-    await saveData(orders,tasks,true);  // skipGuard — это осознанное восстановление
+    orders=b.data.orders||[];tasks=b.data.tasks||[];finance=b.data.finance||finance;
+    await saveData(orders,tasks,true,finance);  // skipGuard — это осознанное восстановление
     renderTabs();renderTab(tab);
     toast('Восстановлено: '+b.n+' заказов');
   }catch(e){toast('Ошибка восстановления');}
@@ -663,7 +669,6 @@ async function sbSyncTable(table,arr){
     cur[it.id]=js;
     if(snap[it.id]!==js)toUpsert.push({id:it.id,data:it});
   });
-  const toDelete=Object.keys(snap).filter(function(id){return !(id in cur);});
   if(toUpsert.length){
     const r=await fetch(SB_URL+'/rest/v1/'+table,{
       method:'POST',
@@ -672,6 +677,9 @@ async function sbSyncTable(table,arr){
     });
     if(!r.ok)throw new Error('upsert '+table+' '+r.status);
   }
+  // Удаляем СТРОГО по явному списку (pendingDeletes), а не по расхождению с локальным
+  // массивом — см. комментарий у объявления pendingDeletes.
+  const toDelete=(pendingDeletes[table]||[]).filter(function(id){return !(id in cur);});
   if(toDelete.length){
     const list=toDelete.map(function(id){return '"'+id+'"';}).join(',');
     const r=await fetch(SB_URL+'/rest/v1/'+table+'?id=in.('+encodeURIComponent(list)+')',{
@@ -680,6 +688,7 @@ async function sbSyncTable(table,arr){
     });
     if(!r.ok)throw new Error('delete '+table+' '+r.status);
   }
+  pendingDeletes[table]=[];
   _sbSnap[table]=cur;
 }
 async function saveOrders(ords){orders=ords;return await saveData(ords,tasks);}
@@ -928,6 +937,66 @@ async function login(r,userName,userLabel,mName){
   renderTabs();renderTab(tab);
   startSync();
   resumeUnsaved();   // досылаем правки, не уехавшие в облако в прошлый раз
+  if(cloudLoadOk)maybeAutoBackup();  // фоновая ежедневная резервная копия в облако, тихо
+}
+
+// ═══ АВТОБЭКАП ═══
+// Раз в сутки (на первый успешный вход за день, с любого устройства) кладём в
+// отдельную таблицу Supabase `backups` полный снимок {orders,tasks,finance} на
+// сегодняшнюю дату — upsert по id=дата, никогда не удаляем строки текущих данных
+// этим процессом. Это НЕ замена ручным экспортам и НЕ замена бэкапов самого
+// Supabase (Settings → Database → Backups) — просто ещё один независимый слой.
+let backupsTableOk=null;   // null = ещё не проверяли, true/false = результат проверки
+async function maybeAutoBackup(){
+  try{
+    var today=todayISO();
+    var last='';
+    try{last=localStorage.getItem('markovka_last_autobackup')||'';}catch(e){}
+    if(last===today)return;   // уже делали сегодня с этого устройства
+    var payload={orders:orders,tasks:tasks,finance:finance,ts:Date.now()};
+    var r=await fetch(SB_URL+'/rest/v1/backups',{
+      method:'POST',
+      headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
+      body:JSON.stringify([{id:today,data:payload}])
+    });
+    if(!r.ok){backupsTableOk=false;console.warn('Таблица backups недоступна (см. инструкцию по созданию)');return;}
+    backupsTableOk=true;
+    try{localStorage.setItem('markovka_last_autobackup',today);}catch(e){}
+    pruneOldBackups();   // не блокирует, может выполниться и позже
+  }catch(e){console.warn('Автобэкап не выполнен',e);}
+}
+// Чистим бэкапы старше 90 дней — по явному списку id (датам), никогда не по диффу.
+async function pruneOldBackups(){
+  try{
+    var cutoff=new Date();cutoff.setDate(cutoff.getDate()-90);
+    var cutoffIso=cutoff.getFullYear()+'-'+String(cutoff.getMonth()+1).padStart(2,'0')+'-'+String(cutoff.getDate()).padStart(2,'0');
+    await fetch(SB_URL+'/rest/v1/backups?id=lt.'+cutoffIso,{method:'DELETE',headers:Object.assign({},sbHeaders(),{'Prefer':'return=minimal'})});
+  }catch(e){/* не критично */}
+}
+// Список доступных дат бэкапа — вызвать из консоли: await listCloudBackups()
+async function listCloudBackups(){
+  const r=await fetch(SB_URL+'/rest/v1/backups?select=id&order=id.desc',{headers:sbHeaders()});
+  if(!r.ok){console.warn('Таблица backups недоступна');return[];}
+  const rows=await r.json();
+  const ids=rows.map(function(x){return x.id;});
+  console.log('Доступные даты бэкапа:',ids);
+  return ids;
+}
+// Восстановление из облачного бэкапа по дате — вызвать из консоли:
+// await restoreCloudBackup('2026-09-20')
+// Ничего не удаляет автоматически: подтверждение обязательно, как и у ручного восстановления.
+async function restoreCloudBackup(dateId){
+  const r=await fetch(SB_URL+'/rest/v1/backups?id=eq.'+encodeURIComponent(dateId)+'&select=data',{headers:sbHeaders()});
+  if(!r.ok){alert('Не удалось прочитать бэкап');return;}
+  const rows=await r.json();
+  if(!rows.length){alert('Бэкап за '+dateId+' не найден');return;}
+  const b=rows[0].data;
+  const n=(b.orders||[]).length;
+  if(!confirm('Восстановить бэкап от '+dateId+' ('+n+' заказов)? Текущие данные в облаке будут заменены.'))return;
+  orders=b.orders||[];tasks=b.tasks||[];finance=b.finance||[];
+  await saveData(orders,tasks,true,finance);
+  renderTabs();renderTab(tab);
+  toast('Восстановлено из бэкапа '+dateId);
 }
 
 function logout(){
@@ -1634,6 +1703,7 @@ async function saveSdekNum(id,val){
 async function delOrder(id){
   if(!confirm('Удалить заказ?'))return;
   orders=orders.filter(function(x){return x.id!==id;});
+  pendingDeletes.orders.push(id);
   await saveOrders(orders);renderTab(tab);toast('Заказ удалён');
 }
 function jumpTo(id){
@@ -4048,6 +4118,7 @@ async function doneTask(id){
 }
 async function delTask(id){
   tasks=tasks.filter(function(x){return x.id!==id;});
+  pendingDeletes.tasks.push(id);
   await saveTasks(tasks);renderTab('todos');
 }
 
@@ -4726,6 +4797,7 @@ function saveTx(){
 async function deleteTx(id){
   if(!confirm('Удалить операцию? Балансы пересчитаются.'))return;
   closeTxModal();
+  pendingDeletes.finance.push(id);
   var ok=await saveFinance(finance.filter(function(x){return x.id!==id;}));
   renderTab('bank');
   if(ok)toast('Операция удалена');
