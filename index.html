@@ -1567,16 +1567,12 @@ function orderCard(o){
     html+='<div style="padding:12px 16px;border-bottom:1px solid var(--border)">';
     html+='<div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:0;margin-bottom:8px">Данные для СДЭК</div>';
     var toyName='Игрушка мягкая '+(toyLbl||'игрушка')+' с металлическим наполнителем антистресс.';
-    [['Название',toyName],['Артикул',o.num],['Имя',cS],['Телефон',pS],['Адрес',aS]].forEach(function(row){
+    [['ФИО',cS],['Номер телефона',pS],['Название',toyName],['Артикул',o.num],['Адрес',aS]].forEach(function(row){
       if(!row[1])return;
       html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
         +'<span style="font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+row[1]+'</span>'
-        +'<button class="btn btn-sm btn-ghost" style="font-size:10px;flex-shrink:0" data-val="'+row[1]+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div>';
+        +'<button class="btn btn-sm btn-ghost" style="font-size:10px;flex:0 0 116px;text-align:center" data-val="'+row[1]+'" onclick="copyField(this.dataset.val,this)">'+row[0]+'</button></div>';
     });
-    var igC=igInfo(o.instagram);
-    if(igC)html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
-      +'<a href="'+igC.url+'" target="_blank" rel="noopener" style="font-size:12px;color:var(--pink-ink);font-weight:600;text-decoration:none;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+igC.handle+'</a>'
-      +'<button class="btn btn-sm btn-ghost" style="font-size:10px;flex-shrink:0" data-val="'+igC.url+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div>';
     html+='<div style="display:flex;align-items:center;gap:8px;margin-top:4px">'
       +'<input type="text" placeholder="Номер накладной СДЭК" value="'+trackNum+'" '
       +'style="flex:1;padding:7px 10px;border-radius:8px;font-size:12px;background:var(--bg)" '
