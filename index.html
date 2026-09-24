@@ -2601,6 +2601,11 @@ function tplStats(){
         +'<span style="font-size:13px;font-weight:700;color:var(--accent)">'+fmt(row[2])+'</span>'
         +'</div>';
     });
+    var zpPlan=T.byMaster.reduce(function(s,b){return s+b.zp;},0)+T.nastya+T.sasha;
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px;margin-top:2px;background:var(--accent-bg);border-radius:8px">'
+      +'<span style="font-size:13px;font-weight:700;color:var(--text1)">Всего зарплат за период <span style="font-size:11px;color:var(--text3);font-weight:600">план</span></span>'
+      +'<span style="font-size:15px;font-weight:700;color:var(--accent)">'+fmt(zpPlan)+'</span>'
+      +'</div>';
     html+='</div></div>';
   }
   html+='</div>';
@@ -2788,6 +2793,16 @@ function tplWeeklyAnalytics(){
       +'</div>';
   });
   html+='</div>';
+
+  // Всего зарплат за период (факт по закрытым заказам)
+  var totalZpFact=totalMasterPay+totalSashaPay+totalNastya;
+  html+='<div style="background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:var(--sh)">'
+    +'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">'
+    +'<div style="font-size:12px;font-weight:700;color:var(--text1)">Всего зарплат за период <span style="font-size:11px;color:var(--text3);font-weight:600">факт</span></div>'
+    +'<div style="font-weight:700;letter-spacing:-.4px;font-size:20px;color:var(--accent)">'+fmt2(totalZpFact)+'</div>'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--text3);margin-top:4px">Мастера '+fmt2(totalMasterPay)+' · Александра '+fmt2(totalSashaPay)+' · Настя '+fmt2(totalNastya)+'</div>'
+    +'</div>';
 
   // Куда уходит выручка — бары (% от выручки)
   html+='<div style="background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
