@@ -403,6 +403,9 @@ function sbHeaders(){return {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};}
 // Снимок последнего синхронизированного состояния (id -> JSON) для диффа при сохранении
 let _sbSnap={orders:{},tasks:{},finance:{}};
 function sbBuildSnap(arr){var m={};(arr||[]).forEach(function(it){if(it&&it.id)m[it.id]=JSON.stringify(it);});return m;}
+// Запомнить, из какой версии облака собрана локальная копия таблицы. Вызывать ровно
+// там, где локальный массив заменяется данными из облака/кэша, и больше нигде.
+function setBase(table,arr){_sbSnap[table]=sbBuildSnap(arr);}
 // ЯВНЫЙ список id на удаление из облака. КРИТИЧЕСКИ ВАЖНО: облако никогда не удаляет
 // строку из-за того, что её «не оказалось» в локальном массиве при сохранении — это
 // однажды уже стёрло всю таблицу finance из-за неполной локальной копии. Удаление
@@ -463,9 +466,9 @@ async function loadData(force){
     lastSyncTime=Date.now();
     cloudLoadOk=true;                       // облако успешно прочитано
     cloudOrderCount=ord.length;
-    _sbSnap.orders=sbBuildSnap(ord);
-    _sbSnap.tasks=sbBuildSnap(tsk);
-    if(financeTableOk)_sbSnap.finance=sbBuildSnap(fin);
+    // Базовый снимок (_sbSnap) здесь НЕ трогаем: он должен совпадать с тем, из чего
+    // собрана локальная копия. Его обновляет только тот, кто реально подменил
+    // orders/tasks/finance данными из облака (setBase).
     try{localStorage.setItem('markovka_data',JSON.stringify(data));}catch(e){}
     return data;
   }catch(e){
@@ -510,12 +513,12 @@ async function restoreBackup(idx){
 async function saveData(ords,tsks,skipGuard,fins){
   if(!Array.isArray(fins))fins=finance;
   // ЗАЩИТА ОТ ПОТЕРИ ДАННЫХ: не пишем в облако, пока ни разу его не прочитали.
-  // Иначе пустой/тестовый локальный набор может затереть реальные данные в JsonBin.
+  // Откладываем только строки, изменённые здесь, — не весь набор данных.
   if(!cloudLoadOk){
     console.warn('Запись в облако заблокирована: облако ещё не было загружено в этой сессии');
     var blocked={orders:ords,tasks:tsks,finance:fins};
     try{localStorage.setItem('markovka_data',JSON.stringify(blocked));}catch(e){}
-    markUnsaved(blocked,'нет связи с облаком');
+    markUnsaved(mergeDirty(readPendingDirty(),collectDirty(blocked)),'нет связи с облаком');
     return false;
   }
   // СТРАЖ МАССОВОГО СТИРАНИЯ: лишний запрос-чтение делаем ТОЛЬКО когда заказов
@@ -545,24 +548,94 @@ async function saveData(ords,tsks,skipGuard,fins){
   pushBackup(payload);  // снимок перед записью
   // Локальная копия считается свежей сразу после сохранения — повторное чтение не требуется
   try{localStorage.setItem('markovka_data',JSON.stringify(payload));lastSyncTime=Date.now();}catch(e){}
+  const dirty=mergeDirty(readPendingDirty(),collectDirty(payload));
   try{
-    await pushToCloud(payload);
+    await pushDirty(dirty);
+    if(Array.isArray(ords))cloudOrderCount=ords.length;
     markSaved();
     return true;
   }catch(e){
     console.warn('save error',e);
-    markUnsaved(payload,e&&e.message?e.message:'ошибка сети');
+    markUnsaved(dirty,e&&e.message?e.message:'ошибка сети');
     return false;
   }
 }
-// Запись всех таблиц в облако. Выбрасывает ошибку, если хоть одна не записалась —
-// вызывающий код обязан считать сохранение неуспешным.
-async function pushToCloud(payload){
+
+// ═══ ЗАПИСЬ ТОЛЬКО ИЗМЕНЁННЫХ СТРОК ═══
+// В облако уходят только строки, которые на этом устройстве отличаются от версии,
+// из которой собрана локальная копия (_sbSnap), плюс явные удаления (pendingDeletes).
+// Строки, которых здесь не меняли, не отправляются никогда — поэтому устаревшая
+// локальная копия не может откатить чужие или более поздние правки.
+const DIRTY_TABLES=['orders','tasks','finance'];
+function emptyDirty(){return {upserts:{orders:{},tasks:{},finance:{}},deletes:{orders:[],tasks:[],finance:[]}};}
+function collectDirty(payload){
+  var d=emptyDirty();
+  DIRTY_TABLES.forEach(function(t){
+    if(t==='finance'&&!financeTableOk)return;
+    var arr=Array.isArray(payload[t])?payload[t]:[];
+    var snap=_sbSnap[t]||{},present={};
+    arr.forEach(function(it){
+      if(!it||!it.id)return;
+      present[it.id]=1;
+      if(snap[it.id]!==JSON.stringify(it))d.upserts[t][it.id]=it;
+    });
+    (pendingDeletes[t]||[]).forEach(function(id){if(!present[id]&&d.deletes[t].indexOf(id)<0)d.deletes[t].push(id);});
+  });
+  return d;
+}
+// Объединить отложенные правки (a) с новыми (b): более поздняя версия строки побеждает,
+// удаление отменяет отложенную запись этой строки, новая запись отменяет удаление.
+function mergeDirty(a,b){
+  if(!a)return b;if(!b)return a;
+  var r=emptyDirty();
+  DIRTY_TABLES.forEach(function(t){
+    var ua=(a.upserts&&a.upserts[t])||{},ub=(b.upserts&&b.upserts[t])||{};
+    var da=(a.deletes&&a.deletes[t])||[],db=(b.deletes&&b.deletes[t])||[];
+    Object.keys(ua).forEach(function(id){r.upserts[t][id]=ua[id];});
+    da.forEach(function(id){if(r.deletes[t].indexOf(id)<0)r.deletes[t].push(id);});
+    Object.keys(ub).forEach(function(id){
+      r.upserts[t][id]=ub[id];
+      var i=r.deletes[t].indexOf(id);if(i>=0)r.deletes[t].splice(i,1);
+    });
+    db.forEach(function(id){delete r.upserts[t][id];if(r.deletes[t].indexOf(id)<0)r.deletes[t].push(id);});
+  });
+  return r;
+}
+function dirtyCount(d){
+  if(!d)return 0;
+  return DIRTY_TABLES.reduce(function(s,t){return s+Object.keys((d.upserts&&d.upserts[t])||{}).length+((d.deletes&&d.deletes[t])||[]).length;},0);
+}
+// Отправка. Бросает ошибку, если хоть что-то не записалось — сохранение тогда
+// считается неуспешным и правки остаются в очереди на повтор.
+async function pushDirty(d){
+  if(!d)return;
   console.log("Supabase sync");
-  await sbSyncTable('orders',payload.orders);
-  await sbSyncTable('tasks',payload.tasks);
-  if(financeTableOk&&payload.finance)await sbSyncTable('finance',payload.finance);
-  if(Array.isArray(payload.orders))cloudOrderCount=payload.orders.length;
+  for(const t of DIRTY_TABLES){
+    if(t==='finance'&&!financeTableOk)continue;
+    if(!_sbSnap[t])_sbSnap[t]={};
+    const ups=Object.keys((d.upserts&&d.upserts[t])||{}).map(function(id){return {id:id,data:d.upserts[t][id]};});
+    if(ups.length){
+      const r=await fetch(SB_URL+'/rest/v1/'+t,{
+        method:'POST',
+        headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
+        body:JSON.stringify(ups)
+      });
+      if(!r.ok)throw new Error('upsert '+t+' '+r.status);
+      ups.forEach(function(u){_sbSnap[t][u.id]=JSON.stringify(u.data);});
+    }
+    // Удаляем СТРОГО по явному списку (pendingDeletes) — см. комментарий у его объявления.
+    const dels=((d.deletes&&d.deletes[t])||[]).slice();
+    if(dels.length){
+      const list=dels.map(function(id){return '"'+id+'"';}).join(',');
+      const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=in.('+encodeURIComponent(list)+')',{
+        method:'DELETE',
+        headers:Object.assign({},sbHeaders(),{'Prefer':'return=minimal'})
+      });
+      if(!r.ok)throw new Error('delete '+t+' '+r.status);
+      dels.forEach(function(id){delete _sbSnap[t][id];});
+      pendingDeletes[t]=(pendingDeletes[t]||[]).filter(function(id){return dels.indexOf(id)<0;});
+    }
+  }
 }
 
 // ═══ НАДЁЖНОЕ СОХРАНЕНИЕ ═══
@@ -572,11 +645,18 @@ async function pushToCloud(payload){
 var saveState={pending:false,busy:false,attempt:0,timer:null,reason:''};
 const UNSAVED_KEY='markovka_unsaved';
 const RETRY_STEPS=[5000,15000,30000,60000];
+const UNSAVED_LEGACY_KEY='markovka_unsaved_legacy';
+const UNSAVED_MAX_AGE=6*3600*1000;   // старше — без подтверждения не досылаем
 function readUnsaved(){
   try{var d=localStorage.getItem(UNSAVED_KEY);return d?JSON.parse(d):null;}catch(e){return null;}
 }
-function markUnsaved(payload,reason){
-  try{localStorage.setItem(UNSAVED_KEY,JSON.stringify({ts:Date.now(),payload:payload}));}catch(e){}
+function readPendingDirty(){var st=readUnsaved();return st&&st.v===2?st.dirty:null;}
+// Отложить в сторону (не отправляя) — для ручного разбора, если понадобится
+function shelveUnsaved(st){try{localStorage.setItem(UNSAVED_LEGACY_KEY,JSON.stringify(st));}catch(e){}}
+function markUnsaved(dirty,reason){
+  var prev=readUnsaved();
+  var ts=(prev&&prev.v===2&&prev.ts)?prev.ts:Date.now();
+  try{localStorage.setItem(UNSAVED_KEY,JSON.stringify({v:2,ts:ts,approved:!!(prev&&prev.v===2&&prev.approved),dirty:dirty}));}catch(e){}
   saveState.pending=true;
   saveState.reason=reason||'';
   renderSaveBar();
@@ -597,16 +677,30 @@ function scheduleRetry(){
 async function retrySave(manual){
   if(saveState.busy)return false;
   var st=readUnsaved();
-  if(!st||!st.payload){markSaved();return true;}
+  if(!st){markSaved();return true;}
+  if(st.v!==2){
+    // Старый формат хранил ВСЮ базу целиком. Отправка такой копии перезаписывает
+    // более свежие правки в облаке (так однажды откатились данные за день) — не шлём.
+    shelveUnsaved(st);
+    console.warn('Старая копия несохранённых данных отложена в '+UNSAVED_LEGACY_KEY+' и НЕ отправлена в облако');
+    markSaved();return true;
+  }
+  if(!st.approved&&Date.now()-st.ts>UNSAVED_MAX_AGE){
+    var n=dirtyCount(st.dirty);
+    if(!confirm('Найдены неотправленные правки от '+new Date(st.ts).toLocaleString('ru')+' ('+n+' шт.).\nЗа это время их могли изменить другие. Отправить эти правки в облако?')){
+      shelveUnsaved(st);markSaved();toast('Старые правки отложены, в облако не отправлены');return true;
+    }
+    st.approved=true;
+    try{localStorage.setItem(UNSAVED_KEY,JSON.stringify(st));}catch(e){}
+  }
   saveState.busy=true;renderSaveBar();
   try{
-    // Облако могли ни разу не прочитать (первый запуск без сети) — читаем перед записью
+    // Облако могли ни разу не прочитать (первый запуск без сети) — проверяем связь
     if(!cloudLoadOk){
-      var fresh=await loadData(true);
+      await loadData(true);
       if(!cloudLoadOk)throw new Error('облако недоступно');
-      if(fresh){/* снимок обновлён внутри loadData */}
     }
-    await pushToCloud(st.payload);
+    await pushDirty(st.dirty);
     markSaved();
     if(manual)toast('Сохранено в облаке');
     return true;
@@ -642,7 +736,7 @@ function renderSaveBar(){
 // Восстановление после перезагрузки: если остались неотправленные правки — досылаем
 function resumeUnsaved(){
   var st=readUnsaved();
-  if(!st||!st.payload)return;
+  if(!st)return;
   saveState.pending=true;
   saveState.reason='после перезагрузки';
   renderSaveBar();
@@ -658,40 +752,6 @@ if(typeof window!=='undefined'){
     if(!saveState.pending)return;
     e.preventDefault();e.returnValue='';
   });
-}
-// Дифф-синхронизация одной таблицы: пишем только изменённые/новые строки и удаляем исчезнувшие.
-// Благодаря этому правки разных людей по разным заказам не затирают друг друга.
-async function sbSyncTable(table,arr){
-  arr=Array.isArray(arr)?arr:[];
-  const snap=_sbSnap[table]||{};
-  const cur={},toUpsert=[];
-  arr.forEach(function(it){
-    if(!it||!it.id)return;
-    const js=JSON.stringify(it);
-    cur[it.id]=js;
-    if(snap[it.id]!==js)toUpsert.push({id:it.id,data:it});
-  });
-  if(toUpsert.length){
-    const r=await fetch(SB_URL+'/rest/v1/'+table,{
-      method:'POST',
-      headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
-      body:JSON.stringify(toUpsert)
-    });
-    if(!r.ok)throw new Error('upsert '+table+' '+r.status);
-  }
-  // Удаляем СТРОГО по явному списку (pendingDeletes), а не по расхождению с локальным
-  // массивом — см. комментарий у объявления pendingDeletes.
-  const toDelete=(pendingDeletes[table]||[]).filter(function(id){return !(id in cur);});
-  if(toDelete.length){
-    const list=toDelete.map(function(id){return '"'+id+'"';}).join(',');
-    const r=await fetch(SB_URL+'/rest/v1/'+table+'?id=in.('+encodeURIComponent(list)+')',{
-      method:'DELETE',
-      headers:Object.assign({},sbHeaders(),{'Prefer':'return=minimal'})
-    });
-    if(!r.ok)throw new Error('delete '+table+' '+r.status);
-  }
-  pendingDeletes[table]=[];
-  _sbSnap[table]=cur;
 }
 async function saveOrders(ords){orders=ords;return await saveData(ords,tasks);}
 async function saveTasks(tsks){tasks=tsks;return await saveData(orders,tsks);}
@@ -916,6 +976,8 @@ async function login(r,userName,userLabel,mName){
   if(cached&&Array.isArray(cached.orders)){
     orders=cached.orders;
     tasks=Array.isArray(cached.tasks)?cached.tasks:[];
+    finance=Array.isArray(cached.finance)?cached.finance:[];
+    setBase('orders',orders);setBase('tasks',tasks);setBase('finance',finance);
     renderTabs();renderTab(tab);
   }
   // 2) Затем загружаем актуальные данные из JsonBin
@@ -936,6 +998,7 @@ async function login(r,userName,userLabel,mName){
     finance=(cached&&Array.isArray(cached.finance))?cached.finance:[];
     if(!cached)toast('Нет связи с облаком — данные не загружены');
   }
+  setBase('orders',orders);setBase('tasks',tasks);setBase('finance',finance);
   renderTabs();renderTab(tab);
   startSync();
   resumeUnsaved();   // досылаем правки, не уехавшие в облако в прошлый раз
@@ -1030,8 +1093,13 @@ async function syncFromCloud(){
   if(data){
     if(isUserEditing())return;   // могла начать печатать, пока данные грузились
     if(JSON.stringify(data.orders)!==JSON.stringify(orders)){orders=data.orders||[];renderTab(tab);}
+    setBase('orders',orders);
     if(JSON.stringify(data.tasks)!==JSON.stringify(tasks)){tasks=data.tasks||[];if(tab==='todos')renderTab(tab);else renderTabs();}
-    if(financeTableOk&&JSON.stringify(data.finance)!==JSON.stringify(finance)){finance=data.finance||[];if(tab==='bank')renderTab(tab);}
+    setBase('tasks',tasks);
+    if(financeTableOk){
+      if(JSON.stringify(data.finance)!==JSON.stringify(finance)){finance=data.finance||[];if(tab==='bank')renderTab(tab);}
+      setBase('finance',finance);
+    }
   }
 }
 function setupActivity(){
