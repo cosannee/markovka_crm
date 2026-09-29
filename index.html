@@ -4593,10 +4593,14 @@ function bankScopeTx(){
     return true;
   });
 }
+// Корректировка баланса — не доход и не расход: она только подгоняет остаток на счёте
+// под реальный. В балансе счёта учитывается, в доходах/расходах/сверке — нет.
+function isBankCorrection(t){return t.source==='correction'||t.category==='Корректировка';}
 // То же плюс тип и категория — это и есть лента операций
 function bankListTx(){
   return bankScopeTx().filter(function(t){
     if(bankFilterType!=='all'&&t.type!==bankFilterType)return false;
+    if((bankFilterType==='income'||bankFilterType==='expense')&&isBankCorrection(t))return false;
     if(bankFilterCat&&(t.category||'')!==bankFilterCat)return false;
     return true;
   });
@@ -4725,9 +4729,10 @@ function tplBank(){
   // ── Итоги периода. Плитки работают переключателем типа ──
   var scope=bankScopeTx();
   var list=bankListTx();
-  var sumBy=function(t){return scope.filter(function(x){return x.type===t;})
+  var sumBy=function(t,corr){return scope.filter(function(x){return x.type===t&&isBankCorrection(x)===!!corr;})
       .reduce(function(s2,x){return s2+(parseFloat(x.amount)||0);},0);};
   var inc=sumBy('income'), exp=sumBy('expense');
+  var corrInc=sumBy('income',true), corrExp=sumBy('expense',true);
   var tile=function(type,val,lbl,color,bg){
     var on=bankFilterType===type;
     return '<div onclick="setBankType(\''+type+'\')" style="background:'+bg+';border-radius:12px;padding:10px;text-align:center;cursor:pointer'
@@ -4740,6 +4745,11 @@ function tplBank(){
     +tile('expense',exp,'Расход','var(--red-ink)','var(--red-bg)')
     +tile('all',inc-exp,'Итог · всё',(inc-exp>=0?'var(--green-ink)':'var(--red-ink)'),'var(--bg2)')
     +'</div>';
+  if(corrInc||corrExp){
+    html+='<div style="font-size:11px;color:var(--text3);margin:-4px 0 10px;line-height:1.4">Корректировки баланса: '
+      +[corrInc?'+ '+fmt(corrInc):'',corrExp?'− '+fmt(corrExp):''].filter(Boolean).join(' / ')
+      +' — не входят в доход и расход</div>';
+  }
 
   // Что сейчас выбрано + сброс
   if(bankFilterType!=='all'||bankFilterCat||bankFilterAcc!=='all'){
@@ -4773,7 +4783,7 @@ function tplBank(){
 function txRow(t){
   var isInc=t.type==='income',isTr=t.type==='transfer';
   var sign=isTr?'⇄':(isInc?'+':'−');
-  var color=isTr?'var(--blue-ink)':(isInc?'var(--green-ink)':'var(--red-ink)');
+  var color=isTr?'var(--blue-ink)':isBankCorrection(t)?'var(--text3)':(isInc?'var(--green-ink)':'var(--red-ink)');
   var where=isTr?(accName(t.accountId)+' → '+accName(t.toAccountId)):accName(t.accountId);
   var meta=[dLbl(t.date),where];
   if(t.orderId){var o=orders.find(function(x){return x.id===t.orderId;});if(o)meta.push('заказ '+o.num);}
@@ -4795,7 +4805,7 @@ function tplBankBreakdown(scope){
    ['expense','Расходы по категориям','var(--red-ink)','var(--red)']].forEach(function(cfg){
     var type=cfg[0];
     if(bankFilterType!=='all'&&bankFilterType!==type)return;
-    var list=scope.filter(function(t){return t.type===type;});
+    var list=scope.filter(function(t){return t.type===type&&!isBankCorrection(t);});
     if(!list.length)return;
     var by={};
     list.forEach(function(t){var c=t.category||'Прочее';
@@ -4836,7 +4846,7 @@ function tplBankReconcile(list){
   });
   if(!closed.length)return '';
   var calcProfit=closed.reduce(function(s,o){return s+calcCosts(o).profit;},0);
-  var toysTx=list.filter(function(t){return (t.direction||'toys')==='toys';});
+  var toysTx=list.filter(function(t){return (t.direction||'toys')==='toys'&&!isBankCorrection(t);});
   var factInc=toysTx.filter(function(t){return t.type==='income';}).reduce(function(s,t){return s+(parseFloat(t.amount)||0);},0);
   var factExp=toysTx.filter(function(t){return t.type==='expense';}).reduce(function(s,t){return s+(parseFloat(t.amount)||0);},0);
   var factFlow=factInc-factExp;
