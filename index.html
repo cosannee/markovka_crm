@@ -15,6 +15,9 @@
 <meta name="apple-mobile-web-app-title" content="Марковка">
 <meta name="theme-color" content="#FAF7EE">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<!-- Supabase Realtime: чужие правки приходят сразу, без ожидания опроса. Если библиотека
+     не загрузилась, приложение работает как раньше — через периодический опрос. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
@@ -428,12 +431,12 @@ if(typeof window!=='undefined'){
 }
 
 // ── Параметры синхронизации ──
-const SYNC_INTERVAL=30000;   // интервал автосинхронизации, мс (30 сек)
-const IDLE_LIMIT=180000;     // после 3 мин без действий опрос приостанавливается
+const SYNC_INTERVAL=20000;   // интервал опроса облака, мс (20 сек) — страховка к Realtime
+const REALTIME_POLL=60000;   // при живом Realtime-канале опрашиваем реже — раз в минуту
 let lastSyncTime=0;          // время последней успешной синхронизации с JsonBin
 let syncInProgress=false;    // защита от одновременных запросов чтения
 let cloudLoadOk=false;       // удалось ли хоть раз успешно прочитать облако в этой сессии
-let lastActivity=Date.now(); // время последнего действия пользователя
+let lastLoadOk=false;        // последнее loadData вернуло свежие данные из облака (а не кэш)
 let financeTableOk=false;    // существует ли таблица finance в Supabase (модуль «Банк»)
 let activityBound=false;     // навешены ли слушатели активности
 
@@ -444,6 +447,7 @@ function readCache(){
 
 async function loadData(force){
   // Если данные загружены меньше SYNC_INTERVAL назад — используем локальную копию
+  lastLoadOk=false;
   if(!force&&lastSyncTime&&(Date.now()-lastSyncTime)<SYNC_INTERVAL){
     return readCache();
   }
@@ -465,6 +469,7 @@ async function loadData(force){
     const data={orders:ord,tasks:tsk,finance:fin};
     lastSyncTime=Date.now();
     cloudLoadOk=true;                       // облако успешно прочитано
+    lastLoadOk=true;
     cloudOrderCount=ord.length;
     // Базовый снимок (_sbSnap) здесь НЕ трогаем: он должен совпадать с тем, из чего
     // собрана локальная копия. Его обновляет только тот, кто реально подменил
@@ -551,6 +556,7 @@ async function saveData(ords,tsks,skipGuard,fins){
   const dirty=mergeDirty(readPendingDirty(),collectDirty(payload));
   try{
     await pushDirty(dirty);
+    try{localStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks,finance:finance}));}catch(e){}
     if(Array.isArray(ords))cloudOrderCount=ords.length;
     markSaved();
     return true;
@@ -567,7 +573,10 @@ async function saveData(ords,tsks,skipGuard,fins){
 // Строки, которых здесь не меняли, не отправляются никогда — поэтому устаревшая
 // локальная копия не может откатить чужие или более поздние правки.
 const DIRTY_TABLES=['orders','tasks','finance'];
-function emptyDirty(){return {upserts:{orders:{},tasks:{},finance:{}},deletes:{orders:[],tasks:[],finance:[]}};}
+function emptyDirty(){return {upserts:{orders:{},tasks:{},finance:{}},deletes:{orders:[],tasks:[],finance:[]},bases:{orders:{},tasks:{},finance:{}}};}
+// bases[t][id] — версия строки (JSON), от которой начата правка на этом устройстве.
+// По ней понимаем, КАКИЕ поля человек реально поменял, и отправляем только их.
+// null — строки ещё нет в облаке (новая), её пишем целиком.
 function collectDirty(payload){
   var d=emptyDirty();
   DIRTY_TABLES.forEach(function(t){
@@ -577,7 +586,10 @@ function collectDirty(payload){
     arr.forEach(function(it){
       if(!it||!it.id)return;
       present[it.id]=1;
-      if(snap[it.id]!==JSON.stringify(it))d.upserts[t][it.id]=it;
+      if(snap[it.id]!==JSON.stringify(it)){
+        d.upserts[t][it.id]=it;
+        d.bases[t][it.id]=snap.hasOwnProperty(it.id)?snap[it.id]:null;
+      }
     });
     (pendingDeletes[t]||[]).forEach(function(id){if(!present[id]&&d.deletes[t].indexOf(id)<0)d.deletes[t].push(id);});
   });
@@ -585,19 +597,26 @@ function collectDirty(payload){
 }
 // Объединить отложенные правки (a) с новыми (b): более поздняя версия строки побеждает,
 // удаление отменяет отложенную запись этой строки, новая запись отменяет удаление.
+// Базовая версия остаётся самой ранней — от неё считаются все поля, изменённые здесь.
 function mergeDirty(a,b){
   if(!a)return b;if(!b)return a;
   var r=emptyDirty();
   DIRTY_TABLES.forEach(function(t){
     var ua=(a.upserts&&a.upserts[t])||{},ub=(b.upserts&&b.upserts[t])||{};
+    var ba=(a.bases&&a.bases[t])||{},bb=(b.bases&&b.bases[t])||{};
     var da=(a.deletes&&a.deletes[t])||[],db=(b.deletes&&b.deletes[t])||[];
-    Object.keys(ua).forEach(function(id){r.upserts[t][id]=ua[id];});
+    Object.keys(ua).forEach(function(id){
+      r.upserts[t][id]=ua[id];
+      // Очередь старого формата (без bases) — версию-основу не знаем, пишем строку целиком
+      r.bases[t][id]=ba.hasOwnProperty(id)?ba[id]:null;
+    });
     da.forEach(function(id){if(r.deletes[t].indexOf(id)<0)r.deletes[t].push(id);});
     Object.keys(ub).forEach(function(id){
+      if(!r.upserts[t].hasOwnProperty(id))r.bases[t][id]=bb.hasOwnProperty(id)?bb[id]:null;
       r.upserts[t][id]=ub[id];
       var i=r.deletes[t].indexOf(id);if(i>=0)r.deletes[t].splice(i,1);
     });
-    db.forEach(function(id){delete r.upserts[t][id];if(r.deletes[t].indexOf(id)<0)r.deletes[t].push(id);});
+    db.forEach(function(id){delete r.upserts[t][id];delete r.bases[t][id];if(r.deletes[t].indexOf(id)<0)r.deletes[t].push(id);});
   });
   return r;
 }
@@ -605,23 +624,117 @@ function dirtyCount(d){
   if(!d)return 0;
   return DIRTY_TABLES.reduce(function(s,t){return s+Object.keys((d.upserts&&d.upserts[t])||{}).length+((d.deletes&&d.deletes[t])||[]).length;},0);
 }
+
+// ── Вспомогательное для построчной синхронизации ──
+function getTable(t){return t==='orders'?orders:t==='tasks'?tasks:finance;}
+function sameVal(a,b){return JSON.stringify(a)===JSON.stringify(b);}
+// Какие поля изменились относительно базовой версии: set — новые значения, unset — удалённые поля
+function rowPatch(base,obj){
+  var set={},unset=[];
+  Object.keys(obj).forEach(function(k){
+    if(obj[k]===undefined){if(base.hasOwnProperty(k))unset.push(k);return;}
+    if(!sameVal(obj[k],base[k]))set[k]=obj[k];
+  });
+  Object.keys(base).forEach(function(k){if(!obj.hasOwnProperty(k))unset.push(k);});
+  return {set:set,unset:unset};
+}
+function applyPatch(obj,p){
+  var r=JSON.parse(JSON.stringify(obj||{}));
+  p.unset.forEach(function(k){delete r[k];});
+  Object.keys(p.set).forEach(function(k){r[k]=JSON.parse(JSON.stringify(p.set[k]));});
+  return r;
+}
+// Заменить содержимое объекта, сохранив сам объект: на него могут ссылаться открытые экраны
+function replaceInPlace(o,src){
+  Object.keys(o).forEach(function(k){delete o[k];});
+  Object.assign(o,JSON.parse(JSON.stringify(src)));
+}
+function rowLabel(t,o){
+  if(t==='orders')return 'заказ '+((o&&o.num)||'');
+  if(t==='tasks')return 'задача'+(o&&o.text?' «'+String(o.text).slice(0,30)+'»':'');
+  return 'запись в «Банке»';
+}
+
+// Атомарная правка строки на стороне базы (функция patch_row, см. SUPABASE_SETUP.sql).
+// Если функции ещё нет — делаем то же самое из приложения: читаем свежую строку,
+// накладываем свои поля и записываем. Возвращает {old,new} или null, если строки в облаке нет.
+let patchRpcOk=null;   // null — ещё не проверяли
+async function sbPatchRow(t,id,p){
+  if(patchRpcOk!==false){
+    const r=await fetch(SB_URL+'/rest/v1/rpc/patch_row',{
+      method:'POST',
+      headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),
+      body:JSON.stringify({p_table:t,p_id:String(id),p_set:p.set,p_unset:p.unset})
+    });
+    if(r.ok){patchRpcOk=true;return await r.json();}
+    // 5xx — временный сбой, повторим позже. 4xx — функции нет или она не подходит:
+    // сохраняем без неё, чтобы правки не застревали.
+    if(r.status>=500)throw new Error('patch '+t+' '+r.status);
+    patchRpcOk=false;console.warn('Функция patch_row недоступна ('+r.status+') — сохраняем без неё (см. SUPABASE_SETUP.sql)');
+  }
+  const g=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+encodeURIComponent(id)+'&select=data',{headers:sbHeaders()});
+  if(!g.ok)throw new Error('read '+t+' '+g.status);
+  const rows=await g.json();
+  if(!rows.length)return null;
+  const old=rows[0].data||{};
+  const neu=applyPatch(old,p);
+  const w=await fetch(SB_URL+'/rest/v1/'+t,{
+    method:'POST',
+    headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
+    body:JSON.stringify([{id:id,data:neu}])
+  });
+  if(!w.ok)throw new Error('upsert '+t+' '+w.status);
+  return {old:old,new:neu};
+}
+
 // Отправка. Бросает ошибку, если хоть что-то не записалось — сохранение тогда
 // считается неуспешным и правки остаются в очереди на повтор.
+// Уже существующие строки пишутся ПО ПОЛЯМ: если швея поменяла комментарий, а вы —
+// статус, в облаке останутся оба изменения. Устаревшая копия заказа на чьём-то
+// телефоне больше не может откатить чужие правки в полях, которые там не трогали.
 async function pushDirty(d){
   if(!d)return;
   console.log("Supabase sync");
+  var touched=false,conflicts=[],gone=[];
   for(const t of DIRTY_TABLES){
     if(t==='finance'&&!financeTableOk)continue;
     if(!_sbSnap[t])_sbSnap[t]={};
-    const ups=Object.keys((d.upserts&&d.upserts[t])||{}).map(function(id){return {id:id,data:d.upserts[t][id]};});
-    if(ups.length){
+    const ups=(d.upserts&&d.upserts[t])||{},bases=(d.bases&&d.bases[t])||{};
+    const fresh=[];   // новые строки — пишем целиком одним запросом
+    for(const id of Object.keys(ups)){
+      const sent=ups[id],baseStr=bases.hasOwnProperty(id)?bases[id]:null;
+      if(baseStr==null){fresh.push({id:id,data:sent});continue;}
+      const base=JSON.parse(baseStr);
+      const p=rowPatch(base,sent);
+      if(!Object.keys(p.set).length&&!p.unset.length){_sbSnap[t][id]=JSON.stringify(sent);continue;}
+      const res=await sbPatchRow(t,id,p);
+      var arr=getTable(t),i=arr.findIndex(function(x){return x&&x.id===id;});
+      if(!res){
+        // Строку удалили с другого устройства, пока здесь её правили
+        delete _sbSnap[t][id];
+        if(i>=0){gone.push(rowLabel(t,arr[i]));arr.splice(i,1);touched=true;}
+        continue;
+      }
+      // Одно и то же поле поменяли и здесь, и где-то ещё — остаётся значение отсюда, предупреждаем
+      Object.keys(p.set).forEach(function(k){
+        if(!sameVal(res.old[k],base[k])&&!sameVal(res.old[k],p.set[k])&&conflicts.indexOf(rowLabel(t,sent))<0)conflicts.push(rowLabel(t,sent));
+      });
+      _sbSnap[t][id]=JSON.stringify(res.new);
+      if(i>=0){
+        // Берём итог из облака (с чужими правками) и сверху — то, что здесь успели
+        // поменять уже после отправки
+        var merged=applyPatch(res.new,rowPatch(sent,arr[i]));
+        if(!sameVal(merged,arr[i])){replaceInPlace(arr[i],merged);touched=true;}
+      }
+    }
+    if(fresh.length){
       const r=await fetch(SB_URL+'/rest/v1/'+t,{
         method:'POST',
         headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
-        body:JSON.stringify(ups)
+        body:JSON.stringify(fresh)
       });
       if(!r.ok)throw new Error('upsert '+t+' '+r.status);
-      ups.forEach(function(u){_sbSnap[t][u.id]=JSON.stringify(u.data);});
+      fresh.forEach(function(u){_sbSnap[t][u.id]=JSON.stringify(u.data);});
     }
     // Удаляем СТРОГО по явному списку (pendingDeletes) — см. комментарий у его объявления.
     const dels=((d.deletes&&d.deletes[t])||[]).slice();
@@ -636,6 +749,9 @@ async function pushDirty(d){
       pendingDeletes[t]=(pendingDeletes[t]||[]).filter(function(id){return dels.indexOf(id)<0;});
     }
   }
+  if(conflicts.length)toast('Одновременная правка: '+conflicts.join(', ')+' — сохранено ваше значение, проверьте');
+  else if(gone.length)toast('Уже удалено с другого устройства: '+gone.join(', '));
+  if(touched)refreshAfterRemote();
 }
 
 // ═══ НАДЁЖНОЕ СОХРАНЕНИЕ ═══
@@ -979,26 +1095,25 @@ async function login(r,userName,userLabel,mName){
     finance=Array.isArray(cached.finance)?cached.finance:[];
     setBase('orders',orders);setBase('tasks',tasks);setBase('finance',finance);
     renderTabs();renderTab(tab);
+  }else{
+    orders=[];tasks=[];finance=[];
+    setBase('orders',orders);setBase('tasks',tasks);setBase('finance',finance);
   }
-  // 2) Затем загружаем актуальные данные из JsonBin
+  // 2) Затем загружаем актуальные данные из облака и накладываем их построчно:
+  //    правки, которые с прошлого раза не успели уйти в облако, при этом не теряются
   const data=await loadData(true);
-  if(cloudLoadOk&&data&&Array.isArray(data.orders)){
-    // Облако прочитано успешно и в нём есть заказы — используем их
-    orders=data.orders;
-    tasks=Array.isArray(data.tasks)?data.tasks:[];
-    finance=Array.isArray(data.finance)?data.finance:[];
-  }else if(cloudLoadOk){
-    // Облако прочитано, но реально пустое — показываем пусто (НИКОГДА не пишем тестовые автоматически)
-    orders=[];tasks=[];
-    finance=Array.isArray(data&&data.finance)?data.finance:[];
+  if(lastLoadOk&&data){
+    applyRemote('orders',data.orders||[]);
+    applyRemote('tasks',data.tasks||[]);
+    if(financeTableOk)applyRemote('finance',data.finance||[]);
   }else{
     // Облако НЕдоступно — работаем с локальным кэшем, ничего не записываем
     orders=(cached&&Array.isArray(cached.orders))?cached.orders:[];
     tasks=(cached&&Array.isArray(cached.tasks))?cached.tasks:[];
     finance=(cached&&Array.isArray(cached.finance))?cached.finance:[];
     if(!cached)toast('Нет связи с облаком — данные не загружены');
+    setBase('orders',orders);setBase('tasks',tasks);setBase('finance',finance);
   }
-  setBase('orders',orders);setBase('tasks',tasks);setBase('finance',finance);
   renderTabs();renderTab(tab);
   startSync();
   resumeUnsaved();   // досылаем правки, не уехавшие в облако в прошлый раз
@@ -1075,48 +1190,160 @@ function logout(){
 }
 
 let syncTimer=null;
-function bumpActivity(){lastActivity=Date.now();}
 // Пока человек печатает в поле или открыто модальное окно — фоновая синхронизация
 // не должна перерисовывать экран поверх него: это стирало бы несохранённый ввод.
 function isUserEditing(){
   var ae=document.activeElement;
   if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return true;
   if(document.querySelector('.modal-bg'))return true;
+  if(tab==='add')return true;   // форма нового заказа: перерисовка стёрла бы заполненное
   return false;
 }
+
+// ═══ ПОСТРОЧНОЕ ПРИМЕНЕНИЕ ДАННЫХ ИЗ ОБЛАКА ═══
+// Строка, которую на этом устройстве поменяли, но ещё не отправили, из облака НЕ
+// перезаписывается — иначе правка пропала бы. Всё остальное приводится к облаку.
+function pendingIds(t){
+  var d=readPendingDirty(),m={};
+  if(d){
+    Object.keys((d.upserts&&d.upserts[t])||{}).forEach(function(id){m[id]=1;});
+    ((d.deletes&&d.deletes[t])||[]).forEach(function(id){m[id]=1;});
+  }
+  (pendingDeletes[t]||[]).forEach(function(id){m[id]=1;});
+  return m;
+}
+function isLocalDirty(t,o,pend){
+  return !!pend[o.id]||(_sbSnap[t]||{})[o.id]!==JSON.stringify(o);
+}
+// Одна строка из облака (добавлена/изменена). Возвращает true, если что-то поменялось.
+function applyRemoteRow(t,r,pend){
+  if(!r||!r.id)return false;
+  if(!_sbSnap[t])_sbSnap[t]={};
+  var arr=getTable(t),s=JSON.stringify(r);
+  var o=arr.find(function(x){return x&&x.id===r.id;});
+  if(o){
+    if(isLocalDirty(t,o,pend))return false;
+    _sbSnap[t][r.id]=s;
+    if(JSON.stringify(o)===s)return false;
+    replaceInPlace(o,r);return true;
+  }
+  if(pend[r.id])return false;   // удалено здесь, удаление ещё не ушло
+  arr.push(JSON.parse(s));_sbSnap[t][r.id]=s;return true;
+}
+// Строку удалили в облаке. Локально убираем, только если здесь её не трогали.
+function removeRemoteRow(t,id,pend){
+  var arr=getTable(t),i=arr.findIndex(function(x){return x&&x.id===id;});
+  if(i<0){if(_sbSnap[t])delete _sbSnap[t][id];return false;}
+  if(!(_sbSnap[t]||{}).hasOwnProperty(id)||isLocalDirty(t,arr[i],pend))return false;
+  arr.splice(i,1);delete _sbSnap[t][id];return true;
+}
+function sortTable(t){
+  if(t==='finance')return;
+  getTable(t).sort(function(a,b){return (b.created||0)-(a.created||0);});
+}
+// Полный список строк таблицы из облака
+function applyRemote(t,remote){
+  var pend=pendingIds(t),seen={},changed=false;
+  (remote||[]).forEach(function(r){if(r&&r.id){seen[r.id]=1;if(applyRemoteRow(t,r,pend))changed=true;}});
+  getTable(t).slice().forEach(function(o){
+    if(o&&o.id&&!seen[o.id]&&removeRemoteRow(t,o.id,pend))changed=true;
+  });
+  if(changed)sortTable(t);
+  return changed;
+}
+// Перерисовка после чужих изменений — не поверх открытой формы
+let remoteRenderPending=false,remoteRenderTimer=null;
+function refreshAfterRemote(){
+  if(!role)return;
+  if(isUserEditing()){
+    remoteRenderPending=true;
+    if(!remoteRenderTimer)remoteRenderTimer=setTimeout(function(){remoteRenderTimer=null;refreshAfterRemote();},2000);
+    return;
+  }
+  remoteRenderPending=false;
+  try{localStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks,finance:finance}));}catch(e){}
+  renderTabs();renderTab(tab);
+}
+
 async function syncFromCloud(){
   if(!role)return;
-  // Пока есть неотправленные правки, тянуть облако нельзя — оно затрёт их в памяти
-  if(saveState.pending){retrySave(false);return;}
+  // Неотправленные правки досылаем, но чужие изменения всё равно получаем:
+  // строки с неотправленными правками защищены (см. isLocalDirty)
+  if(saveState.pending)retrySave(false);
   if(isUserEditing())return;
-  const data=await loadData();
-  if(data){
-    if(isUserEditing())return;   // могла начать печатать, пока данные грузились
-    if(JSON.stringify(data.orders)!==JSON.stringify(orders)){orders=data.orders||[];renderTab(tab);}
-    setBase('orders',orders);
-    if(JSON.stringify(data.tasks)!==JSON.stringify(tasks)){tasks=data.tasks||[];if(tab==='todos')renderTab(tab);else renderTabs();}
-    setBase('tasks',tasks);
-    if(financeTableOk){
-      if(JSON.stringify(data.finance)!==JSON.stringify(finance)){finance=data.finance||[];if(tab==='bank')renderTab(tab);}
-      setBase('finance',finance);
-    }
-  }
+  const data=await loadData(true);
+  if(!lastLoadOk||!data)return;
+  if(isUserEditing())return;   // могла начать печатать, пока данные грузились
+  var changed=applyRemote('orders',data.orders||[]);
+  if(applyRemote('tasks',data.tasks||[]))changed=true;
+  if(financeTableOk&&applyRemote('finance',data.finance||[]))changed=true;
+  cloudOrderCount=(data.orders||[]).length;
+  if(changed)refreshAfterRemote();
 }
+
+// ═══ REALTIME: мгновенные обновления ═══
+// Supabase сам присылает каждое изменение в таблицах. Чтобы это работало, таблицы
+// должны быть включены в Realtime (см. SUPABASE_SETUP.sql). Если нет — работает опрос.
+let rtClient=null,rtChannel=null,realtimeOk=false,rtQueue=[],rtTimer=null;
+function startRealtime(){
+  if(rtChannel)return;
+  if(!window.supabase||!window.supabase.createClient){console.warn('Библиотека Supabase не загрузилась — только опрос');return;}
+  try{
+    rtClient=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+    rtChannel=rtClient.channel('markovka-db');
+    DIRTY_TABLES.forEach(function(t){
+      rtChannel.on('postgres_changes',{event:'*',schema:'public',table:t},function(p){
+        rtQueue.push({t:t,p:p});flushRealtime();
+      });
+    });
+    rtChannel.subscribe(function(status){
+      var was=realtimeOk;
+      realtimeOk=status==='SUBSCRIBED';
+      // (Пере)подключились — за время разрыва могли что-то пропустить
+      if(realtimeOk&&!was)syncFromCloud();
+    });
+  }catch(e){console.warn('Realtime недоступен',e);rtChannel=null;}
+}
+function flushRealtime(){
+  if(!rtQueue.length||!role)return;
+  if(isUserEditing()){
+    if(!rtTimer)rtTimer=setTimeout(function(){rtTimer=null;flushRealtime();},2000);
+    return;
+  }
+  var changed=false,sorted={},pendCache={};
+  rtQueue.splice(0).forEach(function(ev){
+    var t=ev.t,p=ev.p;
+    if(t==='finance'&&!financeTableOk)return;
+    var pend=pendCache[t]||(pendCache[t]=pendingIds(t));
+    if(p.eventType==='DELETE'){
+      if(p.old&&p.old.id!=null&&removeRemoteRow(t,p.old.id,pend))changed=true;
+    }else if(p.new&&p.new.data){
+      if(applyRemoteRow(t,p.new.data,pend)){changed=true;sorted[t]=1;}
+    }
+  });
+  Object.keys(sorted).forEach(sortTable);
+  if(changed)refreshAfterRemote();
+}
+
 function setupActivity(){
   if(activityBound)return;activityBound=true;
-  ['pointerdown','keydown','touchstart'].forEach(function(ev){
-    document.addEventListener(ev,bumpActivity,{passive:true});
-  });
   // При возвращении на вкладку/в приложение — освежаем данные один раз
-  document.addEventListener('visibilitychange',function(){if(!document.hidden){bumpActivity();syncFromCloud();}});
-  window.addEventListener('focus',function(){bumpActivity();syncFromCloud();});
+  document.addEventListener('visibilitychange',function(){if(!document.hidden){syncFromCloud();flushRealtime();}});
+  window.addEventListener('focus',function(){syncFromCloud();});
+  window.addEventListener('pageshow',function(){syncFromCloud();});
+  window.addEventListener('online',function(){syncFromCloud();});
+  // Закрыли форму/окно — показываем то, что пришло, пока она была открыта
+  document.addEventListener('click',function(){
+    setTimeout(function(){if(remoteRenderPending||rtQueue.length){flushRealtime();refreshAfterRemote();}},300);
+  },true);
 }
 function startSync(){
   setupActivity();
+  startRealtime();
   if(syncTimer)clearInterval(syncTimer);
   syncTimer=setInterval(function(){
-    if(document.hidden)return;                          // вкладка не на экране — не опрашиваем
-    if(Date.now()-lastActivity>IDLE_LIMIT)return;       // нет действий 3+ мин — пауза (экономия запросов)
+    if(document.hidden)return;                                   // вкладка не на экране — не опрашиваем
+    if(realtimeOk&&Date.now()-lastSyncTime<REALTIME_POLL)return; // Realtime работает — опрос реже
     syncFromCloud();
   },SYNC_INTERVAL);
 }
