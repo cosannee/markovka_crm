@@ -302,7 +302,7 @@ async function moveWeekCard(id,dir){
   if(next<0||next>=WEEK_COLUMNS.length)return;
   var col=WEEK_COLUMNS[next].key;
   if(col==='nextweek'){o.status='nextweek';delete o.craftStage;}
-  else if(col==='ready'){o.status='ready';delete o.craftStage;}
+  else if(col==='ready'){o.status='ready';delete o.craftStage;stampReady(o);}
   else{o.status='work';o.craftStage=col;}
   weekCol=col;
   renderTab(tab);
@@ -336,7 +336,7 @@ const SOURCES={
 //                ₽ за игрушку. Складывается ДО надбавки за срочность — на
 //                срочных заказах прибавка тоже растёт на 50%, как и остальная ЗП.
 const MASTER_CFG=[
-  {name:'Даша',  varRate:0.25, advancePct:0,   nastya:true,  payouts:true,  tg:'',             color:'#3967E8', ink:'#2755D9', closedOnly:true, payoutFrom:Date.parse('2026-08-17T00:00:00'), zpBonus:300},
+  {name:'Даша',  varRate:0.25, advancePct:0,   nastya:true,  payouts:true,  tg:'',             color:'#3967E8', ink:'#2755D9', payoutFrom:Date.parse('2026-09-21T00:00:00'), zpBonus:300},
   {name:'Света', varRate:0.40, advancePct:0.3, nastya:false, payouts:true,  tg:'@svetashevel', color:'#79C68A', ink:'#4F815A'},
   {name:'Цветочек',varRate:0.19, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#E68DB1', ink:'#A1637C'},
   {name:'Юлия',  varRate:0.28, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#6E8FE0', ink:'#465FAE'},
@@ -1925,6 +1925,7 @@ function setStatus(id,val){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
   o.status=val;
+  stampReady(o);
   if(val==='sent'&&!o.closedAt){o.closedAt=Date.now();}
   // Ушёл из «Отправлен» — сбрасываем отметку о высланном треке, чтобы напоминание вернулось
   if(val!=='sent'&&o.trackSent)delete o.trackSent;
@@ -2121,7 +2122,7 @@ async function markSdekSent(btn){
   var names=[];
   checked.forEach(function(id){
     var o=orders.find(function(x){return x.id===id;});
-    if(o){o.status='sent';if(!o.closedAt)o.closedAt=Date.now();names.push(o.num);}
+    if(o){o.status='sent';stampReady(o);if(!o.closedAt)o.closedAt=Date.now();names.push(o.num);}
   });
   // Окно не закрываем, пока не убедимся, что данные реально ушли в облако:
   // мастер должен видеть результат, а не надеяться, что «вроде нажала».
@@ -2639,7 +2640,7 @@ async function saveEdit(id){
   o.price=orderTotal({items:items});
   o.gender=first.gender||'';o.clothes=first.clothes||'';
   o.prepaid=parseFloat(v('epre'))||0;
-  o.month=v('em');o.master=v('emas');o.source=v('esrc');o.status=v('est');
+  o.month=v('em');o.master=v('emas');o.source=v('esrc');o.status=v('est');stampReady(o);
   o.varRate=masterCfg(o.master).varRate;   // мастер мог смениться — ставка пересчитывается
   o.deliveryDay=clampDay(v('edd'),v('em'));
   o.urgent=document.getElementById('eur').checked;
@@ -3580,12 +3581,26 @@ function postNeedFor(m){
   var cfg=masterCfg(m);
   return orders.filter(function(o){
     if(o.master!==m||o.postpayPaid)return false;
-    if(cfg.payoutFrom&&closedDate(o)<cfg.payoutFrom)return false;
+    if(cfg.payoutFrom&&readyDate(o,cfg.payoutFrom)<cfg.payoutFrom)return false;
     // 'archived' — тоже допустимый статус: заказ мог уйти в архив (вручную или
     // автоматически после «Выслала») ДО того, как мастеру заплатили. Перекладывание
     // бумажки в архив не должно списывать деньги, которые ему причитаются.
     return cfg.closedOnly ? isClosed(o) : (PAY_POST_STATUSES.indexOf(o.status)>=0||o.status==='archived');
   });
+}
+// Когда заказ стал «Готов» (или дальше) — для отсечки payoutFrom.
+// readyAt ставится при смене статуса (stampReady). У заказов, ставших готовыми
+// до появления отметки, берём дату отправки/закрытия; а те, что сейчас лежат
+// в «Готов»/«Отправка планируется» без неё, считаем готовыми на дату отсечки.
+function readyDate(o,from){
+  if(o.readyAt)return o.readyAt;
+  if(o.closedAt)return o.closedAt;
+  if(o.status==='ready'||o.status==='planned')return from;
+  return o.created;
+}
+// Запоминаем момент, когда заказ впервые стал «Готов» или дальше
+function stampReady(o){
+  if(!o.readyAt&&PAY_POST_STATUSES.indexOf(o.status)>=0)o.readyAt=Date.now();
 }
 // Сообщение для телеграма после выплаты
 function buildPayoutMsg(p){
@@ -3782,6 +3797,7 @@ function setStatusMaster(id,newStatus){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
   o.status=newStatus;
+  stampReady(o);
   renderTab(tab);toast((STATUSES[newStatus]||{label:newStatus}).label);
   saveOrders(orders);  // сохранение в фоне
 }
