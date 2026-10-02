@@ -2908,6 +2908,68 @@ function tplStats(){
   }
   html+='</div>';
 
+  // ── ПЛАНИРУЕТСЯ НА СЛЕДУЮЩЕЙ НЕДЕЛЕ (статус «След. неделя») ──
+  // Не зависит от выбранного периода и не входит в «Итого» выше — это прогноз
+  // по заказам, которые возьмут в работу на следующей неделе.
+  var nextGroup=orders.filter(function(o){return o.status===ADV_PAY_STATUS&&!isClosed(o);});
+  html+='<div style="background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
+  html+='<div onclick="toggleMasterOrders(\'fnext\')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;margin-bottom:'+(nextGroup.length?'14px':'0')+'">'
+    +'<span style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0">Планируется на следующей неделе <span style="color:var(--text2)">('+nextGroup.length+' '+pluralZakaz(nextGroup.length)+')</span></span>'
+    +(nextGroup.length?'<span id="mclosedarr-fnext" style="color:var(--text3)">⌄</span>':'')
+    +'</div>';
+  if(!nextGroup.length){
+    html+='<div style="text-align:center;padding:10px 0 0;color:var(--text3);font-size:13px">Заказов со статусом «След. неделя» нет</div>';
+  }else{
+    var N=sums(nextGroup);
+    N.margin=N.rev>0?Math.round(N.profit/N.rev*100):0;
+    html+='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">'
+      +'<span style="font-weight:700;letter-spacing:-.4px;font-size:22px;color:var(--accent)">'+fmt(N.rev)+'</span>'
+      +'<span style="font-size:11px;color:var(--text3)">выручка</span>'
+      +'</div>';
+    html+='<div style="height:10px;background:var(--bg2);border-radius:5px;overflow:hidden;margin-bottom:6px">'
+      +'<div style="height:100%;width:'+N.prePct+'%;background:var(--green);border-radius:5px"></div>'
+      +'</div>';
+    html+='<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:14px">'
+      +'<span style="color:var(--green-ink);font-weight:600">✓ Предоплата: '+fmt(N.pre)+' ('+N.prePct+'%)</span>'
+      +'<span style="color:var(--red-ink);font-weight:600">Ждём: '+fmt(N.rest)+'</span>'
+      +'</div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">'
+      +'<div style="background:var(--bg);border-radius:10px;padding:10px;text-align:center">'
+      +'<div style="font-size:18px;font-weight:700;color:'+(N.margin>=20?'var(--green-ink)':'var(--orange-ink)')+'">'+N.margin+'%</div>'
+      +'<div style="font-size:10px;color:var(--text3);margin-top:2px;font-weight:600;letter-spacing:0">Маржа</div>'
+      +'</div>'
+      +'<div style="background:var(--bg);border-radius:10px;padding:10px;text-align:center">'
+      +'<div style="font-size:18px;font-weight:700;color:'+(N.profit>=0?'var(--green-ink)':'var(--red-ink)')+'">'+fmt(N.profit)+'</div>'
+      +'<div style="font-size:10px;color:var(--text3);margin-top:2px;font-weight:600;letter-spacing:0">Прибыль</div>'
+      +'</div>'
+      +'</div>';
+    html+='<div style="font-size:10px;font-weight:700;color:var(--text3);letter-spacing:0;margin-bottom:8px">Кто сколько получит</div>';
+    html+='<div style="display:flex;flex-direction:column;gap:6px">';
+    N.byMaster.filter(function(b){return b.n>0;}).map(function(b){return [b.name,b.n+' зак.',b.zp,b.color];})
+     .concat(N.nastya?[['Настя · одежда','350₽/игр.',N.nastya,'var(--pink)']]:[])
+     .concat([['Александра','20%',N.sasha,'var(--orange)']]).forEach(function(row){
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg);border-radius:8px">'
+        +'<div style="display:flex;align-items:center;gap:8px">'
+        +'<div style="width:8px;height:8px;border-radius:50%;background:'+row[3]+'"></div>'
+        +'<span style="font-size:13px;font-weight:600;color:var(--text1)">'+row[0]+'</span>'
+        +'<span style="font-size:11px;color:var(--text3)">'+row[1]+'</span>'
+        +'</div>'
+        +'<span style="font-size:13px;font-weight:700;color:var(--accent)">'+fmt(row[2])+'</span>'
+        +'</div>';
+    });
+    var nZp=N.byMaster.reduce(function(s,b){return s+b.zp;},0)+N.nastya+N.sasha;
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px;margin-top:2px;background:var(--accent-bg);border-radius:8px">'
+      +'<span style="font-size:13px;font-weight:700;color:var(--text1)">Всего зарплат</span>'
+      +'<span style="font-size:15px;font-weight:700;color:var(--accent)">'+fmt(nZp)+'</span>'
+      +'</div>';
+    html+='</div>';
+    var nChips=nextGroup.slice().sort(function(a,b){return (planDate(a)||a.created)-(planDate(b)||b.created);}).map(function(o){
+      return '<span onclick="jumpTo(\''+o.id+'\')" style="cursor:pointer;background:var(--blue-bg);color:var(--blue-ink);font-weight:700;font-size:12px;padding:6px 10px;border-radius:12px;white-space:nowrap">'+o.num+(o.deliveryDay?' · '+o.deliveryDay:'')+'</span>';
+    }).join('');
+    html+='<div id="mclosed-fnext" style="display:none;flex-wrap:wrap;gap:6px;margin-top:12px">'+nChips+'</div>';
+  }
+  html+='</div>';
+
   // helper: раскрывающийся список заказов чипами
   function chipList(key,title,list,bg,fg,withDay){
     if(!list.length)return '';
