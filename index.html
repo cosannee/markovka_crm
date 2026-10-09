@@ -241,12 +241,14 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}
 
 <script>
 // Ставка материалов по заказу, ₽/г.
-// Живые заказы всегда считаются по текущей ставке мастера из MASTER_CFG —
-// поэтому смена мастера и правка ставки сразу меняют себестоимость.
-// Замороженная ставка o.varRate применяется только к архивным заказам,
+// Незакрытые заказы считаются по текущей ставке мастера (настройки или MASTER_CFG) —
+// поэтому смена мастера и правка ставки сразу меняют их себестоимость.
+// Закрытые — по ставке, действовавшей на дату закрытия (история в настройках),
 // чтобы прошлые периоды в аналитике не пересчитывались задним числом.
+// Замороженная ставка o.varRate по-прежнему главная для архивных заказов.
 function orderVarRate(o){
   if(o&&o.status==='archived'&&typeof o.varRate==='number'&&o.varRate>0)return o.varRate;
+  if(o&&isClosed(o))return varRateAt(o.master,closedDate(o));
   return masterCfg(o&&o.master).varRate;
 }
 function calcMatCost(o){
@@ -272,6 +274,10 @@ const STATUSES={
 // Статусы, доступные для выбора руками. «Архив» сюда не входит: архив — это
 // хранилище, а не этап работы; заказ убирается туда кнопкой «В архив».
 const PICKABLE_STATUSES=Object.keys(STATUSES).filter(function(k){return k!=='archived';});
+// Эти статусы можно поставить только закрытому заказу (клиент полностью оплатил)
+const SHIP_STATUSES=['planned','sent','done'];
+function shipBlocked(o,st){return SHIP_STATUSES.indexOf(st)>=0&&o.status!==st&&!isClosed(o);}
+function shipBlockedMsg(o){return 'Заказ '+o.num+' не закрыт — сначала «Закрыть заказ» (полная оплата)';}
 
 // ═══ «МОЯ НЕДЕЛЯ» — рабочая доска мастера ═══
 // Подстадии живут ВНУТРИ статуса «В работе» (o.craftStage) и не меняют сам
@@ -355,9 +361,51 @@ const DIRECTOR_MASTER='Даша';
 const PROJECT_MASTER='Света';
 // Условия мастера по имени. Неизвестное имя не должно молча считаться по чужой
 // ставке, поэтому фолбэк — самый распространённый вариант (свои материалы, аванс 30%).
-function masterCfg(name){
+// Условия мастера из кода, без настроек
+function masterCfgBase(name){
   for(var i=0;i<MASTER_CFG.length;i++){if(MASTER_CFG[i].name===name)return MASTER_CFG[i];}
   return {name:name||'—',varRate:0.40,advancePct:0.3,nastya:false,payouts:true,tg:'',color:'#D9D4C8',ink:'#72777D'};
+}
+function masterCfg(name){
+  var cfg=masterCfgBase(name);
+  var r=settingsVarRate(cfg.name);
+  return r?Object.assign({},cfg,{varRate:r}):cfg;
+}
+// История ставок: [{at:время, rates:{мастер:₽/г}}] по возрастанию времени.
+// Настройки, сохранённые до появления истории, — одна запись на момент updatedAt.
+function rateLog(st){
+  if(!st)return [];
+  if(Array.isArray(st.rateLog))return st.rateLog;
+  return st.varRates?[{at:st.updatedAt||0,rates:st.varRates}]:[];
+}
+// Ставка мастера, действовавшая на момент ts (до первой правки — из кода)
+function varRateAt(name,ts){
+  var log=rateLog(appSettings()),r=0;
+  for(var i=0;i<log.length;i++){
+    if((log[i].at||0)>ts)break;
+    var v=parseFloat((log[i].rates||{})[name]);
+    if(v>0)r=v;
+  }
+  return r||masterCfgBase(name).varRate;
+}
+// ── Настройки из облака (строка finance с kind:'settings') ──
+const SETTINGS_ID='app-settings';
+var _settingsCache={arr:null,len:-1,row:null};
+function appSettings(){
+  var fin;try{fin=finance;}catch(e){return null;}   // до объявления finance (старт скрипта)
+  if(!Array.isArray(fin))return null;
+  var c=_settingsCache;
+  if(c.arr!==fin||c.len!==fin.length){
+    c.arr=fin;c.len=fin.length;
+    c.row=fin.find(function(r){return r&&r.kind==='settings'&&r.id===SETTINGS_ID;})||null;
+  }
+  return c.row;
+}
+// Ставка гранулята мастера из настроек, ₽/г (0 — не задана, берём из MASTER_CFG)
+function settingsVarRate(name){
+  var st=appSettings();
+  var v=st&&st.varRates?parseFloat(st.varRates[name]):0;
+  return v>0?v:0;
 }
 // Мастера, участвующие во вкладке «Выплаты»
 function payoutMasters(){return MASTER_CFG.filter(function(m){return m.payouts;});}
@@ -387,6 +435,7 @@ let listShown=LIST_PAGE_SIZE;
 const VALID_SORTS=['date','date_asc','deadline','margin'];
 let expandedCards=new Set();
 let realRole=null,isPreviewMode=false;
+let fOpenOnly=false;   // фильтр списка: только незакрытые заказы
 let orders=[],tasks=[],finance=[];
 let cloudOrderCount=0;  // сколько заказов мы считаем в облаке (для стража массового стирания)
 
@@ -692,8 +741,17 @@ async function sbPatchRow(t,id,p){
 // Уже существующие строки пишутся ПО ПОЛЯМ: если швея поменяла комментарий, а вы —
 // статус, в облаке останутся оба изменения. Устаревшая копия заказа на чьём-то
 // телефоне больше не может откатить чужие правки в полях, которые там не трогали.
+// Счётчик записей в облако. Синхронизация, во время которой шла запись, применять
+// нельзя: она могла прочитать строки ДО записи, и старая версия затёрла бы новую
+// (так закрытый заказ «сам открывался» обратно).
+var saveSeq=0,saveInFlight=0;
 async function pushDirty(d){
   if(!d)return;
+  saveSeq++;saveInFlight++;
+  try{return await pushDirtyRows(d);}
+  finally{saveInFlight--;saveSeq++;}
+}
+async function pushDirtyRows(d){
   console.log("Supabase sync");
   var touched=false,conflicts=[],gone=[];
   for(const t of DIRTY_TABLES){
@@ -1195,7 +1253,7 @@ let syncTimer=null;
 function isUserEditing(){
   var ae=document.activeElement;
   if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return true;
-  if(document.querySelector('.modal-bg'))return true;
+  if(document.querySelector('.modal-bg,#oi-modal,#payout-modal'))return true;
   if(tab==='add')return true;   // форма нового заказа: перерисовка стёрла бы заполненное
   return false;
 }
@@ -1271,9 +1329,12 @@ async function syncFromCloud(){
   // строки с неотправленными правками защищены (см. isLocalDirty)
   if(saveState.pending)retrySave(false);
   if(isUserEditing())return;
+  var seq=saveSeq;
   const data=await loadData(true);
   if(!lastLoadOk||!data)return;
   if(isUserEditing())return;   // могла начать печатать, пока данные грузились
+  // Пока читали — что-то записывали: прочитанное могло устареть. Перечитаем чуть позже.
+  if(saveInFlight||seq!==saveSeq){setTimeout(syncFromCloud,1500);return;}
   var changed=applyRemote('orders',data.orders||[]);
   if(applyRemote('tasks',data.tasks||[]))changed=true;
   if(financeTableOk&&applyRemote('finance',data.finance||[]))changed=true;
@@ -1486,6 +1547,11 @@ function renderTab(t){
   updateToTop();
 }
 
+function resetListFilters(){
+  fStatus='all';fUrgent=false;fOpenOnly=false;fMonth='all';fMaster='all';
+  listShown=LIST_PAGE_SIZE;
+  renderTab('list');
+}
 function moLbl(m){if(!m)return'';const[y,mo]=m.split('-');return new Date(y,mo-1).toLocaleString('ru',{month:'long',year:'numeric'});}
 
 function getFilteredOrders(){
@@ -1499,6 +1565,7 @@ function getFilteredOrders(){
     }
     if(fStatus!=='all'&&o.status!==fStatus)return false;
     if(fUrgent&&!o.urgent)return false;
+    if(fOpenOnly&&isClosed(o))return false;
     if(fMonth!=='all'&&o.month!==fMonth)return false;
     if(fMaster!=='all'&&o.master!==fMaster)return false;
     if(hasSearch){var q=search.toLowerCase();if(!o.num.toLowerCase().includes(q)&&!(o.client||'').toLowerCase().includes(q)&&!(o.toys||'').toLowerCase().includes(q))return false;}
@@ -1572,13 +1639,15 @@ function tplList(){
   html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;position:relative">';
 
   // Status filter
-  var sAct=fStatus!=='all'||fUrgent;
+  var sAct=fStatus!=='all'||fUrgent||fOpenOnly;
   html+='<div class="dropdown" style="position:relative">'
     +'<button class="chip'+(sAct?' active':'')+'" data-drop="drop-status" style="display:inline-flex;align-items:center;gap:4px">'
-    +(fStatus!=='all'&&fUrgent?'<span style="width:7px;height:7px;border-radius:50%;background:'+scol[fStatus]+';display:inline-block;margin-right:3px"></span>'+statusLabel+' · срочные':(fUrgent?'Срочные':(fStatus!=='all'?'<span style="width:7px;height:7px;border-radius:50%;background:'+scol[fStatus]+';display:inline-block;margin-right:3px"></span>'+statusLabel:'Статусы')))
+    +(fOpenOnly?'Не закрытые'+(fStatus!=='all'||fUrgent?' + ':''):'')
+    +(fOpenOnly&&fStatus==='all'&&!fUrgent?'':fStatus!=='all'&&fUrgent?'<span style="width:7px;height:7px;border-radius:50%;background:'+scol[fStatus]+';display:inline-block;margin-right:3px"></span>'+statusLabel+' · срочные':(fUrgent?'Срочные':(fStatus!=='all'?'<span style="width:7px;height:7px;border-radius:50%;background:'+scol[fStatus]+';display:inline-block;margin-right:3px"></span>'+statusLabel:'Статусы')))
     +' ▾</button>'
     +'<div id="drop-status" style="display:none;position:absolute;top:110%;left:0;background:var(--card);border-radius:12px;box-shadow:var(--sh2);z-index:100;min-width:160px;padding:6px">'
-    +'<div class="drop-item'+(fStatus==='all'&&!fUrgent?' drop-active':'')+'" data-act="status-all">Все статусы</div>'
+    +'<div class="drop-item'+(fStatus==='all'&&!fUrgent&&!fOpenOnly?' drop-active':'')+'" data-act="status-all">Все статусы</div>'
+    +'<div class="drop-item'+(fOpenOnly?' drop-active':'')+'" data-act="openonly" style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;border:1.5px solid var(--red);display:inline-block;box-sizing:border-box"></span>Не закрытые'+(fOpenOnly?' ✓':'')+'</div>'
     +'<div class="drop-item'+(fUrgent?' drop-active':'')+'" data-act="urgent" style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block"></span>Срочные'+(fUrgent?' ✓':'')+'</div>';
   PICKABLE_STATUSES.forEach(function(k){
     html+='<div class="drop-item'+(fStatus===k?' drop-active':'')+'" data-act="status" data-val="'+k+'" style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:'+scol[k]+';display:inline-block"></span>'+STATUSES[k].label+'</div>';
@@ -1604,6 +1673,10 @@ function tplList(){
     html+='<div class="drop-item'+(fMaster===m?' drop-active':'')+'" data-act="master" data-val="'+m+'">'+m+'</div>';
   });
   html+='</div></div>';
+
+  // Сбросить все фильтры одним нажатием (сортировку и поиск не трогаем)
+  if(fStatus!=='all'||fUrgent||fOpenOnly||fMonth!=='all'||fMaster!=='all')
+    html+='<button class="chip" style="color:var(--red-ink)" onclick="resetListFilters()">✕ Сбросить</button>';
 
   // Sort
   html+='<div class="dropdown" style="position:relative">'
@@ -1891,7 +1964,8 @@ function orderCard(o){
     +'<span style="font-size:9px;color:var(--text3);font-weight:700;letter-spacing:0">Статус</span>'
     +'<select class="st-select" data-oid="'+o.id+'" onchange="setStatus(this.dataset.oid,this.value)">';
   PICKABLE_STATUSES.forEach(function(k){
-    html+='<option value="'+k+'"'+(o.status===k?' selected':'')+'>'+STATUSES[k].label+'</option>';
+    var lock=shipBlocked(o,k);
+    html+='<option value="'+k+'"'+(o.status===k?' selected':'')+(lock?' disabled':'')+'>'+STATUSES[k].label+(lock?' — закройте заказ':'')+'</option>';
   });
   html+='</select></div>';
   // Дата закрытия — можно поправить задним числом (чтобы заказ попал в нужную неделю аналитики)
@@ -1924,6 +1998,7 @@ function orderCard(o){
 function setStatus(id,val){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
+  if(shipBlocked(o,val)){toast(shipBlockedMsg(o));renderTab(tab);return;}
   o.status=val;
   stampReady(o);
   if(val==='sent'&&!o.closedAt){o.closedAt=Date.now();}
@@ -2119,11 +2194,13 @@ async function moveNextWeekToWork(){
 async function markSdekSent(btn){
   var checked=[].slice.call(document.querySelectorAll('.sdek-chk:checked')).map(function(cb){return cb.dataset.oid;});
   if(!checked.length){toast('Выберите хотя бы один заказ');return;}
-  var names=[];
+  var names=[],skipped=[];
   checked.forEach(function(id){
     var o=orders.find(function(x){return x.id===id;});
+    if(o&&shipBlocked(o,'sent')){skipped.push(o.num);return;}
     if(o){o.status='sent';stampReady(o);if(!o.closedAt)o.closedAt=Date.now();names.push(o.num);}
   });
+  if(!names.length){toast('Не закрыты (сначала «Закрыть заказ»): '+skipped.join(', '));return;}
   // Окно не закрываем, пока не убедимся, что данные реально ушли в облако:
   // мастер должен видеть результат, а не надеяться, что «вроде нажала».
   var el=btn||document.getElementById('sdek-sent-btn');
@@ -2133,7 +2210,7 @@ async function markSdekSent(btn){
   if(ok){
     var modal=document.getElementById('sdek-export-modal');
     if(modal)modal.remove();
-    toast('Сохранено. Отправлены: '+names.join(', '));
+    toast('Сохранено. Отправлены: '+names.join(', ')+(skipped.length?'. Не закрыты, пропущены: '+skipped.join(', '):''));
   }else if(el){
     el.disabled=false;
     el.textContent='Не сохранилось — нажмите ещё раз';
@@ -2629,6 +2706,7 @@ async function saveEdit(id){
   if(!items.length||!items.some(function(it){return it.toyType;})){toast('Добавьте хотя бы одну игрушку');return;}
   const first=items[0]||{};
   const prevPrepaid=parseFloat(o.prepaid)||0;   // для предложения провести оплату через банк
+  if(shipBlocked(o,v('est'))){toast(shipBlockedMsg(o));return;}
   o.num=newNum;o.client=v('ec');o.phone=v('ep');o.address=v('ea');o.instagram=v('eig');
   o.items=items;
   // Агрегаты для совместимости/отображения
@@ -2908,6 +2986,8 @@ function tplStats(){
   }
   html+='</div>';
 
+  html+=weekPlanHtml();
+
   // ── ПЛАНИРУЕТСЯ НА СЛЕДУЮЩЕЙ НЕДЕЛЕ (статус «След. неделя») ──
   // Не зависит от выбранного периода и не входит в «Итого» выше — это прогноз
   // по заказам, которые возьмут в работу на следующей неделе.
@@ -3020,7 +3100,119 @@ function tplStats(){
     html+=alertsHtml;
   }
 
+  if(role==='manager')html+=granuleSettingsHtml();
+
   return html;
+}
+// План недели: «осталось» — заказы мастера в статусе «В работе»,
+// «готово» — стали «Готов» (или дальше) на текущей неделе (по отметке readyAt).
+function weekPlanHtml(){
+  var wr=getAnalyticsWeekRange(0);
+  var ws=wr.start.getTime(),we=wr.end.getTime();
+  var stageLbl={};CRAFT_STAGES.forEach(function(c){stageLbl[c.key]=c.label;});
+  var rows=MASTERS.map(function(m){
+    var left=orders.filter(function(o){return o.master===m&&o.status==='work';});
+    var done=orders.filter(function(o){
+      return o.master===m&&o.readyAt>=ws&&o.readyAt<=we&&o.status!=='work'&&o.status!=='new'&&o.status!=='nextweek';
+    });
+    return {name:m,color:masterCfg(m).color,left:left,done:done};
+  }).filter(function(r){return r.left.length||r.done.length;});
+  var totLeft=rows.reduce(function(s,r){return s+r.left.length;},0);
+  var totDone=rows.reduce(function(s,r){return s+r.done.length;},0);
+  var html='<div style="background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:var(--sh)">';
+  html+='<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:'+(rows.length?'12px':'0')+'">'
+    +'<span style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0">План недели · '+wr.start.toLocaleDateString('ru',{day:'numeric',month:'short'})+' – '+wr.end.toLocaleDateString('ru',{day:'numeric',month:'short'})+'</span>'
+    +(rows.length?'<span style="font-size:11px;color:var(--text2);font-weight:600;white-space:nowrap">осталось '+totLeft+' · готово '+totDone+'</span>':'')
+    +'</div>';
+  if(!rows.length){
+    html+='<div style="text-align:center;padding:10px 0 0;color:var(--text3);font-size:13px">Заказов «В работе» нет</div></div>';
+    return html;
+  }
+  rows.forEach(function(r,i){
+    var all=r.left.length+r.done.length;
+    var pct=all?Math.round(r.done.length/all*100):0;
+    var key='wplan'+i;
+    var leftSum=r.left.reduce(function(s,o){return s+orderTotal(o);},0);
+    html+='<div style="padding:8px 10px;background:var(--bg);border-radius:10px;margin-bottom:6px">'
+      +'<div'+(r.left.length?' onclick="toggleMasterOrders(\''+key+'\')" style="cursor:pointer"':'')+'>'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'
+      +'<div style="display:flex;align-items:center;gap:8px">'
+      +'<div style="width:8px;height:8px;border-radius:50%;background:'+r.color+'"></div>'
+      +'<span style="font-size:13px;font-weight:700;color:var(--text1)">'+r.name+'</span>'
+      +'</div>'
+      +(r.left.length
+        ?'<span style="font-size:12px;font-weight:700;color:var(--orange-ink)">осталось '+r.left.length+' · '+fmt(leftSum)+' <span id="mclosedarr-'+key+'" style="color:var(--text3)">⌄</span></span>'
+        :'<span style="font-size:12px;font-weight:700;color:var(--green-ink)">✓ всё сделано</span>')
+      +'</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-top:6px">'
+      +'<div style="flex:1;height:6px;background:var(--bg2);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--green);border-radius:3px"></div></div>'
+      +'<span style="font-size:11px;color:var(--text3);white-space:nowrap">готово '+r.done.length+' из '+all+'</span>'
+      +'</div></div>';
+    if(r.left.length){
+      html+='<div id="mclosed-'+key+'" style="display:none;flex-wrap:wrap;gap:6px;margin-top:8px">'
+        +r.left.map(function(o){
+          var st=stageLbl[effectiveCraftStage(o)]||'не начат';
+          return '<span onclick="jumpTo(\''+o.id+'\')" style="cursor:pointer;background:var(--card);color:var(--orange-ink);font-weight:700;font-size:12px;padding:6px 10px;border-radius:12px;white-space:nowrap">'+o.num+' <span style="font-weight:500;color:var(--text3)">· '+st+'</span></span>';
+        }).join('')
+        +'</div>';
+    }
+    html+='</div>';
+  });
+  html+='</div>';
+  return html;
+}
+function granuleSettingsHtml(){
+  var html='<div style="background:var(--card);border-radius:16px;padding:16px;margin:16px 0 12px;box-shadow:var(--sh)">';
+  html+='<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0;margin-bottom:4px">Настройки · стоимость гранулята</div>';
+  html+='<div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.4">₽ за 1 кг веса игрушки. Себестоимость = 700 ₽ + вес × ставка. Новая ставка действует на незакрытые заказы; у закрытых остаётся ставка на дату закрытия.</div>';
+  if(!financeTableOk){
+    html+='<div style="font-size:12px;color:var(--red-ink)">Нет связи с таблицей finance — настройки недоступны, действуют значения из кода.</div></div>';
+    return html;
+  }
+  MASTER_CFG.forEach(function(m,i){
+    var cur=masterCfg(m.name).varRate;
+    var custom=!!settingsVarRate(m.name);
+    html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">'
+      +'<div style="display:flex;align-items:center;gap:8px;min-width:0">'
+      +'<div style="width:8px;height:8px;border-radius:50%;background:'+m.color+';flex:0 0 auto"></div>'
+      +'<span style="font-size:13px;font-weight:600;color:var(--text1)">'+m.name+'</span>'
+      +(custom?'':'<span style="font-size:10px;color:var(--text3)">из кода</span>')
+      +'</div>'
+      +'<div style="display:flex;align-items:center;gap:4px">'
+      +'<input id="gr-rate-'+i+'" type="number" inputmode="decimal" min="1" step="1" value="'+Math.round(cur*1000)+'" style="width:84px;padding:6px 8px;border-radius:8px;font-size:13px;text-align:right;background:var(--bg)">'
+      +'<span style="font-size:11px;color:var(--text3)">₽/кг</span>'
+      +'</div></div>';
+  });
+  var st=appSettings();
+  if(st&&st.updatedAt)html+='<div style="font-size:10px;color:var(--text3);margin-top:8px">Изменено '+new Date(st.updatedAt).toLocaleString('ru',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})+(st.updatedBy?' · '+st.updatedBy:'')+'</div>';
+  html+='<button class="btn btn-sm btn-primary btn-full" style="margin-top:10px;justify-content:center" onclick="saveGranuleRates()">Сохранить ставки</button>';
+  html+='</div>';
+  return html;
+}
+async function saveGranuleRates(){
+  if(role!=='manager'){toast('Менять ставки может только Александра');return;}
+  if(!financeTableOk){toast('Таблица finance недоступна');return;}
+  var rates={},changed=[],bad=[];
+  MASTER_CFG.forEach(function(m,i){
+    var el=document.getElementById('gr-rate-'+i);
+    if(!el)return;
+    var perKg=parseFloat(String(el.value).replace(',','.'));
+    if(!(perKg>0&&perKg<10000)){bad.push(m.name);return;}
+    var rate=Math.round(perKg)/1000;
+    rates[m.name]=rate;
+    if(Math.abs(rate-masterCfg(m.name).varRate)>1e-9)changed.push(m.name+': '+Math.round(masterCfg(m.name).varRate*1000)+' → '+Math.round(perKg)+' ₽/кг');
+  });
+  if(bad.length){toast('Проверьте ставку: '+bad.join(', '));return;}
+  if(!changed.length){toast('Ставки не изменились');return;}
+  if(!confirm('Сохранить новые ставки гранулята?\n\n'+changed.join('\n')+'\n\nПересчитаются только незакрытые заказы. У закрытых остаётся прежняя ставка.'))return;
+  var prev=appSettings();
+  var now=Date.now();
+  var log=rateLog(prev).concat([{at:now,rates:rates,by:bankAuthor()}]);
+  var row=Object.assign({},prev||{id:SETTINGS_ID,kind:'settings'},{varRates:rates,rateLog:log,updatedAt:now,updatedBy:bankAuthor()});
+  var next=prev?finance.map(function(r){return r===prev?row:r;}):finance.concat([row]);
+  var ok=await saveFinance(next);
+  renderTab(tab);
+  if(ok)toast('Ставки гранулята сохранены ✓');
 }
 function setStatsPeriod(p){statsPeriod=p;statsMonthKey='';renderTab('stats');}
 function setStatsMonth(m){statsMonthKey=m;renderTab('stats');}
@@ -3323,6 +3515,71 @@ function exportAnalyticsCsv(){
 
 // Какой мастер сейчас показан во вкладке «Выплаты» (переключатель сверху)
 var payMasterView=null;
+var paySearchQ='';
+function paySearchUpd(v){
+  paySearchQ=v;
+  var el=document.getElementById('pay-search-res');
+  if(el)el.innerHTML=paySearchHtml(v);
+}
+// Номера заказов из комментария выплаты в банке («Готовые заказы · И191, И192»)
+function payoutCommentNums(c){
+  var parts=String(c||'').split('·');
+  return parts[parts.length-1].split(',').map(function(x){return x.trim();}).filter(Boolean);
+}
+function payoutTxFor(num){
+  return bankTxAll().filter(function(t){return t.source==='payout'&&payoutCommentNums(t.comment).indexOf(num)>=0;});
+}
+function paySearchHtml(q){
+  q=String(q||'').trim().toLowerCase();
+  if(!q)return '';
+  var found=orders.filter(function(o){return String(o.num||'').toLowerCase().indexOf(q)>=0;})
+    .sort(function(a,b){return String(a.num).length-String(b.num).length;}).slice(0,8);
+  if(!found.length)return '<div style="font-size:12px;color:var(--text3);margin:0 0 12px">Заказ не найден</div>';
+  var yes=function(t){return '<span style="color:var(--green-ink);font-weight:700">✓ '+t+'</span>';};
+  var no=function(t){return '<span style="color:var(--red-ink);font-weight:700">'+t+'</span>';};
+  var wait=function(t){return '<span style="color:var(--text3);font-weight:600">'+t+'</span>';};
+  var line=function(lbl,val){return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0"><span style="color:var(--text3)">'+lbl+'</span><span style="text-align:right">'+val+'</span></div>';};
+  return found.map(function(o){
+    var m=o.master,cfg=masterCfg(m);
+    var st=STATUSES[o.status]||STATUSES.new;
+    var h='<div class="card" style="margin-bottom:8px"><div style="padding:10px 14px">';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
+      +'<div><span class="card-num" style="cursor:pointer" onclick="jumpTo(\''+o.id+'\')">'+o.num+'</span> <span class="badge '+st.cls+'">'+st.label+'</span>'+(isClosed(o)?' <span style="font-size:11px;color:var(--green-ink)">закрыт</span>':'')+'</div>'
+      +'<span style="font-size:12px;color:var(--text2);font-weight:600">'+(m||'без мастера')+'</span></div>';
+    if(m){
+      var pay=calcMasterPay(o);
+      if(calcAdvance(o)>0){
+        h+=line('Аванс '+fmt(calcAdvance(o)),o.advancePaid?yes('выплачен')
+          :advNeedFor(m).indexOf(o)>=0?no('не выплачен — можно выплатить'):wait('не выплачен'));
+      }
+      var postLbl=calcAdvance(o)>0?'Доплата '+fmt(calcPostpay(o)):'ЗП '+fmt(pay);
+      var postVal;
+      if(o.postpayPaid)postVal=yes('выплачено');
+      else if(postNeedFor(m).indexOf(o)>=0)postVal=no('не выплачено — есть в «Выплатах» ('+fmt(remainingPay(o))+')');
+      else if(cfg.payoutFrom&&PAY_POST_STATUSES.concat(['archived']).indexOf(o.status)>=0)postVal=wait('не входит в выплаты (готов до '+new Date(cfg.payoutFrom).toLocaleDateString('ru')+')');
+      else if(cfg.closedOnly&&!isClosed(o))postVal=wait('не выплачено — станет к выплате после закрытия');
+      else postVal=wait('не выплачено — заказ ещё не готов');
+      h+=line(postLbl,postVal);
+    }
+    var sa=calcCosts(o).sasha;
+    if(sa>0)h+=line('Комиссия Александры '+fmt(sa),o.sashaPaid?yes('выплачена'):officeEligible(o)?no('не выплачена'):wait('после закрытия заказа'));
+    var dv=calcDividend(o);
+    if(dv>0)h+=line('Дивиденды '+fmt(dv),o.dividendPaid?yes('выплачены'):officeEligible(o)?no('не выплачены'):wait('после закрытия заказа'));
+    var tx=payoutTxFor(o.num);
+    if(tx.length){
+      h+='<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-size:11px;color:var(--text3);font-weight:700">Записи в банке</div>';
+      tx.forEach(function(t){
+        var n=payoutCommentNums(t.comment).length;
+        h+='<div style="font-size:12px;padding:2px 0;color:var(--text2)">'
+          +(t.date?new Date(t.date+'T00:00:00').toLocaleDateString('ru'):'')+' · '+esc(t.category)+' · '+fmt(t.amount)
+          +(n>1?' <span style="color:var(--text3)">(общая за '+n+' '+pluralZakaz(n)+')</span>':'')
+          +(t.accountId?' · '+esc(accName(t.accountId)):'')+'</div>';
+      });
+    }
+    h+='</div></div>';
+    return h;
+  }).join('');
+}
 function setPayMaster(m){payMasterView=m;renderTab('payments');}
 // Раскрытие списка «Полностью выплачено» по мастерам (по умолчанию свёрнут)
 var payDoneOpen={};
@@ -3350,6 +3607,11 @@ function tplPayments(){
       +'<textarea readonly onclick="this.select()" style="width:100%;box-sizing:border-box;min-height:130px;padding:8px 10px;border-radius:8px;font-size:12px;background:var(--bg);color:var(--text1);resize:vertical;font-family:inherit;line-height:1.5">'+esc(buildPayoutMsg(window.lastPayout))+'</textarea>'
       +'<button class="btn btn-sm btn-primary btn-full" style="margin-top:6px;justify-content:center" data-val="'+esc(buildPayoutMsg(window.lastPayout))+'" onclick="copyField(this.dataset.val,this)">Копировать текст</button>'
       +'</div></div>';
+  }
+  // ── Поиск заказа: выплачено ли за него ──
+  if(role==='manager'||role==='director'){
+    html+='<input class="search-inp" style="width:100%;box-sizing:border-box;margin-bottom:8px" placeholder="Номер заказа — выплачено ли мастеру?" oninput="paySearchUpd(this.value)" value="'+esc(paySearchQ)+'">';
+    html+='<div id="pay-search-res">'+paySearchHtml(paySearchQ)+'</div>';
   }
   // ── Единый переключатель: мастера + офис (Александра, дивиденды Дарьи) ──
   function officeRow(o,amt){
@@ -3858,6 +4120,7 @@ function setStatusMasterEl(el){setStatusMaster(el.dataset.oid,el.value);}
 function setStatusMaster(id,newStatus){
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
+  if(shipBlocked(o,newStatus)){toast(shipBlockedMsg(o));renderTab(tab);return;}
   o.status=newStatus;
   stampReady(o);
   renderTab(tab);toast((STATUSES[newStatus]||{label:newStatus}).label);
@@ -4531,8 +4794,9 @@ document.addEventListener('click',function(e){
   var item=e.target.closest('[data-act]');
   if(item){
     var act=item.dataset.act,val=item.dataset.val;
-    if(act==='status-all'){fStatus='all';}
+    if(act==='status-all'){fStatus='all';fOpenOnly=false;}
     else if(act==='urgent'){fUrgent=!fUrgent;}
+    else if(act==='openonly'){fOpenOnly=!fOpenOnly;}
     else if(act==='status'){fStatus=val;}
     else if(act==='month'){fMonth=val;}
     else if(act==='master'){fMaster=val;}
