@@ -484,6 +484,7 @@ const SYNC_INTERVAL=20000;   // интервал опроса облака, мс
 const REALTIME_POLL=60000;   // при живом Realtime-канале опрашиваем реже — раз в минуту
 let lastSyncTime=0;          // время последней успешной синхронизации с JsonBin
 let syncInProgress=false;    // защита от одновременных запросов чтения
+let syncStartedAt=0;         // когда началось текущее чтение (зависшее — не ждём)
 let cloudLoadOk=false;       // удалось ли хоть раз успешно прочитать облако в этой сессии
 let lastLoadOk=false;        // последнее loadData вернуло свежие данные из облака (а не кэш)
 let financeTableOk=false;    // существует ли таблица finance в Supabase (модуль «Банк»)
@@ -501,8 +502,8 @@ async function loadData(force){
     return readCache();
   }
   // Защита от дублирующихся одновременных запросов
-  if(syncInProgress)return readCache();
-  syncInProgress=true;
+  if(syncInProgress&&Date.now()-syncStartedAt<90000)return readCache();
+  syncInProgress=true;syncStartedAt=Date.now();
   try{
     console.log("Supabase sync");
     const ord=await sbSelectTable('orders');
@@ -533,9 +534,19 @@ async function loadData(force){
     syncInProgress=false;
   }
 }
+// Запрос к Supabase с тайм-аутом. Без него запрос, начатый перед сворачиванием
+// приложения на телефоне, мог не завершиться никогда: чтение облака «залипало»,
+// и все сохранения до перезапуска приложения отклонялись («нажмите ещё раз»).
+const SB_TIMEOUT=25000;
+function sbFetch(url,opts){
+  if(typeof AbortController==='undefined')return fetch(url,opts);
+  var c=new AbortController();
+  var t=setTimeout(function(){c.abort();},SB_TIMEOUT);
+  return fetch(url,Object.assign({},opts,{signal:c.signal})).finally(function(){clearTimeout(t);});
+}
 // Чтение одной таблицы Supabase → массив объектов (data-поле каждой строки)
 async function sbSelectTable(table){
-  const r=await fetch(SB_URL+'/rest/v1/'+table+'?select=id,data',{headers:sbHeaders()});
+  const r=await sbFetch(SB_URL+'/rest/v1/'+table+'?select=id,data',{headers:sbHeaders()});
   if(!r.ok)throw new Error('select '+table+' '+r.status);
   const rows=await r.json();
   return rows.map(function(row){return row.data;}).filter(Boolean);
@@ -568,6 +579,7 @@ async function saveData(ords,tsks,skipGuard,fins){
   if(!Array.isArray(fins))fins=finance;
   // ЗАЩИТА ОТ ПОТЕРИ ДАННЫХ: не пишем в облако, пока ни разу его не прочитали.
   // Откладываем только строки, изменённые здесь, — не весь набор данных.
+  if(!cloudLoadOk)await loadData(true);
   if(!cloudLoadOk){
     console.warn('Запись в облако заблокирована: облако ещё не было загружено в этой сессии');
     var blocked={orders:ords,tasks:tsks,finance:fins};
@@ -710,7 +722,7 @@ function rowLabel(t,o){
 let patchRpcOk=null;   // null — ещё не проверяли
 async function sbPatchRow(t,id,p){
   if(patchRpcOk!==false){
-    const r=await fetch(SB_URL+'/rest/v1/rpc/patch_row',{
+    const r=await sbFetch(SB_URL+'/rest/v1/rpc/patch_row',{
       method:'POST',
       headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),
       body:JSON.stringify({p_table:t,p_id:String(id),p_set:p.set,p_unset:p.unset})
@@ -721,13 +733,13 @@ async function sbPatchRow(t,id,p){
     if(r.status>=500)throw new Error('patch '+t+' '+r.status);
     patchRpcOk=false;console.warn('Функция patch_row недоступна ('+r.status+') — сохраняем без неё (см. SUPABASE_SETUP.sql)');
   }
-  const g=await fetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+encodeURIComponent(id)+'&select=data',{headers:sbHeaders()});
+  const g=await sbFetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+encodeURIComponent(id)+'&select=data',{headers:sbHeaders()});
   if(!g.ok)throw new Error('read '+t+' '+g.status);
   const rows=await g.json();
   if(!rows.length)return null;
   const old=rows[0].data||{};
   const neu=applyPatch(old,p);
-  const w=await fetch(SB_URL+'/rest/v1/'+t,{
+  const w=await sbFetch(SB_URL+'/rest/v1/'+t,{
     method:'POST',
     headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
     body:JSON.stringify([{id:id,data:neu}])
@@ -786,7 +798,7 @@ async function pushDirtyRows(d){
       }
     }
     if(fresh.length){
-      const r=await fetch(SB_URL+'/rest/v1/'+t,{
+      const r=await sbFetch(SB_URL+'/rest/v1/'+t,{
         method:'POST',
         headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
         body:JSON.stringify(fresh)
@@ -798,7 +810,7 @@ async function pushDirtyRows(d){
     const dels=((d.deletes&&d.deletes[t])||[]).slice();
     if(dels.length){
       const list=dels.map(function(id){return '"'+id+'"';}).join(',');
-      const r=await fetch(SB_URL+'/rest/v1/'+t+'?id=in.('+encodeURIComponent(list)+')',{
+      const r=await sbFetch(SB_URL+'/rest/v1/'+t+'?id=in.('+encodeURIComponent(list)+')',{
         method:'DELETE',
         headers:Object.assign({},sbHeaders(),{'Prefer':'return=minimal'})
       });
