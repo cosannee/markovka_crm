@@ -368,6 +368,14 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
   .more-item{padding:15px}.more-item-sub{font-size:11px}
 }
 @media(pointer:coarse){.btn-sm,.chip,.drop-item{min-height:40px}.fg input,.fg select,.fg textarea,.search-inp,.payee-picker{font-size:16px}}
+@media(max-width:600px){
+  #app{width:100%;min-width:0;overflow-x:clip}
+  .app-header{min-width:0}
+  .h-right #h-user-name{display:none}
+}
+@media(max-width:959px) and (pointer:coarse){
+  input:not([type="checkbox"]):not([type="radio"]),select,textarea{font-size:16px!important;max-width:100%}
+}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 
 .advance-pending{background:var(--orange-bg);color:var(--orange-ink);font-size:10px;font-weight:500;padding:3px 7px}
@@ -401,7 +409,7 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
     <div class="login-sub" id="login-sub">новорождённая игрушка</div>
     <div class="fg">
       <input id="login-pass" type="password" placeholder="Пароль" autocomplete="current-password"
-        style="font-size:15px;padding:14px 16px;text-align:center"
+        style="font-size:16px;padding:14px 16px;text-align:center"
         onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="btn btn-primary btn-full" style="margin-top:2px;padding:14px" onclick="doLogin()">Войти</button>
