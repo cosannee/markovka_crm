@@ -328,8 +328,8 @@ button{touch-action:manipulation}
 .save-bar{bottom:calc(var(--nav-height) + env(safe-area-inset-bottom));padding:12px;flex-wrap:wrap}
 body.has-save-bar .to-top{bottom:calc(var(--nav-height) + env(safe-area-inset-bottom) + 90px)}
 body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-area-inset-bottom) + 120px)}
-.toast{bottom:calc(var(--nav-height) + env(safe-area-inset-bottom) + 16px);border-radius:12px;max-width:calc(100% - 32px);white-space:normal;text-align:center;padding:12px 18px;transform:translateX(-50%) translateY(160px);font-size:13px}
-.toast.show{transform:translateX(-50%) translateY(0)}
+.toast{bottom:calc(var(--nav-height) + env(safe-area-inset-bottom) + 16px);border-radius:12px;max-width:calc(100% - 32px);white-space:normal;text-align:center;padding:12px 18px;font-size:13px;transform:translateX(-50%);opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s}
+.toast.show{transform:translateX(-50%);opacity:1;visibility:visible}
 @media(min-width:960px){
   #app{padding-left:var(--sidebar-width)}
   .tabs{top:0;bottom:0;left:0;right:auto;width:var(--sidebar-width);flex-direction:column;align-items:stretch;gap:5px;padding:30px 16px 20px;border-top:0;border-right:1px solid var(--border);box-shadow:none;overflow-y:auto}
@@ -369,7 +369,7 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 }
 @media(pointer:coarse){.btn-sm,.chip,.drop-item{min-height:40px}.fg input,.fg select,.fg textarea,.search-inp,.payee-picker{font-size:16px}}
 @media(max-width:600px){
-  #app{width:100%;min-width:0;overflow-x:clip}
+  #app{width:100%;min-width:0}
   .app-header{min-width:0}
   .h-right #h-user-name{display:none}
 }
@@ -1726,7 +1726,7 @@ function appNavItems(){
 }
 function appPrimaryIds(){return role==='master'?['master','week','finance']:['list','week','payments'];}
 function appNavCount(id){
-  if(id==='sdek')return sdekExportList().length;
+  if(id==='sdek')return role==='manager'?sdekQueueOrders().filter(function(o){return !hasSdekNumber(o);}).length:sdekExportList().length;
   if(id==='todos')return unreadTaskCount();
   if(id==='list'||id==='master')return unreadOrderCount();
   if(id==='payments')return unreadPaymentCount();
@@ -1767,7 +1767,7 @@ function renderTabs(){
 }
 function tplMore(){
   const primary=appPrimaryIds();
-  const descriptions={add:'Создать заказ и назначить мастера',bank:'Счета, доходы и расходы',stats:'Расчёты, ставки и план недели',analytics:'Итоги и прибыль за период',sdek:'Заказы, готовые к отправке',todos:'Переписка и задачи',fabrics:'Образцы тканей №1–12'};
+  const descriptions={add:'Создать заказ и назначить мастера',bank:'Счета, доходы и расходы',stats:'Расчёты, ставки и план недели',analytics:'Итоги и прибыль за период',sdek:role==='manager'?'Оформление накладных и отправка':'Заказы, готовые к отправке',todos:'Переписка и задачи',fabrics:'Образцы тканей №1–12'};
   const name=document.getElementById('h-user-name').textContent||masterName||(role==='director'?DIRECTOR_MASTER:'');
   const label=document.getElementById('h-role-lbl').textContent||'';
   let html='<div class="more-profile"><span class="person-avatar">'+uiText(name.slice(0,1))+'</span><div><div class="more-profile-name">'+uiText(name)+'</div><div class="more-profile-role">'+uiText(label)+(isPreviewMode?' · просмотр':'')+'</div></div></div>';
@@ -2337,6 +2337,7 @@ function setStatus(id,val){
   if(val===o.status)return;
   if(shipBlocked(o,val)){toast(shipBlockedMsg(o));renderTab(tab);return;}
   o.status=val;
+  syncSdekReady(o);
   stampReady(o);
   if(val==='sent'&&!o.closedAt){o.closedAt=Date.now();}
   // Ушёл из «Отправлен» — сбрасываем отметку о высланном треке, чтобы напоминание вернулось
@@ -2344,12 +2345,13 @@ function setStatus(id,val){
   // Сначала мгновенно обновляем интерфейс и показываем уведомление,
   // затем сохраняем в облако в фоне — пользователь не ждёт сеть.
   renderTab(tab);
-  toast('Статус: '+(STATUSES[val]||{label:val}).label);
+  toast('Статус: '+STATUSES[o.status].label);
   saveOrders(orders);
 }
 // Закрыть заказ: клиент полностью оплатил. Ставим флаг closed, дату закрытия и полную оплату.
 // Выплата мастеру (Свете) — отдельно, во вкладке «Выплаты».
 async function closeOrder(id){
+  if(!canManageOrders())return;
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
   var tot=orderTotal(o);
@@ -2358,16 +2360,20 @@ async function closeOrder(id){
   o.closed=true;
   o.closedAt=Date.now();
   o.prepaid=tot; // полная оплата от клиента
+  syncSdekReady(o);
   await saveOrders(orders);
   renderTab(tab);
-  toast('Заказ '+o.num+' закрыт ✓');
+  toast('Заказ '+o.num+' закрыт'+(o.status==='planned'?' · Готов к отправке':' ✓'));
   offerOrderIncome(o,tot-wasPaid);   // предложить провести доплату через банк
 }
 async function reopenOrder(id){
+  if(!canManageOrders())return;
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
   if(!confirm('Открыть заказ '+o.num+' заново? Метка закрытия снимется (сумма оплаты останется как есть).'))return;
   o.closed=false;
+  if(o.status==='planned')o.status=o.sdekPreviousStatus||'ready';
+  delete o.sdekPreviousStatus;
   delete o.closedAt;
   await saveOrders(orders);
   renderTab(tab);
@@ -2400,13 +2406,19 @@ async function markSdek(id){
   if(o){o.sdek=true;await saveOrders(orders);renderTab(tab);toast('СДЭК отмечен');}
 }
 async function saveSdekNum(id,val){
+  if(!canManageOrders())return;
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
   o.sdekNum=val.trim();
   o.sdek=!!val.trim();
-  await saveOrders(orders);
+  if(!o.sdekNum&&o.status==='planned'){
+    o.status=o.sdekPreviousStatus||'ready';
+    delete o.sdekPreviousStatus;
+  }
+  var promoted=syncSdekReady(o);
+  var ok=await saveOrders(orders);
   renderTab(tab);
-  toast('Номер накладной сохранён');
+  toast(ok?(promoted?'Накладная сохранена · Готов к отправке':'Номер накладной сохранён'):'Изменения сохранены локально. Проверьте синхронизацию');
 }
 async function delOrder(id){
   if(!confirm('Удалить заказ?'))return;
@@ -2448,6 +2460,7 @@ function sdekExportList(){
   }).sort(function(a,b){return (a.num||'').localeCompare(b.num||'');});
 }
 function tplSdek(){
+  if(role==='manager')return tplSdekQueue();
   var list=sdekExportList();
   var html='<div class="card" style="padding:18px;margin-bottom:12px">'
     +'<h2 style="margin:0 0 6px;font-size:19px">СДЭК · '+list.length+' '+pluralPosylka(list.length)+'</h2>'
@@ -2462,6 +2475,75 @@ function tplSdek(){
       +'<div style="font-size:13px;color:var(--text2);margin-top:5px">'+uiText(orderToyLabel(o)||'')+' · '+(orderWeight(o)||'—')+' г</div>'
       +'<div style="font-size:12px;color:var(--text3);margin-top:4px">'+(o.sdekNum?'Накладная '+uiText(o.sdekNum):'Накладная ещё не указана')+'</div>'
       +'</div>';
+  });
+  return html;
+}
+var sdekQueueTab='waiting',sdekClosedFilter='all',sdekMasterFilter='all',sdekSearch='';
+function hasSdekNumber(o){return !!String(o.sdekNum||'').trim();}
+function syncSdekReady(o){
+  if(role!=='manager'||isPreviewMode||!o||!['work','ready'].includes(o.status)||!isClosed(o)||!hasSdekNumber(o))return false;
+  o.sdekPreviousStatus=o.status;
+  o.status='planned';
+  stampReady(o);
+  return true;
+}
+function sdekQueueOrders(){
+  return orders.filter(function(o){return ['work','ready','planned'].includes(o.status);})
+    .sort(function(a,b){return Number(isClosed(b))-Number(isClosed(a))||(a.num||'').localeCompare(b.num||'','ru',{numeric:true});});
+}
+function setSdekQueueFilter(key,value){
+  if(key==='section')sdekQueueTab=value;
+  if(key==='closed')sdekClosedFilter=value;
+  if(key==='master')sdekMasterFilter=value;
+  if(key==='search')sdekSearch=value;
+  renderTab('sdek');
+}
+function sdekContactText(o){
+  return [o.num,o.client,o.phone,o.address,orderToyLabel(o),orderWeight(o)?orderWeight(o)+' г':''].filter(Boolean).join('\n');
+}
+function tplSdekQueue(){
+  var all=sdekQueueOrders(),waiting=all.filter(function(o){return !hasSdekNumber(o);}).length;
+  var list=all.filter(function(o){
+    if(hasSdekNumber(o)!==(sdekQueueTab==='issued'))return false;
+    if(sdekClosedFilter==='closed'&&!isClosed(o))return false;
+    if(sdekClosedFilter==='open'&&isClosed(o))return false;
+    if(sdekMasterFilter!=='all'&&o.master!==sdekMasterFilter)return false;
+    return !sdekSearch||[o.num,o.client,o.phone,o.sdekNum].join(' ').toLowerCase().includes(sdekSearch.toLowerCase().trim());
+  });
+  var html='<p class="fabric-intro">Заказы «В работе» и «Готов» появляются здесь автоматически. Номер накладной + закрытый заказ → «Готов к отправке».</p>';
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+  [['waiting','Ждут оформления',waiting],['issued','Уже с накладными',all.length-waiting]].forEach(function(x){
+    html+='<button type="button" class="chip'+(sdekQueueTab===x[0]?' active':'')+'" data-section="'+x[0]+'" onclick="setSdekQueueFilter(\'section\',this.dataset.section)">'+x[1]+' · '+x[2]+'</button>';
+  });
+  html+='</div><div class="form-grid" style="margin-bottom:12px">'
+    +'<div class="fg"><label for="sdek-paid-filter">Оплата</label><select id="sdek-paid-filter" onchange="setSdekQueueFilter(\'closed\',this.value)">';
+  [['all','Все заказы'],['closed','Заказ закрыт · оплачен'],['open','Заказ не закрыт']].forEach(function(x){html+='<option value="'+x[0]+'"'+(sdekClosedFilter===x[0]?' selected':'')+'>'+x[1]+'</option>';});
+  html+='</select></div><div class="fg"><label for="sdek-master-filter">Мастер</label><select id="sdek-master-filter" onchange="setSdekQueueFilter(\'master\',this.value)"><option value="all">Все мастера</option>';
+  Array.from(new Set(all.map(function(o){return o.master;}).filter(Boolean))).sort().forEach(function(m){html+='<option value="'+uiText(m)+'"'+(sdekMasterFilter===m?' selected':'')+'>'+uiText(m)+'</option>';});
+  html+='</select></div></div><form style="display:flex;gap:8px;margin-bottom:12px" onsubmit="event.preventDefault();setSdekQueueFilter(\'search\',this.elements.search.value)">'
+    +'<input class="search-inp" name="search" aria-label="Поиск в СДЭК" placeholder="Номер, клиент, телефон, накладная" value="'+uiText(sdekSearch)+'" style="min-width:0;width:100%">'
+    +'<button class="btn btn-secondary" type="submit">Найти</button></form>';
+  if(sdekExportList().length)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:12px" onclick="openSdekExport()">Выгрузка готовых к отправке · '+sdekExportList().length+'</button>';
+  html+='<p style="color:var(--text3);margin-bottom:12px">Найдено: '+list.length+'</p>';
+  if(!list.length)html+='<div class="empty">Нет заказов по выбранным условиям</div>';
+  list.forEach(function(o){
+    var oid=uiText(o.id),canEdit=!isPreviewMode;
+    html+='<div class="card" style="padding:16px;margin-bottom:12px;overflow-wrap:anywhere">'
+      +'<div style="font-weight:700;margin-bottom:8px">'+uiText(o.num)+' · '+uiText(o.client||'Клиент не указан')+'</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><span class="badge '+STATUSES[o.status].cls+'">'+STATUSES[o.status].label+'</span>'
+      +'<span class="badge '+(isClosed(o)?'b-paid':'b-part')+'">'+(isClosed(o)?'Заказ закрыт · оплачен':'Заказ не закрыт')+'</span></div>'
+      +'<div style="color:var(--text3);font-size:13px;margin-bottom:10px">'+uiText(o.master||'Мастер не назначен')+' · '+uiText(orderToyLabel(o))+' · '+(orderWeight(o)||'—')+' г</div>';
+    [['ФИО',o.client],['Телефон',o.phone],['Адрес / ПВЗ',o.address]].forEach(function(x){
+      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="flex:1;min-width:0;font-size:13px"><span style="color:var(--text3)">'+x[0]+': </span>'+uiText(x[1]||'Не указан')+'</div>'
+        +(x[1]?'<button class="btn btn-sm btn-ghost" data-val="'+uiText(x[1])+'" onclick="copyField(this.dataset.val,this)">Копировать</button>':'')+'</div>';
+    });
+    html+='<button class="btn btn-sm btn-secondary" style="margin-bottom:12px" data-val="'+uiText(sdekContactText(o))+'" onclick="copyField(this.dataset.val,this)">Копировать все данные</button>';
+    if(o.sdek&&!hasSdekNumber(o))html+='<p style="font-size:12px;color:var(--orange-ink);margin-bottom:8px">Есть старая отметка СДЭК. Добавьте номер накладной.</p>';
+    html+='<form onsubmit="event.preventDefault();saveSdekNum(this.dataset.oid,this.elements.waybill.value)" data-oid="'+oid+'"><div class="fg"><label>Номер накладной<input name="waybill" style="display:block;width:100%;margin-top:6px" type="text" inputmode="numeric" autocomplete="off" value="'+uiText(o.sdekNum||'')+'" placeholder="Вставьте номер из СДЭК"'+(!canEdit?' disabled':'')+'></label></div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
+      +(canEdit?'<button type="submit" class="btn btn-primary">Сохранить номер</button>':'')
+      +(!isClosed(o)&&canEdit?'<button type="button" class="btn btn-secondary" data-oid="'+oid+'" onclick="closeOrder(this.dataset.oid)">Закрыть заказ</button>':'')
+      +'<button type="button" class="btn btn-ghost" data-oid="'+oid+'" onclick="jumpTo(this.dataset.oid)">Карточка заказа</button></div></form></div>';
   });
   return html;
 }
@@ -3089,6 +3171,7 @@ async function saveEdit(id){
   o.urgent=document.getElementById('eur').checked;
   o.sdek=document.getElementById('esd').checked;
   o.comment=v('ecm');
+  syncSdekReady(o);
   await saveOrders(orders);
   closeModal();toast('Заказ сохранён');renderTab(tab);
   offerOrderIncome(o,(parseFloat(o.prepaid)||0)-prevPrepaid);
