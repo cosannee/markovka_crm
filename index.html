@@ -461,7 +461,7 @@ const STATUSES={
   nextweek:{label:'След. неделя',cls:'b-sdek'},
   work:{label:'В работе',cls:'b-work'},
   ready:{label:'Готов',cls:'b-ready'},
-  planned:{label:'Отправка планируется',cls:'b-sdek'},
+  planned:{label:'Готов к отправке',cls:'b-sdek'},
   sent:{label:'Отправлен',cls:'b-sent'},
   done:{label:'Доставлен',cls:'b-done'},
   archived:{label:'Архив',cls:'b-gray'},
@@ -488,7 +488,7 @@ function canChangeOrderStatus(o,status){
   return status!=='planned'||o.status==='planned'||role==='manager';
 }
 function orderStatusOptions(current){return PICKABLE_STATUSES.filter(function(k){return k!=='planned'||role==='manager'||current==='planned';});}
-function statusPermissionMessage(){return role==='master'?'Планирование заказа выполняет Александра. Мастер отмечает готовность и отправку.':'Статус «Отправка планируется» ставит только Александра';}
+function statusPermissionMessage(){return role==='master'?'Планирование заказа выполняет Александра. Мастер отмечает готовность и отправку.':'Статус «Готов к отправке» ставит только Александра';}
 
 // ═══ «МОЯ НЕДЕЛЯ» — рабочая доска мастера ═══
 // Подстадии живут ВНУТРИ статуса «В работе» (o.craftStage) и не меняют сам
@@ -1694,11 +1694,13 @@ const APP_NAV_ICONS={
     analytics:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="3" height="5" rx="1"/><rect x="6.5" y="5" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></svg>',
   };
 APP_NAV_ICONS.fabrics=APP_NAV_ICONS.calendar;
+APP_NAV_ICONS.sdek=APP_NAV_ICONS.bank;
 APP_NAV_ICONS.more='<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>';
+function canSeeSharedFabricPalette(){return role!=='master'||masterName!=='Света';}
 function appNavItems(){
   const canEdit=role==='manager'||role==='director';
   return role==='master'
-    ?[{id:'master',label:'Заказы'},{id:'week',label:'Моя неделя'},{id:'finance',label:'Финансы'},{id:'todos',label:'Задачи'},{id:'fabrics',label:'Палитра тканей'}]
+    ?[{id:'master',label:'Заказы'},{id:'week',label:'Моя неделя'},{id:'finance',label:'Финансы'},...(sdekExportList().length?[{id:'sdek',label:'СДЭК'}]:[]),{id:'todos',label:'Задачи'},...(canSeeSharedFabricPalette()?[{id:'fabrics',label:'Палитра тканей'}]:[])]
     :[
       {id:'list',label:'Заказы'},
       // У Даши и Александры, как и у мастеров, есть личная рабочая доска по их заказам как мастера
@@ -1709,12 +1711,14 @@ function appNavItems(){
       // Банк доступен только Александре (manager) и Дарье (director) — Свете раздел не показывается
       ...(role==='manager'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       ...(role==='director'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
+      {id:'sdek',label:'СДЭК'},
       {id:'todos',label:'Задачи'},
       {id:'fabrics',label:'Палитра тканей'},
     ];
 }
 function appPrimaryIds(){return role==='master'?['master','week','finance']:['list','week','payments'];}
 function appNavCount(id){
+  if(id==='sdek')return sdekExportList().length;
   if(id==='todos')return unreadTaskCount();
   if(id==='list'||id==='master')return unreadOrderCount();
   if(id==='payments')return unreadPaymentCount();
@@ -1755,7 +1759,7 @@ function renderTabs(){
 }
 function tplMore(){
   const primary=appPrimaryIds();
-  const descriptions={add:'Создать заказ и назначить мастера',bank:'Счета, доходы и расходы',stats:'Расчёты, ставки и план недели',analytics:'Итоги и прибыль за период',todos:'Переписка и задачи',fabrics:'Образцы тканей №1–12'};
+  const descriptions={add:'Создать заказ и назначить мастера',bank:'Счета, доходы и расходы',stats:'Расчёты, ставки и план недели',analytics:'Итоги и прибыль за период',sdek:'Заказы, готовые к отправке',todos:'Переписка и задачи',fabrics:'Образцы тканей №1–12'};
   const name=document.getElementById('h-user-name').textContent||masterName||(role==='director'?DIRECTOR_MASTER:'');
   const label=document.getElementById('h-role-lbl').textContent||'';
   let html='<div class="more-profile"><span class="person-avatar">'+uiText(name.slice(0,1))+'</span><div><div class="more-profile-name">'+uiText(name)+'</div><div class="more-profile-role">'+uiText(label)+(isPreviewMode?' · просмотр':'')+'</div></div></div>';
@@ -1794,6 +1798,7 @@ function selectFabricGroup(index,inDialog){
   }else renderTab('fabrics');
 }
 function openFabricPalette(index){
+  if(!canSeeSharedFabricPalette())return;
   if(!FABRIC_PALETTES[index])return;
   fabricGroup=index;
   const existing=document.getElementById('fabric-modal');
@@ -1842,6 +1847,8 @@ function updateSearch(val){
 function renderTab(t){
   // Страховка: раздел «Банк» закрыт для мастера (в т.ч. в режиме просмотра от лица Светы)
   if(t==='bank'&&!canSeeBank())t=(role==='master'?'master':'list');
+  if(t==='fabrics'&&!canSeeSharedFabricPalette())t='master';
+  if(t==='sdek'&&role==='master'&&!sdekExportList().length)t='master';
   tab=t;
   if(t==='todos')markTasksSeen();
   if(t==='list'||t==='master')markOrdersSeen();
@@ -1858,6 +1865,7 @@ function renderTab(t){
   else if(t==='payments')m.innerHTML=tplPayments();
   else if(t==='more')m.innerHTML=tplMore();
   else if(t==='fabrics')m.innerHTML=tplFabrics();
+  else if(t==='sdek')m.innerHTML=tplSdek();
   else if(t==='bank')m.innerHTML=tplBank();
   else if(t==='analytics')m.innerHTML=tplWeeklyAnalytics();
   else if(t==='finance')m.innerHTML=tplSvetaFinance();
@@ -1948,9 +1956,7 @@ function tplList(){
   html+=trackBanner();
   // Кнопки действий для менеджера/директора
   if(canFinance){
-    var plannedCnt=sdekExportList().length;
     var nwCnt=orders.filter(function(o){return o.status==='nextweek';}).length;
-    if(plannedCnt)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:8px;justify-content:center" onclick="openSdekExport()">Выгрузить для СДЭК ('+plannedCnt+')</button>';
     if(nwCnt)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center;background:var(--blue-bg);color:var(--blue-ink);border-color:var(--blue-ink)" onclick="moveNextWeekToWork()">▶ Перевести «След. неделю» в работу ('+nwCnt+')</button>';
   }
 
@@ -2423,7 +2429,7 @@ function jumpTo(id){
     if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.outline='2px solid var(--accent)';setTimeout(function(){el.style.outline='';},2000);}
   },80);
 }
-// ── Выгрузка для СДЭК (статус «Отправка планируется») ──
+// ── Выгрузка для СДЭК (статус «Готов к отправке») ──
 // Фильтруем по мастеру: Света видит только свои, остальные — только Дашины (sdek=true)
 function sdekExportList(){
   return orders.filter(function(o){
@@ -2432,6 +2438,24 @@ function sdekExportList(){
     if(role==='director')return o.master===DIRECTOR_MASTER; // руководитель — только свои накладные
     return true; // COO видит все планируемые отправки
   }).sort(function(a,b){return (a.num||'').localeCompare(b.num||'');});
+}
+function tplSdek(){
+  var list=sdekExportList();
+  var html='<div class="card" style="padding:18px;margin-bottom:12px">'
+    +'<h2 style="margin:0 0 6px;font-size:19px">СДЭК · '+list.length+' '+pluralPosylka(list.length)+'</h2>'
+    +'<p style="margin:0;color:var(--text3);font-size:13px">Заказы со статусом «Готов к отправке».</p>';
+  if(list.length)html+='<button type="button" class="btn btn-primary" style="margin-top:14px" onclick="openSdekExport()">Открыть выгрузку</button>';
+  html+='</div>';
+  if(!list.length)return html+'<div class="card" style="padding:20px;color:var(--text3)">Пока нет заказов для СДЭК</div>';
+  list.forEach(function(o){
+    html+='<div class="card" style="padding:14px 16px;margin-bottom:8px">'
+      +'<div style="font-weight:700">'+uiText(o.num)+(role==='master'?'':' · '+uiText(o.client||'—'))+'</div>'
+      +(role==='manager'?'<div style="font-size:12px;color:var(--text3)">'+uiText(o.master||'—')+'</div>':'')
+      +'<div style="font-size:13px;color:var(--text2);margin-top:5px">'+uiText(orderToyLabel(o)||'')+' · '+(orderWeight(o)||'—')+' г</div>'
+      +'<div style="font-size:12px;color:var(--text3);margin-top:4px">'+(o.sdekNum?'Накладная '+uiText(o.sdekNum):'Накладная ещё не указана')+'</div>'
+      +'</div>';
+  });
+  return html;
 }
 function sdekExportText(){
   var list=sdekExportList();
@@ -2486,7 +2510,7 @@ function openSdekExport(){
         +'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">'+now+'</div>'
         +rows
       +'</div>'
-    : '<div style="text-align:center;padding:24px;color:var(--text3)">Нет заказов со статусом «Отправка планируется»</div>';
+    : '<div style="text-align:center;padding:24px;color:var(--text3)">Нет заказов со статусом «Готов к отправке»</div>';
   var el=document.createElement('div');
   el.id='sdek-export-modal';
   el.className='modal-bg';
@@ -4204,7 +4228,9 @@ function remainingPay(o){
 // Сообщение клиенту при статусе «Готов» — реквизиты для доплаты
 function payMsgText(o){
   var rest=Math.max(0,orderTotal(o)-(o.prepaid||0));
-  return 'К доплате '+rest.toLocaleString('ru')+'₽,\n\n'
+  var qty=orderQty(o);
+  var subject=qty>1?'Ваши малыши готовы':((getItems(o)[0]||{}).gender==='girl'?'Ваша малышка готова':'Ваш малыш готов');
+  return 'Здравствуйте! '+subject+', к оплате '+rest.toLocaleString('ru')+'₽,\n\n'
     +'Оплатить можно на карту OZON Банк по номеру телефона ниже, получатель Дарья Андреевна С. К СБП подключён.\n\n'
     +'+79776516579';
 }
@@ -4261,7 +4287,7 @@ function postNeedFor(m){
 // Когда заказ стал «Готов» (или дальше) — для отсечки payoutFrom.
 // readyAt ставится при смене статуса (stampReady). У заказов, ставших готовыми
 // до появления отметки, берём дату отправки/закрытия; а те, что сейчас лежат
-// в «Готов»/«Отправка планируется» без неё, считаем готовыми на дату отсечки.
+// в «Готов»/«Готов к отправке» без неё, считаем готовыми на дату отсечки.
 function readyDate(o,from){
   if(o.readyAt)return o.readyAt;
   if(o.closedAt)return o.closedAt;
@@ -4802,7 +4828,6 @@ function tplMaster(){
     if(!da&&db)return 1;
     return (a.created||0)-(b.created||0);
   });
-  var sdekCnt=myBase.filter(function(o){return o.status==='planned';}).length;
   var html='';
   // Инструкция по статусам (раскрывающаяся)
   var hOpen=window.svetaHelpOpen;
@@ -4816,17 +4841,13 @@ function tplMaster(){
       +'<div><b>2. След. неделя</b> — заказ запланирован на следующую неделю.</div>'
       +'<div><b>3. В работе</b> — заказ включён в работу на текущую неделю.</div>'
       +'<div><b>4. Готов</b> — игрушка сшита, фотографии отправлены в рабочую группу. Статус ставит мастер.</div>'
-      +'<div><b>5. Отправка планируется</b> — заказ полностью оплачен, игрушку можно упаковывать и отправлять. Статус ставит только Александра.</div>'
+      +'<div><b>5. Готов к отправке</b> — заказ полностью оплачен, игрушку можно упаковывать и отправлять. Статус ставит только Александра.</div>'
       +'<div><b>6. Отправлен</b> — посылка передана службе доставки. Статус ставит мастер после отправки.</div>'
       +'<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);color:var(--text3)">Заказы назначает и распределяет по неделям руководство. Мастер отмечает готовность игрушки и отправку посылки.</div>'
       +'</div>';
   }
   html+='</div>';
-  html+='<button type="button" class="btn btn-secondary btn-full" style="margin-bottom:12px" onclick="openFabricPalette(0)">Палитра тканей · №1–12</button>';
-  // Кнопка СДЭК для мастера (только свои заказы «отправка планируется»)
-  if(sdekCnt>0){
-    html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center" onclick="openSdekExport()">Выгрузить для СДЭК ('+sdekCnt+')</button>';
-  }
+  if(canSeeSharedFabricPalette())html+='<button type="button" class="btn btn-secondary btn-full" style="margin-bottom:12px" onclick="openFabricPalette(0)">Палитра тканей · №1–12</button>';
   var statusLblM=fStatus==='all'?'Статусы':(STATUSES[fStatus]?STATUSES[fStatus].label:'Статусы');
   var monthLblM=fMonth==='all'?'Месяц':moLbl(fMonth);
   var doneList=myBase.filter(function(o){return o.status==='sent'||o.status==='done'||o.status==='archived';});
@@ -4839,7 +4860,7 @@ function tplMaster(){
     +'<button class="chip'+(fStatus!=='all'?' active':'')+'" data-drop="drop-mstatus" style="display:inline-flex;align-items:center;gap:4px">'+statusLblM+' ▾</button>'
     +'<div id="drop-mstatus" style="display:none;position:absolute;top:110%;left:0;background:var(--card);border-radius:12px;box-shadow:var(--sh2);z-index:100;min-width:180px;padding:6px">'
     +'<div class="drop-item'+(fStatus==='all'?' drop-active':'')+'" data-act="mstatus" data-val="all">Все статусы</div>';
-  [['new','Новые'],['nextweek','След. неделя'],['work','В работе'],['ready','Готов'],['planned','Отправка планируется']].forEach(function(p){
+  [['new','Новые'],['nextweek','След. неделя'],['work','В работе'],['ready','Готов'],['planned','Готов к отправке']].forEach(function(p){
     html+='<div class="drop-item'+(fStatus===p[0]?' drop-active':'')+'" data-act="mstatus" data-val="'+p[0]+'">'+p[1]+'</div>';
   });
   html+='</div></div>';
