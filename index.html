@@ -2498,8 +2498,22 @@ function setSdekQueueFilter(key,value){
   if(key==='search')sdekSearch=value;
   renderTab('sdek');
 }
+const SDEK_ORIGINS={
+  'Даша':{city:'Владивосток',address:'Басаргина, 6а'},
+  'Дарья':{city:'Владивосток',address:'Басаргина, 6а'},
+  'Вика':{city:'Санкт-Петербург',address:'Народного Ополчения, 10А'},
+  'Юлия':{city:'Санкт-Петербург',address:'Возрождения, 20'},
+  'Света':{city:'Усолье-Сибирское',address:'Красных Партизан',incomplete:true},
+  'Цветочек':{city:'Санкт-Петербург',address:'Пулковское шоссе, 24'}
+};
+function sdekOriginText(o){
+  var origin=SDEK_ORIGINS[o.master];
+  return origin?origin.city+', '+origin.address+(origin.incomplete?' (номер дома не указан)':''):'Пункт отправки не указан';
+}
 function sdekContactText(o){
-  return [o.num,o.client,o.phone,o.address,orderToyLabel(o),orderWeight(o)?orderWeight(o)+' г':''].filter(Boolean).join('\n');
+  return [o.num,'Откуда отправляем: '+sdekOriginText(o),'Мастер: '+(o.master||'Не назначен'),
+    'Получатель: '+(o.client||'Не указан'),'Телефон: '+(o.phone||'Не указан'),
+    'Куда отправляем: '+(o.address||'Не указано'),orderToyLabel(o),orderWeight(o)?orderWeight(o)+' г':''].filter(Boolean).join('\n');
 }
 function tplSdekQueue(){
   var all=sdekQueueOrders(),waiting=all.filter(function(o){return !hasSdekNumber(o);}).length;
@@ -2533,7 +2547,11 @@ function tplSdekQueue(){
       +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><span class="badge '+STATUSES[o.status].cls+'">'+STATUSES[o.status].label+'</span>'
       +'<span class="badge '+(isClosed(o)?'b-paid':'b-part')+'">'+(isClosed(o)?'Заказ закрыт · оплачен':'Заказ не закрыт')+'</span></div>'
       +'<div style="color:var(--text3);font-size:13px;margin-bottom:10px">'+uiText(o.master||'Мастер не назначен')+' · '+uiText(orderToyLabel(o))+' · '+(orderWeight(o)||'—')+' г</div>';
-    [['ФИО',o.client],['Телефон',o.phone],['Адрес / ПВЗ',o.address]].forEach(function(x){
+    html+='<div style="background:var(--accent-bg);border-radius:10px;padding:12px;margin-bottom:12px">'
+      +'<div style="font-size:12px;color:var(--text3);margin-bottom:4px">Откуда отправляем · СДЭК мастера</div>'
+      +'<div style="font-size:14px;font-weight:600">'+uiText(sdekOriginText(o))+'</div>'
+      +(SDEK_ORIGINS[o.master]?'<button class="btn btn-sm btn-secondary" style="margin-top:8px" data-val="'+uiText(sdekOriginText(o))+'" onclick="copyField(this.dataset.val,this)">Копировать пункт отправки</button>':'')+'</div>';
+    [['Получатель',o.client],['Телефон',o.phone],['Куда отправляем · адрес / ПВЗ',o.address]].forEach(function(x){
       html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="flex:1;min-width:0;font-size:13px"><span style="color:var(--text3)">'+x[0]+': </span>'+uiText(x[1]||'Не указан')+'</div>'
         +(x[1]?'<button class="btn btn-sm btn-ghost" data-val="'+uiText(x[1])+'" onclick="copyField(this.dataset.val,this)">Копировать</button>':'')+'</div>';
     });
@@ -2557,6 +2575,7 @@ function sdekExportText(){
     var nak=o.sdekNum?('накл. '+o.sdekNum):'накл. — (нет!)';
     var toy=orderToyLabel(o);
     lines.push(o.num+(isMasterCopy?'':(' · '+(o.client||'—')))+(role==='manager'&&o.master?' ['+o.master+']':''));
+    if(role==='manager')lines.push('Откуда отправляем: '+sdekOriginText(o));
     if(toy)lines.push(toy);
     if(!isMasterCopy&&o.phone)lines.push(o.phone);
     lines.push(nak+' · '+wt);
