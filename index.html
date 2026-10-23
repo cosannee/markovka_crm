@@ -2270,7 +2270,7 @@ function orderCard(o){
     var trackNum=o.sdekNum||'';
     html+='<div style="padding:12px 16px;border-bottom:1px solid var(--border)">';
     html+='<div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:0;margin-bottom:8px">Данные для СДЭК</div>';
-    var toyName='Игрушка мягкая '+(toyLbl||'игрушка')+' с металлическим наполнителем антистресс.';
+    var toyName=sdekToyName(o);
     [['ФИО',cS],['Номер телефона',pS],['Название',toyName],['Артикул',o.num],['Адрес',aS]].forEach(function(row){
       if(!row[1])return;
       html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">'
@@ -2511,10 +2511,11 @@ function sdekOriginText(o){
   return origin?origin.city+', '+origin.address+(origin.incomplete?' (номер дома не указан)':''):'Пункт отправки не указан';
 }
 function sdekContactText(o){
-  return [o.num,'Откуда отправляем: '+sdekOriginText(o),'Мастер: '+(o.master||'Не назначен'),
+  return ['Артикул: '+(o.num||'Не указан'),'Наименование игрушки: '+sdekToyName(o),'Откуда отправляем: '+sdekOriginText(o),'Мастер: '+(o.master||'Не назначен'),
     'Получатель: '+(o.client||'Не указан'),'Телефон: '+(o.phone||'Не указан'),
-    'Куда отправляем: '+(o.address||'Не указано'),orderToyLabel(o),orderWeight(o)?orderWeight(o)+' г':''].filter(Boolean).join('\n');
+    'Куда отправляем: '+(o.address||'Не указано'),orderWeight(o)?orderWeight(o)+' г':''].filter(Boolean).join('\n');
 }
+function sdekToyName(o){return 'Игрушка мягкая '+(orderToyLabel(o)||'игрушка')+' с металлическим наполнителем антистресс.';}
 function tplSdekQueue(){
   var all=sdekQueueOrders(),waiting=all.filter(function(o){return !hasSdekNumber(o);}).length;
   var list=all.filter(function(o){
@@ -2549,9 +2550,8 @@ function tplSdekQueue(){
       +'<div style="color:var(--text3);font-size:13px;margin-bottom:10px">'+uiText(o.master||'Мастер не назначен')+' · '+uiText(orderToyLabel(o))+' · '+(orderWeight(o)||'—')+' г</div>';
     html+='<div style="background:var(--accent-bg);border-radius:10px;padding:12px;margin-bottom:12px">'
       +'<div style="font-size:12px;color:var(--text3);margin-bottom:4px">Откуда отправляем · СДЭК мастера</div>'
-      +'<div style="font-size:14px;font-weight:600">'+uiText(sdekOriginText(o))+'</div>'
-      +(SDEK_ORIGINS[o.master]?'<button class="btn btn-sm btn-secondary" style="margin-top:8px" data-val="'+uiText(sdekOriginText(o))+'" onclick="copyField(this.dataset.val,this)">Копировать пункт отправки</button>':'')+'</div>';
-    [['Получатель',o.client],['Телефон',o.phone],['Куда отправляем · адрес / ПВЗ',o.address]].forEach(function(x){
+      +'<div style="font-size:14px;font-weight:600">'+uiText(sdekOriginText(o))+'</div></div>';
+    [['Наименование игрушки',sdekToyName(o)],['Артикул',o.num],['Получатель',o.client],['Телефон',o.phone],['Куда отправляем · адрес / ПВЗ',o.address]].forEach(function(x){
       html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="flex:1;min-width:0;font-size:13px"><span style="color:var(--text3)">'+x[0]+': </span>'+uiText(x[1]||'Не указан')+'</div>'
         +(x[1]?'<button class="btn btn-sm btn-ghost" data-val="'+uiText(x[1])+'" onclick="copyField(this.dataset.val,this)">Копировать</button>':'')+'</div>';
     });
