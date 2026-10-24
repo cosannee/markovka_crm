@@ -1988,8 +1988,6 @@ function tplList(){
   html+='<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">'
     +'<input class="search-inp" id="search-field" style="flex:1;min-width:0" placeholder="Поиск по номеру, клиенту..." oninput="updateSearch(this.value)" value="'+search+'">'
     +'</div>';
-  // Плашка-напоминание: разослать трек-номера по отправленным заказам (только Александра)
-  html+=trackBanner();
   // Кнопки действий для менеджера/директора
   if(canFinance){
     var nwCnt=orders.filter(function(o){return o.status==='nextweek';}).length;
@@ -2565,7 +2563,7 @@ function tplSdekQueue(){
     if(sdekMasterFilter!=='all'&&o.master!==sdekMasterFilter)return false;
     return !sdekSearch||[o.num,o.client,o.phone,o.sdekNum].join(' ').toLowerCase().includes(sdekSearch.toLowerCase().trim());
   });
-  var html='<p class="fabric-intro">Заказы «В работе» и «Готов» появляются здесь автоматически. Готовая игрушка + закрытый заказ + номер накладной → «Готов к отправке».</p>';
+  var html=trackBanner()+'<p class="fabric-intro">Заказы «В работе» и «Готов» появляются здесь автоматически. Готовая игрушка + закрытый заказ + номер накладной → «Готов к отправке».</p>';
   if(sdekFocusId)html+='<button class="btn btn-sm btn-secondary" style="margin-bottom:12px" onclick="sdekFocusId=null;renderTab(\'sdek\')">Показать всю очередь</button>';
   html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
   [['waiting','Ждут оформления',waiting],['issued','Уже с накладными',all.length-waiting]].forEach(function(x){
