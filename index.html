@@ -2297,6 +2297,10 @@ function orderCard(o){
       +'<span style="color:var(--text3)">Доставка: </span>'+uiText(deliveryCitySummary(o))+'</div>';
   }
 
+  if(canFinance&&o.advancePaid&&!isPreviewMode){
+    html+='<div style="padding:10px 16px"><button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" data-type="advance" onclick="undoPayBtn(this)">Отменить аванс</button></div>';
+  }
+
   // Готовые сообщения клиенту по статусу
   if(canFinance){
     if(o.status==='ready')html+=clientMsgBox('Сообщение о доплате',payMsgText(o));
@@ -4215,6 +4219,7 @@ function paySearchHtml(q){
     if(sa>0)h+=line('Комиссия Александры '+fmt(sa),o.sashaPaid?yes('выплачена'):officeEligible(o)?no('не выплачена'):wait('после закрытия заказа'));
     var dv=calcDividend(o);
     if(dv>0)h+=line('Дивиденды '+fmt(dv),o.dividendPaid?yes('выплачены'):officeEligible(o)?no('не выплачены'):wait('после закрытия заказа'));
+    if(o.advancePaid&&!isPreviewMode)h+='<button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" data-type="advance" onclick="undoPayBtn(this)">Отменить аванс</button>';
     var tx=payoutTxFor(o.num);
     if(tx.length){
       h+='<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-size:11px;color:var(--text3);font-weight:700">Записи в банке</div>';
@@ -4643,15 +4648,33 @@ function confirmPayoutModal(){
   var m=document.getElementById('payout-modal');if(m)m.remove();_payoutCtx=null;
   if(ctx)ctx.onConfirm(accId);
 }
-async function recordPayoutExpense(accId,category,amount,comment){
+function payoutAllocations(list,type){
+  var lines=[];
+  list.forEach(function(o){
+    if(!o.advancePaid&&calcAdvance(o)>0)lines.push({orderId:o.id,orderNum:o.num,master:o.master,type:'advance',amount:calcAdvance(o)});
+    if(type==='postpay'&&!o.postpayPaid)lines.push({orderId:o.id,orderNum:o.num,master:o.master,type:'postpay',amount:calcPostpay(o)});
+  });
+  return lines;
+}
+async function recordPayoutExpense(accId,category,amount,comment,allocations){
   var rec={id:uid(),kind:'tx',date:todayISO(),type:'expense',amount:amount,
     accountId:accId,toAccountId:'',category:category,merchant:'',comment:comment,
     direction:'toys',orderId:'',author:bankAuthor(),source:'payout',created:Date.now()};
+  if(allocations){
+    rec.payoutLines=allocations;
+    allocations.filter(function(l){return l.type==='advance';}).forEach(function(l){
+      var o=orders.find(function(x){return x.id===l.orderId;});
+      if(o)o.advancePayment={txId:rec.id,master:l.master,amount:l.amount,paidAt:rec.created};
+    });
+  }
   await saveFinance(finance.concat([rec]));
 }
 async function markPay(id,type){
+  if(!canManageOrders()||!['advance','postpay'].includes(type))return;
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
+  if(type==='advance'?o.advancePaid:o.postpayPaid)return;
+  var allocations=payoutAllocations([o],type);
   var amount=type==='advance'?calcAdvance(o):remainingPay(o);
   var label=type==='advance'?'аванс':'готовый заказ';
   var cat='ЗП '+o.master;
@@ -4661,13 +4684,15 @@ async function markPay(id,type){
     window.lastPayout={date:payoutDate(),person:o.master,tg:masterCfg(o.master).tg,
       accName:accId?accName(accId):'',lines:[{sum:amount,label:label,orderNums:[o.num]}]};
     await saveOrders(orders);
-    await recordPayoutExpense(accId,cat,amount,label+' · '+o.num);
+    await recordPayoutExpense(accId,cat,amount,label+' · '+o.num,allocations);
     renderTab('payments');toast('Выплата отмечена ✓');
   });
 }
 // Выплатить только авансы
 async function payOnlyAdvances(m){
+  if(!canManageOrders())return;
   var list=advNeedFor(m);
+  var allocations=payoutAllocations(list,'advance');
   if(!list.length){toast('Нет авансов к выплате');return;}
   var total=list.reduce(function(s,o){return s+calcAdvance(o);},0);
   var nums=list.map(function(o){return o.num;});
@@ -4677,13 +4702,15 @@ async function payOnlyAdvances(m){
     window.lastPayout={date:payoutDate(),person:m,tg:masterCfg(m).tg,accName:accId?accName(accId):'',
       lines:[{sum:total,label:'авансы',orderNums:nums}]};
     await saveOrders(orders);
-    await recordPayoutExpense(accId,cat,total,'Авансы · '+nums.join(', '));
+    await recordPayoutExpense(accId,cat,total,'Авансы · '+nums.join(', '),allocations);
     renderTab('payments');toast('Выплачено авансов: '+fmt(total)+' ✓');
   });
 }
 // Выплатить только готовые
 async function payOnlyPost(m){
+  if(!canManageOrders())return;
   var list=postNeedFor(m);
+  var allocations=payoutAllocations(list,'postpay');
   if(!list.length){toast('Нет готовых к выплате');return;}
   var total=list.reduce(function(s,o){return s+remainingPay(o);},0);
   var nums=list.map(function(o){return o.num;});
@@ -4693,12 +4720,14 @@ async function payOnlyPost(m){
     window.lastPayout={date:payoutDate(),person:m,tg:masterCfg(m).tg,accName:accId?accName(accId):'',
       lines:[{sum:total,label:'готовые заказы',orderNums:nums}]};
     await saveOrders(orders);
-    await recordPayoutExpense(accId,cat,total,'Готовые заказы · '+nums.join(', '));
+    await recordPayoutExpense(accId,cat,total,'Готовые заказы · '+nums.join(', '),allocations);
     renderTab('payments');toast('Выплачено за готовые: '+fmt(total)+' ✓');
   });
 }
 async function markAllPayments(m){
+  if(!canManageOrders())return;
   var needAdv=advNeedFor(m),needPost=postNeedFor(m);
+  var allocations=payoutAllocations(needAdv,'advance').concat(payoutAllocations(needPost,'postpay'));
   var advSum=needAdv.reduce(function(s,o){return s+calcAdvance(o);},0);
   var postSum=needPost.reduce(function(s,o){return s+remainingPay(o);},0);
   var total=advSum+postSum;
@@ -4713,7 +4742,7 @@ async function markAllPayments(m){
     if(postSum)ls.push({sum:postSum,label:'готовые заказы',orderNums:postNums});
     window.lastPayout={date:payoutDate(),person:m,tg:masterCfg(m).tg,accName:accId?accName(accId):'',lines:ls};
     await saveOrders(orders);
-    await recordPayoutExpense(accId,cat,total,'Выплата всё · '+advNums.concat(postNums).join(', '));
+    await recordPayoutExpense(accId,cat,total,'Выплата всё · '+advNums.concat(postNums).join(', '),allocations);
     renderTab('payments');toast('Выплачено: '+fmt(total)+' ✓');
   });
 }
@@ -4749,10 +4778,119 @@ async function payDividendAll(){
     renderTab('payments');toast('Выплачено: '+fmt(total)+' ✓');
   });
 }
+var _advanceUndoCtx=null;
+function advanceBankCandidates(o){
+  var ref=o.advancePayment;
+  return bankTxAll().filter(function(t){
+    if(t.source!=='payout'||t.type!=='expense'||!(t.amount>0))return false;
+    if(ref&&ref.txId)return t.id===ref.txId;
+    if((o.advanceCancellationHistory||[]).some(function(h){return h.txId===t.id;}))return false;
+    if(Array.isArray(t.payoutLines))return t.payoutLines.some(function(l){return l.orderId===o.id&&l.type==='advance'&&l.amount>0;});
+    return /^ЗП /.test(t.category||'')&&!/комиссия/i.test(t.category||'')&&payoutCommentNums(t.comment).includes(o.num);
+  });
+}
+function advanceCancelAmount(o,t){
+  if(!t)return null;
+  if(Array.isArray(t.payoutLines)){
+    var lines=t.payoutLines.filter(function(l){return l.orderId===o.id&&l.type==='advance';});
+    return lines.length?lines.reduce(function(s,l){return s+l.amount;},0):null;
+  }
+  if(o.advancePayment&&o.advancePayment.txId===t.id)return o.advancePayment.amount;
+  var remainingNums=payoutCommentNums(t.comment).filter(function(num){return !(t.advanceCancellations||[]).some(function(c){return c.orderNum===num;});});
+  if(remainingNums.length===1&&remainingNums[0]===o.num&&/^аванс/i.test(t.comment||''))return Number(t.amount);
+  return null;
+}
+function openAdvanceUndo(id){
+  if(!canManageOrders())return;
+  var o=orders.find(function(x){return x.id===id;});if(!o||!o.advancePaid)return;
+  if(o.postpayPaid){toast('Сначала отмените итоговую выплату во вкладке «Выплаты», затем аванс');return;}
+  var candidates=advanceBankCandidates(o);
+  _advanceUndoCtx={id:id,orderSnapshot:JSON.stringify(o),bankSnapshots:Object.fromEntries(candidates.map(function(t){return [t.id,JSON.stringify(t)];}))};
+  var el=document.createElement('div');el.id='advance-undo-modal';el.className='modal-bg';
+  el.innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-labelledby="advance-undo-title">'
+    +'<h2 id="advance-undo-title" class="modal-title">Отменить аванс · '+uiText(o.num)+'</h2>'
+    +'<p style="font-size:13px;margin-bottom:12px">Текущий мастер: '+uiText(o.master||'—')+'. Аванс будет снят с заказа, и его можно будет выплатить заново.'+(o.advancePayment?' Получатель аванса: '+uiText(o.advancePayment.master)+', '+fmt(o.advancePayment.amount)+'.':'')+'</p>'
+    +'<label class="checkbox-row"><input type="radio" name="advance-undo-mode" value="keep" checked onchange="updateAdvanceUndoForm()"> Оставить операцию в банке</label>'
+    +'<p style="font-size:12px;color:var(--text3);margin-bottom:8px">Если деньги уже переданы мастеру, расход останется в банке на прежнем получателе.</p>'
+    +'<label class="checkbox-row"><input type="radio" name="advance-undo-mode" value="bank" onchange="updateAdvanceUndoForm()"'+(!candidates.length||!financeTableOk?' disabled':'')+'> Отменить сумму этого аванса в банке</label>'
+    +'<div id="advance-undo-bank" hidden><div class="fg"><label for="advance-undo-tx">Операция</label><select id="advance-undo-tx" onchange="updateAdvanceUndoForm()"><option value="">Выберите выплату</option>'
+    +candidates.map(function(t){return '<option value="'+uiText(t.id)+'">'+uiText(t.date+' · '+t.category+' · '+accName(t.accountId))+' · '+fmt(t.amount)+' · '+uiText(t.comment||'')+'</option>';}).join('')
+    +'</select></div><div class="fg"><label for="advance-undo-amount">Отменяемая сумма, ₽</label><input id="advance-undo-amount" type="number" min="0.01" step="0.01" inputmode="decimal"></div>'
+    +'<p id="advance-undo-help" style="font-size:12px;color:var(--text3);margin:8px 0"></p>'
+    +'<p style="font-size:12px">Баланс счёта увеличится на отменяемую сумму. Это изменение учёта, а не возврат денег от мастера.</p></div>'
+    +(!candidates.length?'<p style="font-size:12px;color:var(--text3);margin:8px 0">Связанная операция не найдена. Можно снять отметку аванса, оставив банк без изменений.</p>':'')
+    +'<div class="modal-actions"><button class="btn btn-secondary" onclick="closeAdvanceUndo()">Назад</button><button id="advance-undo-confirm" class="btn btn-primary" onclick="confirmAdvanceUndo()">Отменить аванс</button></div></div>';
+  document.body.appendChild(el);
+  if(candidates.length===1)document.getElementById('advance-undo-tx').value=candidates[0].id;
+  updateAdvanceUndoForm();
+  el.addEventListener('click',function(e){if(e.target===el)closeAdvanceUndo();});
+}
+function closeAdvanceUndo(){var el=document.getElementById('advance-undo-modal');if(el)el.remove();_advanceUndoCtx=null;}
+function updateAdvanceUndoForm(){
+  if(!_advanceUndoCtx)return;
+  var selected=document.querySelector('input[name="advance-undo-mode"]:checked');
+  document.getElementById('advance-undo-bank').hidden=!selected||selected.value!=='bank';
+  var o=orders.find(function(x){return x.id===_advanceUndoCtx.id;});
+  var t=finance.find(function(x){return x.id===document.getElementById('advance-undo-tx').value;});
+  var amount=advanceCancelAmount(o,t),input=document.getElementById('advance-undo-amount');
+  input.value=amount==null?'':amount;input.readOnly=amount!=null;
+  document.getElementById('advance-undo-help').textContent=!t?'Выберите операцию по дате и получателю.':amount==null?'Старая общая выплата: точная сумма этого аванса не сохранена. Укажите её по истории перевода; ставки нового мастера здесь не используются.':'Сумма определена по исходной выплате. Остальная часть операции останется в банке.';
+}
+function applyAdvanceCancellation(id,mode,txId,enteredAmount,ctx){
+  if(!canManageOrders()||!ctx||ctx.id!==id)throw new Error('Нет доступа к отмене');
+  var o=orders.find(function(x){return x.id===id;});
+  if(!o||!o.advancePaid||o.postpayPaid||JSON.stringify(o)!==ctx.orderSnapshot)throw new Error('Заказ изменился. Откройте отмену заново.');
+  if(!['keep','bank'].includes(mode))throw new Error('Выберите способ отмены');
+  var t=null,amount=null;
+  if(mode==='bank'){
+    if(!financeTableOk)throw new Error('Банк недоступен');
+    t=advanceBankCandidates(o).find(function(x){return x.id===txId;});
+    if(!t||JSON.stringify(t)!==ctx.bankSnapshots[txId])throw new Error('Операция изменилась. Откройте отмену заново.');
+    if(t.payoutLines&&Math.abs(t.payoutLines.reduce(function(sum,l){return sum+Number(l.amount||0);},0)-Number(t.amount))>0.01)throw new Error('Сумма операции отличается от состава выплаты. Сначала проверьте её в банке.');
+    var exact=advanceCancelAmount(o,t);
+    amount=exact==null?Number(enteredAmount):Number(exact);
+    if(!Number.isFinite(amount)||amount<=0||amount>Number(t.amount))throw new Error('Проверьте сумму отмены');
+    amount=Math.round(amount*100)/100;
+    if(amount<=0)throw new Error('Проверьте сумму отмены');
+    if(exact==null&&amount>=Number(t.amount))throw new Error('Нельзя отменить всю общую выплату за один заказ. Укажите только сумму его аванса.');
+  }
+  var history={id:uid(),at:Date.now(),by:bankAuthor(),bankAction:mode,txId:t?t.id:(o.advancePayment?o.advancePayment.txId:(advanceBankCandidates(o).length===1?advanceBankCandidates(o)[0].id:null)),amount:amount,previousPayment:o.advancePayment||null,masterAtCancellation:o.master};
+  if(t){
+    history.bankBefore=JSON.parse(JSON.stringify(t));
+    var remainder=Math.round((Number(t.amount)-amount)*100)/100;
+    if(remainder===0){finance=finance.filter(function(x){return x.id!==t.id;});if(!pendingDeletes.finance.includes(t.id))pendingDeletes.finance.push(t.id);}
+    else{
+      t.amount=remainder;
+      if(t.payoutLines)t.payoutLines=t.payoutLines.filter(function(l){return !(l.orderId===o.id&&l.type==='advance');});
+      t.advanceCancellations=(t.advanceCancellations||[]).concat([{orderId:o.id,orderNum:o.num,amount:amount,at:history.at}]);
+      if(t.payoutLines||/^аванс/i.test(t.comment||'')){
+        if(!t.payoutOriginalComment)t.payoutOriginalComment=t.comment;
+        var nums=t.payoutLines?Array.from(new Set(t.payoutLines.map(function(l){return l.orderNum;}))):payoutCommentNums(t.comment).filter(function(n){return n!==o.num;});
+        t.comment=t.payoutOriginalComment.split('·')[0].trim()+' (отменено авансов: '+fmt(t.advanceCancellations.reduce(function(sum,c){return sum+c.amount;},0))+') · '+nums.join(', ');
+      }
+    }
+  }
+  o.advanceCancellationHistory=(o.advanceCancellationHistory||[]).concat([history]);
+  o.advancePaid=false;delete o.advancePayment;
+  return history;
+}
+async function confirmAdvanceUndo(){
+  if(!_advanceUndoCtx||!canManageOrders())return;
+  var ctx=_advanceUndoCtx,choice=document.querySelector('input[name="advance-undo-mode"]:checked');
+  var mode=choice?choice.value:'keep';
+  try{applyAdvanceCancellation(ctx.id,mode,document.getElementById('advance-undo-tx').value,document.getElementById('advance-undo-amount').value,ctx);}
+  catch(e){toast(e.message);return;}
+  closeAdvanceUndo();
+  var ok=await saveData(orders,tasks,true,finance);
+  renderTab(tab);
+  toast(ok?(mode==='keep'?'Аванс снят с заказа. Операция банка сохранена.':'Аванс отменён. Сумма в банке скорректирована.'):'Отмена сохранена локально. Дождитесь синхронизации.');
+}
+
 async function undoPay(id,type){
+  if(!canManageOrders())return;
   var o=orders.find(function(x){return x.id===id;});
   if(!o)return;
-  if(type==='advance')o.advancePaid=false;
+  if(type==='advance'){openAdvanceUndo(id);return;}
   if(type==='postpay')o.postpayPaid=false;
   await saveOrders(orders);renderTab('payments');toast('Выплата отменена');
 }
