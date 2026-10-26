@@ -669,22 +669,16 @@ function payoutMasters(){return MASTER_CFG.filter(function(m){return m.payouts;}
 // ═══ УЧЁТНЫЕ ЗАПИСИ ═══
 // Один список на все способы входа: пароль, Telegram, переключатель просмотра.
 const USERS=[
-  {pass:'sasha2024', tgId:'461599258',  role:'manager', name:'Александра', label:'COO',          masterName:'Александра'},
-  {pass:'dasha2024', tgId:'5158981366', role:'director',name:'Даша',       label:'Руководитель', masterName:null},
-  {pass:'sveta2024', tgId:'5273106995', role:'master',  name:'Света',      label:'Мастер',       masterName:'Света'},
-  {pass:'flower2024', tgId:'',           role:'master',  name:'Цветочек',   label:'Мастер',       masterName:'Цветочек'},
-  {pass:'julia5859', tgId:'',           role:'master',  name:'Юлия',       label:'Мастер',       masterName:'Юлия'},
-  {pass:'vika7342',  tgId:'',           role:'master',  name:'Вика',       label:'Мастер',       masterName:'Вика'},
-  {pass:'viktoria2024', tgId:'',           role:'master',  name:'Виктория',  label:'Мастер',       masterName:'Виктория'},
-  {pass:'stajer2024', tgId:'',           role:'master',  name:'Стажёр',     label:'Мастер',       masterName:'Стажёр'},
+  {role:'manager', name:'Александра', label:'COO',          masterName:'Александра'},
+  {role:'director',name:'Даша',       label:'Руководитель', masterName:null},
+  {role:'master',  name:'Света',      label:'Мастер',       masterName:'Света'},
+  {role:'master',  name:'Цветочек',   label:'Мастер',       masterName:'Цветочек'},
+  {role:'master',  name:'Юлия',       label:'Мастер',       masterName:'Юлия'},
+  {role:'master',  name:'Вика',       label:'Мастер',       masterName:'Вика'},
+  {role:'master',  name:'Виктория',  label:'Мастер',       masterName:'Виктория'},
+  {role:'master',  name:'Стажёр',     label:'Мастер',       masterName:'Стажёр'},
 ];
 function userEntry(u){return {role:u.role,name:u.name,label:u.label,masterName:u.masterName};}
-const ROLE_MAP={};
-const PASSWORDS={};
-USERS.forEach(function(u){
-  if(u.tgId)ROLE_MAP[u.tgId]=userEntry(u);
-  if(u.pass)PASSWORDS[u.pass]=userEntry(u);
-});
 let role=null,masterName=null,tab='list',myTodos=[],fStatus='all',fMonth='all',fMaster='all',fUrgent=false,fSort='date',search='',calDate=new Date(),showArchive=false,weekCol='nextweek';
 // Список заказов рисуем не весь сразу — на телефоне сборка сотен карточек ощущается как подвисание.
 const LIST_PAGE_SIZE=20;
@@ -699,16 +693,13 @@ let cloudOrderCount=0;  // сколько заказов мы считаем в 
 const OPENROUTER_PROXY='https://openrouter-proxy.zaytsevalexandara.workers.dev';
 
 // ── СТАРОЕ ХРАНИЛИЩЕ JsonBin (оставлено только для разовой миграции) ──
-const JSONBIN_ID='6a31904fda38895dfecb54fe';
-const JSONBIN_KEY='$2a$10$yDV194UbfbUV7DC2XUUd4OHjsLq37DiuNiZKGjUAwWcGjoz3Z3aXO';
-const JSONBIN_URL='https://api.jsonbin.io/v3/b/'+JSONBIN_ID;
 
 // ── SUPABASE (основное хранилище) ──
 // Запись идёт по отдельным строкам (заказам/задачам), поэтому правки разных
 // людей не затирают друг друга — в отличие от JsonBin, где писался весь файл целиком.
 const SB_URL='https://xcthayifpkqfjwdvvcvh.supabase.co';
 const SB_KEY='sb_publishable_iLKu1GyvYIpLIwEnLlLIXg_uVHbuLhT';
-function sbHeaders(){return {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};}
+function sbHeaders(){if(!crmSession||!crmProfile)throw Error('Требуется вход');return {'apikey':SB_KEY,'Authorization':'Bearer '+crmSession.access_token};}
 // Снимок последнего синхронизированного состояния (id -> JSON) для диффа при сохранении
 let _sbSnap={orders:{},tasks:{},finance:{}};
 function sbBuildSnap(arr){var m={};(arr||[]).forEach(function(it){if(it&&it.id)m[it.id]=JSON.stringify(it);});return m;}
@@ -749,7 +740,7 @@ let activityBound=false;     // навешены ли слушатели акт�
 
 // Чтение локального кэша
 function readCache(){
-  try{const d=localStorage.getItem('markovka_data');return d?JSON.parse(d):null;}catch(e){return null;}
+  try{const d=crmStorage.getItem('markovka_data');return d?JSON.parse(d):null;}catch(e){return null;}
 }
 
 async function loadData(force){
@@ -762,7 +753,9 @@ async function loadData(force){
   if(syncInProgress&&Date.now()-syncStartedAt<90000)return readCache();
   syncInProgress=true;syncStartedAt=Date.now();
   try{
-    console.log("Supabase sync");
+    const freshProfile=await crmLoadProfile();
+    if(JSON.stringify(freshProfile)!==JSON.stringify(crmProfile))throw Error('Права изменились. Выйдите и войдите заново.');
+    console.log('Supabase sync');
     const ord=await sbSelectTable('orders');
     const tsk=await sbSelectTable('tasks');
     // Таблица finance может ещё не существовать (модуль «Банк» подключается отдельно) —
@@ -787,7 +780,7 @@ async function loadData(force){
     // Базовый снимок (_sbSnap) здесь НЕ трогаем: он должен совпадать с тем, из чего
     // собрана локальная копия. Его обновляет только тот, кто реально подменил
     // orders/tasks/finance данными из облака (setBase).
-    try{localStorage.setItem('markovka_data',JSON.stringify(data));}catch(e){}
+    try{crmStorage.setItem('markovka_data',JSON.stringify(data));}catch(e){}
     return data;
   }catch(e){
     // ВАЖНО: не выставляем cloudLoadOk — облако недоступно, запись будет заблокирована
@@ -809,6 +802,8 @@ function sbFetch(url,opts){
 }
 // Чтение одной таблицы Supabase → массив объектов (data-поле каждой строки)
 async function sbSelectTable(table){
+  if(crmProfile&&crmProfile.role==='master'){if(table==='orders')return crmReadMasterOrders();if(table==='finance')return [];}
+
   // Сервер может вернуть меньше запрошенного лимита. Идём до пустой страницы,
   // а не до короткой; частичный результат при ошибке никогда не возвращаем.
   const result=[],seen=new Set();
@@ -847,20 +842,20 @@ async function sbSelectTable(table){
   }
 }
 
-// Локальные резервные копии: храним 5 последних снимков данных в localStorage.
+// Локальные резервные копии: храним 5 последних снимков данных в crmStorage.
 // Позволяет откатиться, если данные случайно повредились/стёрлись.
 function pushBackup(payload){
   try{
-    var arr=JSON.parse(localStorage.getItem('markovka_backups')||'[]');
+    var arr=JSON.parse(crmStorage.getItem('markovka_backups')||'[]');
     arr.push({ts:Date.now(),n:(payload.orders||[]).length,data:payload});
     while(arr.length>5)arr.shift();
-    localStorage.setItem('markovka_backups',JSON.stringify(arr));
+    crmStorage.setItem('markovka_backups',JSON.stringify(arr));
   }catch(e){}
 }
 // Откат к последней резервной копии (вызывается из консоли или кнопкой при ЧП)
 async function restoreBackup(idx){
   try{
-    var arr=JSON.parse(localStorage.getItem('markovka_backups')||'[]');
+    var arr=JSON.parse(crmStorage.getItem('markovka_backups')||'[]');
     if(!arr.length){toast('Нет резервных копий');return;}
     var b=arr[(typeof idx==='number')?idx:arr.length-1];
     if(!confirm('Восстановить копию от '+new Date(b.ts).toLocaleString('ru')+' ('+b.n+' заказов)? Текущие данные в облаке будут заменены.'))return;
@@ -879,7 +874,7 @@ async function saveData(ords,tsks,skipGuard,fins){
   if(!cloudLoadOk){
     console.warn('Запись в облако заблокирована: облако ещё не было загружено в этой сессии');
     var blocked={orders:ords,tasks:tsks,finance:fins};
-    try{localStorage.setItem('markovka_data',JSON.stringify(blocked));}catch(e){}
+    try{crmStorage.setItem('markovka_data',JSON.stringify(blocked));}catch(e){}
     markUnsaved(mergeDirty(readPendingDirty(),collectDirty(blocked)),'нет связи с облаком');
     return false;
   }
@@ -898,7 +893,7 @@ async function saveData(ords,tsks,skipGuard,fins){
           cloud.sort(function(a,b){return (b.created||0)-(a.created||0);});
           orders=cloud;cloudOrderCount=orders.length;
           _sbSnap.orders=sbBuildSnap(cloud);
-          try{localStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks}));}catch(e){}
+          try{crmStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks}));}catch(e){}
           renderTabs();renderTab(tab);
           toast('Сохранение отменено — данные из облака восстановлены');
           return false;
@@ -909,11 +904,11 @@ async function saveData(ords,tsks,skipGuard,fins){
   const payload={orders:ords,tasks:tsks,finance:fins};
   pushBackup(payload);  // снимок перед записью
   // Локальная копия считается свежей сразу после сохранения — повторное чтение не требуется
-  try{localStorage.setItem('markovka_data',JSON.stringify(payload));lastSyncTime=Date.now();}catch(e){}
+  try{crmStorage.setItem('markovka_data',JSON.stringify(payload));lastSyncTime=Date.now();}catch(e){}
   const dirty=mergeDirty(readPendingDirty(),collectDirty(payload));
   try{
     await pushDirty(dirty);
-    try{localStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks,finance:finance}));}catch(e){}
+    try{crmStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks,finance:finance}));}catch(e){}
     if(Array.isArray(ords))cloudOrderCount=ords.length;
     markSaved();
     return true;
@@ -1017,34 +1012,9 @@ function rowLabel(t,o){
 // накладываем свои поля и записываем. Возвращает {old,new} или null, если строки в облаке нет.
 let patchRpcOk=null;   // null — ещё не проверяли
 async function sbPatchRow(t,id,p){
-  if(patchRpcOk!==false){
-    const r=await sbFetch(SB_URL+'/rest/v1/rpc/patch_row',{
-      method:'POST',
-      headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),
-      body:JSON.stringify({p_table:t,p_id:String(id),p_set:p.set,p_unset:p.unset})
-    });
-    if(r.ok){patchRpcOk=true;return await r.json();}
-    // Запасной путь допустим только если RPC действительно отсутствует.
-    // Отказ в доступе, конфликт или сбой сервера нельзя обходить другой записью.
-    var errorBody={};try{errorBody=await r.json();}catch(e){}
-    if(!((r.status===404&&errorBody.code==='PGRST202')||
-         (r.status===404&&errorBody.code==='42883')))
-      throw new Error('patch '+t+' '+r.status);
-    patchRpcOk=false;console.warn('Функция patch_row отсутствует — используется совместимый способ сохранения');
-  }
-  const g=await sbFetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+encodeURIComponent(id)+'&select=data',{headers:sbHeaders()});
-  if(!g.ok)throw new Error('read '+t+' '+g.status);
-  const rows=await g.json();
-  if(!rows.length)return null;
-  const old=rows[0].data||{};
-  const neu=applyPatch(old,p);
-  const w=await sbFetch(SB_URL+'/rest/v1/'+t,{
-    method:'POST',
-    headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
-    body:JSON.stringify([{id:id,data:neu}])
-  });
-  if(!w.ok)throw new Error('upsert '+t+' '+w.status);
-  return {old:old,new:neu};
+  const r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_secure_patch',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_table:t,p_id:String(id),p_set:p.set,p_unset:p.unset})});
+  if(!r.ok)throw Error('Сохранение отклонено: '+r.status);
+  return await r.json();
 }
 
 // Отправка. Бросает ошибку, если хоть что-то не записалось — сохранение тогда
@@ -1137,22 +1107,22 @@ const RETRY_STEPS=[5000,15000,30000,60000];
 const UNSAVED_LEGACY_KEY='markovka_unsaved_legacy';
 const UNSAVED_MAX_AGE=6*3600*1000;   // старше — без подтверждения не досылаем
 function readUnsaved(){
-  try{var d=localStorage.getItem(UNSAVED_KEY);return d?JSON.parse(d):null;}catch(e){return null;}
+  try{var d=crmStorage.getItem(UNSAVED_KEY);return d?JSON.parse(d):null;}catch(e){return null;}
 }
 function readPendingDirty(){var st=readUnsaved();return st&&st.v===2?st.dirty:null;}
 // Отложить в сторону (не отправляя) — для ручного разбора, если понадобится
-function shelveUnsaved(st){try{localStorage.setItem(UNSAVED_LEGACY_KEY,JSON.stringify(st));}catch(e){}}
+function shelveUnsaved(st){try{crmStorage.setItem(UNSAVED_LEGACY_KEY,JSON.stringify(st));}catch(e){}}
 function markUnsaved(dirty,reason){
   var prev=readUnsaved();
   var ts=(prev&&prev.v===2&&prev.ts)?prev.ts:Date.now();
-  try{localStorage.setItem(UNSAVED_KEY,JSON.stringify({v:2,ts:ts,approved:!!(prev&&prev.v===2&&prev.approved),dirty:dirty}));}catch(e){}
+  try{crmStorage.setItem(UNSAVED_KEY,JSON.stringify({v:2,ts:ts,approved:!!(prev&&prev.v===2&&prev.approved),dirty:dirty}));}catch(e){}
   saveState.pending=true;
   saveState.reason=reason||'';
   renderSaveBar();
   scheduleRetry();
 }
 function markSaved(){
-  try{localStorage.removeItem(UNSAVED_KEY);}catch(e){}
+  try{crmStorage.removeItem(UNSAVED_KEY);}catch(e){}
   saveState.pending=false;saveState.attempt=0;saveState.reason='';
   if(saveState.timer){clearTimeout(saveState.timer);saveState.timer=null;}
   renderSaveBar();
@@ -1180,7 +1150,7 @@ async function retrySave(manual){
       shelveUnsaved(st);markSaved();toast('Старые правки отложены, в облако не отправлены');return true;
     }
     st.approved=true;
-    try{localStorage.setItem(UNSAVED_KEY,JSON.stringify(st));}catch(e){}
+    try{crmStorage.setItem(UNSAVED_KEY,JSON.stringify(st));}catch(e){}
   }
   saveState.busy=true;renderSaveBar();
   try{
@@ -1256,32 +1226,6 @@ async function saveFinance(fins){
 
 // ── РАЗОВАЯ МИГРАЦИЯ JsonBin → Supabase ──
 // Вызывается один раз из консоли браузера: migrateFromJsonBin()
-async function migrateFromJsonBin(){
-  try{
-    const r=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY,'X-Bin-Meta':'false'}});
-    if(!r.ok)throw new Error('JsonBin '+r.status);
-    const data=await r.json();
-    const o=Array.isArray(data.orders)?data.orders:[];
-    const t=Array.isArray(data.tasks)?data.tasks:[];
-    if(!confirm('Перенести в Supabase: '+o.length+' заказов и '+t.length+' задач?\nСуществующие строки с такими же id будут обновлены.'))return;
-    // Гарантируем id у каждой записи
-    o.forEach(function(x){if(!x.id)x.id=uid();});
-    t.forEach(function(x){if(!x.id)x.id=uid();});
-    const upsert=async function(table,arr){
-      if(!arr.length)return;
-      const res=await fetch(SB_URL+'/rest/v1/'+table,{
-        method:'POST',
-        headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}),
-        body:JSON.stringify(arr.map(function(x){return {id:x.id,data:x};}))
-      });
-      if(!res.ok)throw new Error('upsert '+table+' '+res.status);
-    };
-    await upsert('orders',o);
-    await upsert('tasks',t);
-    alert('Миграция завершена: '+o.length+' заказов, '+t.length+' задач перенесены в Supabase.');
-    location.reload();
-  }catch(e){alert('Ошибка миграции: '+e.message);console.error(e);}
-}
 
 function uid(){return '_'+Math.random().toString(36).substr(2,9)}
 function fmt(n){return(Math.round(n)||0).toLocaleString('ru')+' \u20bd'}
@@ -1406,47 +1350,9 @@ function updateDayMax(mid,did){
   if(parseInt(dd.value)>mx)dd.value=mx;
 }
 
-function doLogin(){
-  const pass=document.getElementById('login-pass').value.trim();
-  const ui=PASSWORDS[pass];
-  if(!ui){
-    document.getElementById('login-error').style.display='block';
-    document.getElementById('login-error').textContent='Неверный пароль';
-    return;
-  }
-  login(ui.role,ui.name,ui.label,ui.masterName);
-}
-
-async function initTelegramAuth(){
-  let attempts=0;
-  while(!(window.Telegram&&window.Telegram.WebApp&&window.Telegram.WebApp.initDataUnsafe)&&attempts<20){
-    await new Promise(r=>setTimeout(r,150));attempts++;
-  }
-  const tg=window.Telegram&&window.Telegram.WebApp;
-  let tgId=null;
-  if(tg){
-    try{tg.ready();}catch(e){}
-    try{tg.expand();}catch(e){}
-    if(tg.initDataUnsafe&&tg.initDataUnsafe.user)tgId=String(tg.initDataUnsafe.user.id);
-  }
-  if(!tgId){const p=new URLSearchParams(window.location.search);tgId=p.get('dev_uid');}
-  if(!tgId){
-    document.getElementById('login-sub').textContent='';
-    document.getElementById('login-error').style.display='block';
-    document.getElementById('login-error').innerHTML='Откройте приложение через Telegram';
-    return;
-  }
-  const ui=ROLE_MAP[tgId];
-  if(!ui){
-    document.getElementById('login-sub').textContent='';
-    document.getElementById('login-error').style.display='block';
-    document.getElementById('login-error').innerHTML='Ваш аккаунт не добавлен.<br><small>ID: '+tgId+'</small>';
-    return;
-  }
-  await login(ui.role,ui.name,ui.label,ui.masterName);
-}
-
 async function login(r,userName,userLabel,mName){
+  if(!crmProfile)throw Error('Требуется вход');
+  r=crmProfile.role;userName=crmProfile.name;userLabel=crmProfile.label;mName=crmProfile.masterName;
   role=r;masterName=mName;
   document.getElementById('login').style.display='none';
   document.getElementById('app').style.display='flex';
@@ -1454,7 +1360,7 @@ async function login(r,userName,userLabel,mName){
   document.getElementById('h-user-name').textContent=userName;
   // localStorage, а не sessionStorage: вход должен переживать полное закрытие
   // браузера/приложения, а не только вкладку — чтобы пароль не спрашивали заново
-  try{localStorage.setItem('markovka_role',JSON.stringify({role:r,name:userName,label:userLabel,masterName:mName}));}catch(e){}
+  try{crmStorage.setItem('markovka_role',JSON.stringify({role:r,name:userName,label:userLabel,masterName:mName}));}catch(e){}
   realRole=r;isPreviewMode=false;
   document.getElementById('btn-switch-role').style.display=r==='manager'?'inline-flex':'none';
   document.getElementById('h-preview-badge').style.display='none';
@@ -1490,7 +1396,7 @@ async function login(r,userName,userLabel,mName){
   renderTabs();renderTab(tab);
   startSync();
   resumeUnsaved();   // досылаем правки, не уехавшие в облако в прошлый раз
-  if(cloudLoadOk)maybeAutoBackup();  // фоновая ежедневная резервная копия в облако, тихо
+  if(cloudLoadOk&&crmProfile.role!=='master')maybeAutoBackup();  // фоновая ежедневная резервная копия в облако, тихо
 }
 
 // ═══ АВТОБЭКАП ═══
@@ -1504,7 +1410,7 @@ async function maybeAutoBackup(){
   try{
     var today=todayISO();
     var last='';
-    try{last=localStorage.getItem('markovka_last_autobackup')||'';}catch(e){}
+    try{last=crmStorage.getItem('markovka_last_autobackup')||'';}catch(e){}
     if(last===today)return;   // уже делали сегодня с этого устройства
     var payload={orders:orders,tasks:tasks,finance:finance,ts:Date.now()};
     var r=await fetch(SB_URL+'/rest/v1/backups',{
@@ -1514,7 +1420,7 @@ async function maybeAutoBackup(){
     });
     if(!r.ok){backupsTableOk=false;console.warn('Таблица backups недоступна (см. инструкцию по созданию)');return;}
     backupsTableOk=true;
-    try{localStorage.setItem('markovka_last_autobackup',today);}catch(e){}
+    try{crmStorage.setItem('markovka_last_autobackup',today);}catch(e){}
     pruneOldBackups();   // не блокирует, может выполниться и позже
   }catch(e){console.warn('Автобэкап не выполнен',e);}
 }
@@ -1550,16 +1456,6 @@ async function restoreCloudBackup(dateId){
   await saveData(orders,tasks,true,finance);
   renderTabs();renderTab(tab);
   toast('Восстановлено из бэкапа '+dateId);
-}
-
-function logout(){
-  clearInterval(syncTimer);role=null;masterName=null;
-  try{localStorage.removeItem('markovka_role');}catch(e){}
-  document.getElementById('login').style.display='flex';
-  document.getElementById('app').style.display='none';
-  document.getElementById('login-sub').textContent='новорожденная игрушка';
-  document.getElementById('login-error').style.display='none';
-  initTelegramAuth();
 }
 
 let syncTimer=null;
@@ -1634,7 +1530,7 @@ function refreshAfterRemote(){
     return;
   }
   remoteRenderPending=false;
-  try{localStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks,finance:finance}));}catch(e){}
+  try{crmStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks,finance:finance}));}catch(e){}
   renderTabs();renderTab(tab);
 }
 
@@ -1662,10 +1558,11 @@ async function syncFromCloud(){
 // должны быть включены в Realtime (см. SUPABASE_SETUP.sql). Если нет — работает опрос.
 let rtClient=null,rtChannel=null,realtimeOk=false,rtQueue=[],rtTimer=null;
 function startRealtime(){
+  if(!crmProfile||crmProfile.role==='master')return;
   if(rtChannel)return;
   if(!window.supabase||!window.supabase.createClient){console.warn('Библиотека Supabase не загрузилась — только опрос');return;}
   try{
-    rtClient=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+    rtClient=crmClient();
     rtChannel=rtClient.channel('markovka-db');
     DIRTY_TABLES.forEach(function(t){
       rtChannel.on('postgres_changes',{event:'*',schema:'public',table:t},function(p){
@@ -2902,7 +2799,7 @@ async function markSdekSent(btn){
     var o=orders.find(function(x){return x.id===id;});
     if(o&&!canChangeOrderStatus(o,'sent')){skipped.push(o.num);return;}
     if(o&&shipBlocked(o,'sent')){skipped.push(o.num);return;}
-    if(o&&o.status==='planned'){o.status='sent';stampReady(o,'planned');if(!o.closedAt)o.closedAt=Date.now();names.push(o.num);}
+    if(o&&o.status==='planned'){o.status='sent';stampReady(o,'planned');if(role!=='master'&&!o.closedAt)o.closedAt=Date.now();names.push(o.num);}
   });
   if(!names.length){toast('Нет разрешения на отправку или заказ не закрыт: '+skipped.join(', '));return;}
   // Окно не закрываем, пока не убедимся, что данные реально ушли в облако:
@@ -3150,7 +3047,7 @@ async function parseOrderWithAI(){
 function toyTypeOptions(sel){
   return ['Мишка','Мышка','Зайка','Котик'].map(function(t){return'<option'+(sel===t?' selected':'')+'>'+t+'</option>';}).join('');
 }
-function esc(s){return String(s||'').replace(/"/g,'&quot;');}
+function esc(s){return uiText(s);}
 function itemBlockHtml(d){
   d=d||{};
   var embOn=(parseInt(d.embCount)||0)>0;
@@ -5168,15 +5065,14 @@ function tplSvetaFinance(){
 }
 
 // ── ЛИЧНЫЕ ЗАДАЧИ ──
-function todosKey(){return 'todos_'+(role||'guest');}
+function todosKey(){return 'todos_'+(crmProfile?crmProfile.id:'guest');}
 async function loadTodos(){
-  try{var r=await window.storage.get(todosKey(),false);myTodos=r?JSON.parse(r.value):[];}
-  catch(e){try{var d=localStorage.getItem(todosKey());myTodos=d?JSON.parse(d):[];}catch(e2){myTodos=[];}}
+  try{var d=crmStorage.getItem(todosKey());myTodos=d?JSON.parse(d):[];}catch(e){myTodos=[];}
 }
 async function saveTodos(){
   var val=JSON.stringify(myTodos);
-  try{await window.storage.set(todosKey(),val,false);}catch(e){}
-  try{localStorage.setItem(todosKey(),val);}catch(e){}
+
+  try{crmStorage.setItem(todosKey(),val);}catch(e){}
 }
 async function addTodo(){
   var inp=document.getElementById('todo-inp');
@@ -5227,7 +5123,7 @@ function todoItem(t){
     +(t.done?'<span style="color:var(--on-accent);font-size:11px;font-weight:700">✓</span>':'')
     +'</div>'
     +'<div style="flex:1;min-width:0">'
-    +'<div style="font-size:14px;'+(t.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text1)')+';line-height:1.4">'+t.text+'</div>'
+    +'<div style="font-size:14px;'+(t.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text1)')+';line-height:1.4">'+uiText(t.text)+'</div>'
     +'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+ds+'</div>'
     +'</div>'
     +'<button data-tid="'+t.id+'" onclick="deleteTodo(this.dataset.tid)" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;padding:0;line-height:1;flex-shrink:0">×</button>'
@@ -5530,7 +5426,7 @@ function myTaskName(){return role==='master'?masterName:(role==='manager'?'Ал�
 function unreadTaskCount(){
   if(!role)return 0;
   var me=myTaskName();
-  var seen=0;try{seen=parseInt(localStorage.getItem('tasks_seen_'+me))||0;}catch(e){}
+  var seen=0;try{seen=parseInt(crmStorage.getItem('tasks_seen_'+me))||0;}catch(e){}
   return tasks.filter(function(t){
     if(t.done||t.from===me)return false;
     var forMe=t.to===me||(t.to==='all'&&role!=='master');
@@ -5538,12 +5434,12 @@ function unreadTaskCount(){
   }).length;
 }
 function markTasksSeen(){
-  try{localStorage.setItem('tasks_seen_'+myTaskName(),Date.now());}catch(e){}
+  try{crmStorage.setItem('tasks_seen_'+myTaskName(),Date.now());}catch(e){}
 }
 function unreadOrderCount(){
   if(!role)return 0;
   var key='orders_seen_'+role+(role==='master'?'_'+masterName:'');
-  var seen=0;try{seen=parseInt(localStorage.getItem(key))||0;}catch(e){}
+  var seen=0;try{seen=parseInt(crmStorage.getItem(key))||0;}catch(e){}
   return orders.filter(function(o){
     if(o.status==='archived'||o.status==='done'||o.status==='sent')return false;
     if(o.status!=='new')return false;
@@ -5554,19 +5450,19 @@ function unreadOrderCount(){
 function markOrdersSeen(){
   if(!role)return;
   var key='orders_seen_'+role+(role==='master'?'_'+masterName:'');
-  try{localStorage.setItem(key,Date.now());}catch(e){}
+  try{crmStorage.setItem(key,Date.now());}catch(e){}
 }
 function unreadPaymentCount(){
   if(role!=='director'&&role!=='manager')return 0;
   var key='payments_seen';
-  var seen=0;try{seen=parseInt(localStorage.getItem(key))||0;}catch(e){}
+  var seen=0;try{seen=parseInt(crmStorage.getItem(key))||0;}catch(e){}
   var payNames=payoutMasters().map(function(m){return m.name;});
   var needAdv=orders.filter(function(o){return payNames.indexOf(o.master)>=0&&o.status===ADV_PAY_STATUS&&!o.advancePaid&&calcAdvance(o)>0&&(o.created||0)>seen;});
   var needPost=orders.filter(function(o){return payNames.indexOf(o.master)>=0&&PAY_POST_STATUSES.indexOf(o.status)>=0&&!o.postpayPaid&&(o.created||0)>seen;});
   return needAdv.length+needPost.length;
 }
 function markPaymentsSeen(){
-  try{localStorage.setItem('payments_seen',Date.now());}catch(e){}
+  try{crmStorage.setItem('payments_seen',Date.now());}catch(e){}
 }
 function selectTaskTo(btn){
   window.taskTo=btn.dataset.to;
@@ -5596,7 +5492,7 @@ function taskCard(t){
     +'<div style="padding:11px 13px;display:flex;align-items:flex-start;gap:10px">'
     +check
     +'<div style="flex:1;min-width:0">'
-    +'<div style="font-size:13px;line-height:1.4;'+(t.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text1)')+'">'+t.text+'</div>'
+    +'<div style="font-size:13px;line-height:1.4;'+(t.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text1)')+'">'+uiText(t.text)+'</div>'
     +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">'
     +chip
     +'<span style="font-size:10px;color:var(--text3)">от '+t.from+' · '+dt+'</span>'
@@ -6480,22 +6376,77 @@ document.addEventListener('wheel',function(e){
   if(a&&a.tagName==='INPUT'&&a.type==='number'&&a===e.target){a.blur();}
 },{passive:true});
 
-// Netlify version - password login only
-window.addEventListener('load',function(){
-  // Автовход: если раньше уже входили на этом устройстве — не спрашиваем пароль снова
-  const saved=localStorage.getItem('markovka_role');
-  if(saved){
-    try{
-      const ui=JSON.parse(saved);
-      // Берём актуальные role/label/masterName из USERS по кэшированным role+name,
-      // а не то, что сохранилось в localStorage при прошлом входе — иначе правки
-      // справочника (например, у кого какая masterName) не подхватятся без ручного
-      // выхода и повторного входа.
-      const fresh=USERS.find(function(u){return u.role===ui.role&&u.name===ui.name;});
-      login(ui.role,ui.name,fresh?fresh.label:ui.label,fresh?fresh.masterName:ui.masterName);
-    }catch(e){/* ignore */}
-  }
-});
+window.addEventListener('load',crmRestore);
+// Personal sessions; role is fetched from the database before any cached data is shown.
+let crmAuth=null,crmSession=null,crmProfile=null,crmLoginBusy=false;
+function crmClient(){
+ if(!crmAuth){
+  if(!window.supabase)throw Error('Не удалось загрузить модуль входа');
+  crmAuth=window.supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:'markovka_auth_v2',persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
+  crmAuth.auth.onAuthStateChange(function(event,session){crmSession=session;});
+ }
+ return crmAuth;
+}
+const crmStorage={
+ key(k){if(!crmProfile)throw Error('Требуется вход');return 'crm-v2:'+crmProfile.id+':'+crmProfile.role+':'+(crmProfile.masterName||'')+':'+k;},
+ getItem(k){return window.localStorage.getItem(this.key(k));},
+ setItem(k,v){window.localStorage.setItem(this.key(k),v);},
+ removeItem(k){window.localStorage.removeItem(this.key(k));}
+};
+function crmLoginError(message){const el=document.getElementById('login-error');el.textContent=message;el.style.display='block';}
+async function crmLoadProfile(){
+ const client=crmClient();
+ const {data,error}=await client.auth.getUser();
+ if(error||!data.user)throw Error('Войдите заново');
+ const result=await client.rpc('crm_current_profile');
+ if(result.error||!result.data||result.data.id!==data.user.id)throw Error('Доступ отключён или учётная запись не настроена');
+ return result.data;
+}
+async function crmBegin(){
+ const profile=await crmLoadProfile();
+ if(crmProfile&&crmProfile.id!==profile.id)throw Error('Для смены пользователя выйдите из приложения');
+ crmProfile=profile;
+ const {data}=await crmClient().auth.getSession();crmSession=data.session;
+ if(!crmSession)throw Error('Войдите заново');
+ await login(profile.role,profile.name,profile.label,profile.masterName);
+}
+async function doLogin(){
+ if(crmLoginBusy)return;crmLoginBusy=true;
+ const field=document.getElementById('login-pass');
+ try{
+  const response=await fetch(SB_URL+'/functions/v1/crm-login',{method:'POST',headers:{apikey:SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({password:field.value}),signal:AbortSignal.timeout(20000)});
+  const result=await response.json();
+  if(!response.ok)throw Error(result.error||'Не удалось войти');
+  const session=await crmClient().auth.setSession({access_token:result.access_token,refresh_token:result.refresh_token});
+  if(session.error)throw Error('Не удалось открыть сессию');
+  field.value='';await crmBegin();
+ }catch(e){crmLoginError(e.message||'Вход временно недоступен');}
+ finally{crmLoginBusy=false;}
+}
+async function crmRestore(){
+ try{const {data,error}=await crmClient().auth.getSession();if(error)throw error;if(data.session){crmSession=data.session;await crmBegin();}}
+ catch(e){crmLoginError('Не удалось подтвердить доступ. Проверьте связь и войдите заново.');}
+}
+async function logout(){
+ if(saveInFlight>0){toast('Дождитесь завершения сохранения');return;}
+ clearInterval(syncTimer);
+ // Pending edits remain in this user's namespace; no other account can submit them.
+ try{await crmClient().auth.signOut({scope:'local'});}catch(e){}
+ crmProfile=null;crmSession=null;role=null;masterName=null;orders=[];tasks=[];finance=[];
+ location.reload();
+}
+async function crmReadMasterOrders(){
+ const all=[],seen=new Set();let after='';
+ while(true){
+  const r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_master_orders',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_after:after,p_limit:500})});
+  if(!r.ok)throw Error('Не удалось загрузить заказы: '+r.status);
+  const rows=await r.json();if(!Array.isArray(rows))throw Error('Некорректный ответ');
+  if(!rows.length)return all;
+  for(const row of rows){if(!row.data||String(row.data.id)!==String(row.id)||seen.has(String(row.id)))throw Error('Некорректная страница заказов');seen.add(String(row.id));all.push(row.data);}
+  const next=String(rows[rows.length-1].id);if(next===after)throw Error('Повтор страницы');after=next;
+ }
+}
+
 </script>
 </body>
 </html>
