@@ -769,7 +769,13 @@ async function loadData(force){
     // её отсутствие не должно ломать загрузку заказов и задач.
     let fin=[];
     try{fin=await sbSelectTable('finance');financeTableOk=true;}
-    catch(e){financeTableOk=false;console.warn('Таблица finance недоступна',e);}
+    catch(e){
+      financeTableOk=false;
+      // Пустой банк допустим только при действительно отсутствующей таблице.
+      // Ошибка сети/доступа/полноты чтения сохраняет предыдущий кэш целиком.
+      if(e.code!=='PGRST205'&&e.code!=='42P01')throw e;
+      console.warn('Таблица finance отсутствует',e);
+    }
     // Сортируем по дате создания (новые сверху) — порядок в БД произвольный
     ord.sort(function(a,b){return (b.created||0)-(a.created||0);});
     tsk.sort(function(a,b){return (b.created||0)-(a.created||0);});
@@ -803,11 +809,44 @@ function sbFetch(url,opts){
 }
 // Чтение одной таблицы Supabase → массив объектов (data-поле каждой строки)
 async function sbSelectTable(table){
-  const r=await sbFetch(SB_URL+'/rest/v1/'+table+'?select=id,data',{headers:sbHeaders()});
-  if(!r.ok)throw new Error('select '+table+' '+r.status);
-  const rows=await r.json();
-  return rows.map(function(row){return row.data;}).filter(Boolean);
+  // Сервер может вернуть меньше запрошенного лимита. Идём до пустой страницы,
+  // а не до короткой; частичный результат при ошибке никогда не возвращаем.
+  const result=[],seen=new Set();
+  let offset=0,expectedTotal=null;
+  while(true){
+    const r=await sbFetch(SB_URL+'/rest/v1/'+table+'?select=id,data&order=id.asc&limit=500&offset='+offset,
+      {headers:Object.assign({},sbHeaders(),{'Prefer':'count=exact'})});
+    if(!r.ok){
+      var details={};try{details=await r.json();}catch(e){}
+      var failure=new Error('select '+table+' '+r.status);failure.code=details.code;
+      throw failure;
+    }
+    const rows=await r.json();
+    if(!Array.isArray(rows))throw new Error('Некорректный ответ: '+table);
+    const range=r.headers&&r.headers.get('content-range');
+    const match=range&&range.match(/\/(\d+)$/);
+    if(match){
+      const total=Number(match[1]);
+      if(expectedTotal!==null&&total!==expectedTotal)throw new Error('Список '+table+' изменился во время загрузки. Повторите синхронизацию.');
+      expectedTotal=total;
+    }
+    rows.forEach(function(row){
+      if(!row||row.id==null||!row.data||typeof row.data!=='object'||Array.isArray(row.data)||String(row.data.id)!==String(row.id))
+        throw new Error('Повреждённая запись: '+table);
+      const key=String(row.id);
+      if(seen.has(key))throw new Error('Повтор записи при загрузке: '+table);
+      seen.add(key);result.push(row.data);
+    });
+    offset+=rows.length;
+    if(expectedTotal!==null&&offset>expectedTotal)throw new Error('Неверное количество записей: '+table);
+    if(expectedTotal!==null&&offset===expectedTotal)return result;
+    if(!rows.length){
+      if(expectedTotal!==null&&offset!==expectedTotal)throw new Error('Неполная загрузка: '+table);
+      return result;
+    }
+  }
 }
+
 // Локальные резервные копии: храним 5 последних снимков данных в localStorage.
 // Позволяет откатиться, если данные случайно повредились/стёрлись.
 function pushBackup(payload){
@@ -985,10 +1024,13 @@ async function sbPatchRow(t,id,p){
       body:JSON.stringify({p_table:t,p_id:String(id),p_set:p.set,p_unset:p.unset})
     });
     if(r.ok){patchRpcOk=true;return await r.json();}
-    // 5xx — временный сбой, повторим позже. 4xx — функции нет или она не подходит:
-    // сохраняем без неё, чтобы правки не застревали.
-    if(r.status>=500)throw new Error('patch '+t+' '+r.status);
-    patchRpcOk=false;console.warn('Функция patch_row недоступна ('+r.status+') — сохраняем без неё (см. SUPABASE_SETUP.sql)');
+    // Запасной путь допустим только если RPC действительно отсутствует.
+    // Отказ в доступе, конфликт или сбой сервера нельзя обходить другой записью.
+    var errorBody={};try{errorBody=await r.json();}catch(e){}
+    if(!((r.status===404&&errorBody.code==='PGRST202')||
+         (r.status===404&&errorBody.code==='42883')))
+      throw new Error('patch '+t+' '+r.status);
+    patchRpcOk=false;console.warn('Функция patch_row отсутствует — используется совместимый способ сохранения');
   }
   const g=await sbFetch(SB_URL+'/rest/v1/'+t+'?id=eq.'+encodeURIComponent(id)+'&select=data',{headers:sbHeaders()});
   if(!g.ok)throw new Error('read '+t+' '+g.status);
@@ -1024,7 +1066,11 @@ async function pushDirtyRows(d){
   console.log("Supabase sync");
   var touched=false,conflicts=[],gone=[];
   for(const t of DIRTY_TABLES){
-    if(t==='finance'&&!financeTableOk)continue;
+    if(t==='finance'&&!financeTableOk){
+      if(Object.keys((d.upserts&&d.upserts.finance)||{}).length||((d.deletes&&d.deletes.finance)||[]).length)
+        throw new Error('Банк недоступен. Финансовые изменения ожидают сохранения.');
+      continue;
+    }
     if(!_sbSnap[t])_sbSnap[t]={};
     const ups=(d.upserts&&d.upserts[t])||{},bases=(d.bases&&d.bases[t])||{};
     const fresh=[];   // новые строки — пишем целиком одним запросом
