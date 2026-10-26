@@ -2074,9 +2074,13 @@ function trackBanner(){
     +'<div style="font-size:12px;font-weight:700;color:var(--purple-ink);margin-bottom:8px">Выслать трек-номера — '+list.length+'</div>';
   list.forEach(function(o){
     var msg=shipMsgText(o);
+    var ig=igInfo(o.instagram);
     html+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:6px 0;border-top:1px solid var(--border)">'
       +'<span class="card-num">'+o.num+'</span>'
-      +'<span style="font-size:12px;color:var(--text2);flex:1;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(o.client||'—')+'</span>'
+      +'<div style="flex:1 1 150px;min-width:0;font-size:12px;overflow-wrap:anywhere">'
+      +'<div style="color:var(--text2)">'+uiText(o.client||'—')+'</div>'
+      +(ig?'<a href="'+uiText(ig.url)+'" target="_blank" rel="noopener" aria-label="'+uiText('Открыть Instagram '+ig.handle)+'" style="display:inline-flex;align-items:center;min-height:36px;max-width:100%;color:var(--pink-ink);font-weight:600;text-decoration:underline">'+uiText(ig.handle)+'</a>':'<span style="font-size:11px;color:var(--text3)">Instagram не указан</span>')
+      +'</div>'
       +(o.sdekNum
         ?'<span style="font-size:11px;color:var(--text3)">'+o.sdekNum+'</span>'
         :'<span style="font-size:11px;color:var(--red-ink);font-weight:700">нет накладной</span>')
