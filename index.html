@@ -423,6 +423,11 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .track-reminder-actions .btn{min-height:36px;padding:6px 9px;font-size:11px;flex-shrink:0}
 @media(max-width:480px){.track-reminder-actions{gap:5px}.track-reminder-head{gap:6px}}
 </style>
+<style id="finance-v2-style">
+.fin-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0 18px}.fin-metric{padding:16px;background:var(--card);border:1px solid var(--border);border-radius:16px;min-width:0}.fin-metric span,.fin-metric small{display:block;color:var(--text3);font-size:12px;line-height:1.45}.fin-metric strong{display:block;font-size:23px;color:var(--accent);margin:6px 0;overflow-wrap:anywhere}.fin-tabs,.fin-actions,.fin-period,.fin-row-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}.fin-tabs .chip{white-space:normal}.fin-search{width:100%;margin:4px 0 16px}.fin-person{background:var(--card);border:1px solid var(--border);border-radius:16px;margin:8px 0;overflow:hidden}.fin-person summary{display:flex;gap:12px;align-items:center;padding:16px;cursor:pointer;list-style:none}.fin-person summary::-webkit-details-marker{display:none}.fin-person-name{flex:1;min-width:0}.fin-person small,.fin-order-row small,.fin-settlement small,.fin-history-row small,.fin-reconcile-row small{display:block;color:var(--text3);font-size:12px;margin-top:4px}.fin-avatar{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:var(--bg);color:var(--accent);flex-shrink:0}.fin-person-body{padding:0 16px 16px}.fin-order-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--border);margin-top:10px}.fin-link{border:0;background:none;color:var(--accent);font-weight:700;padding:0;cursor:pointer}.fin-tag{font-size:11px;background:var(--bg);border-radius:6px;padding:3px 6px;color:var(--text3)}.fin-note{font-size:13px;line-height:1.55;color:var(--text3);margin:12px 0}.fin-alert{padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card);font-size:13px;line-height:1.5;margin:12px 0}.fin-alert button{margin:8px 0 0 8px}.fin-section-title{font-weight:700;margin:24px 0 12px}.fin-settlement,.fin-reconcile-row{display:flex;gap:14px;align-items:center;background:var(--card);padding:14px;border-bottom:1px solid var(--border)}.fin-settlement>div:first-child,.fin-reconcile-row>div:first-child{flex:1;min-width:0}.fin-history-row{display:flex;align-items:center;justify-content:space-between;text-align:left;width:100%;gap:12px;border:0;border-bottom:1px solid var(--border);padding:14px;background:var(--card);color:var(--text);cursor:pointer}.fin-history-row span{min-width:0;overflow-wrap:anywhere}.fin-dialog{max-width:600px;width:100%;max-height:calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto}.fin-dialog input:not([type=checkbox]):not([type=radio]),.fin-dialog select,.fin-dialog textarea{width:100%;min-width:0}.fin-dialog .modal-actions{position:sticky;bottom:0;background:var(--card);padding:12px 0;margin-bottom:0}.fin-dialog .fin-error{color:var(--red-ink);font-size:14px;margin:8px 0}.fin-choice{display:grid;gap:10px}.fin-choice label{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--border);border-radius:12px;padding:12px;cursor:pointer}.fin-choice label small{display:block;color:var(--text3);margin-top:4px}.fin-choice input{flex-shrink:0;margin-top:4px}.fin-line{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border);padding:10px 0;font-size:14px}.fin-lines{max-height:35dvh;overflow:auto}.fin-total{font-size:17px;font-weight:700;line-height:1.5;padding:12px 0;color:var(--accent)}#finance-dialog{z-index:420;padding:16px;box-sizing:border-box}.fin-period input{min-width:0;max-width:100%}
+@media(max-width:600px){.fin-metrics{gap:6px}.fin-metric{padding:10px;border-radius:12px}.fin-metric strong{font-size:18px}.fin-metric span,.fin-metric small{font-size:11px}.fin-person summary{padding:12px;gap:8px}.fin-person summary>strong{font-size:15px;white-space:nowrap}.fin-person-name b{font-size:14px}.fin-person-body{padding:0 12px 12px}.fin-order-row{align-items:flex-start;flex-direction:column;gap:3px}.fin-row-actions{margin:4px 0}.fin-reconcile-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.fin-reconcile-row>div:first-child{grid-column:1/-1}.fin-reconcile-row>button{grid-column:1/-1}.fin-settlement{flex-wrap:wrap}.fin-settlement>div:first-child{flex-basis:55%}.fin-dialog input,.fin-dialog select,.fin-dialog textarea,.fin-search{font-size:16px}#finance-dialog{padding:10px}.fin-dialog{padding:16px}.fin-period{flex-wrap:nowrap}.fin-period input{width:48%}}
+
+</style>
 </head>
 <body>
 
@@ -597,7 +602,7 @@ const SOURCES={
 //                ₽ за игрушку. Складывается ДО надбавки за срочность — на
 //                срочных заказах прибавка тоже растёт на 50%, как и остальная ЗП.
 const MASTER_CFG=[
-  {name:'Даша',  varRate:0.25, advancePct:0,   nastya:true,  payouts:true,  tg:'',             color:'#3967E8', ink:'#2755D9', payoutFrom:Date.parse('2026-09-21T00:00:00'), zpBonus:300},
+  {name:'Даша',  varRate:0.25, advancePct:0,   nastya:true,  payouts:true,  tg:'',             color:'#3967E8', ink:'#2755D9', payoutFrom:Date.parse('2026-09-21T00:00:00+10:00'), zpBonus:300},
   {name:'Света', varRate:0.40, advancePct:0.3, nastya:false, payouts:true,  tg:'@svetashevel', color:'#79C68A', ink:'#4F815A'},
   {name:'Цветочек',varRate:0.19, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#E68DB1', ink:'#A1637C'},
   {name:'Юлия',  varRate:0.28, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#6E8FE0', ink:'#465FAE'},
@@ -1216,12 +1221,11 @@ async function saveOrders(ords){orders=ords;return await saveData(ords,tasks);}
 async function saveTasks(tsks){tasks=tsks;return await saveData(orders,tsks);}
 async function saveFinance(fins){
   if(!financeTableOk){
-    toast('Таблица finance не создана в Supabase — см. инструкцию');
+    toast('Банк временно недоступен. Проверьте подключение');
     return false;
   }
   finance=fins;
-  await saveData(orders,tasks,true,fins);
-  return true;
+  return await saveData(orders,tasks,true,fins);
 }
 
 // ── РАЗОВАЯ МИГРАЦИЯ JsonBin → Supabase ──
@@ -1462,6 +1466,7 @@ let syncTimer=null;
 // Пока человек печатает в поле или открыто модальное окно — фоновая синхронизация
 // не должна перерисовывать экран поверх него: это стирало бы несохранённый ввод.
 function isUserEditing(){
+  if(typeof finBusy!=='undefined'&&finBusy)return true;
   var ae=document.activeElement;
   if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return true;
   if(document.querySelector('.modal-bg,#oi-modal,#payout-modal,#fabric-modal'))return true;
@@ -2391,6 +2396,7 @@ async function saveSdekNum(id,val){
   toast(ok?(promoted?'Накладная сохранена · Готов к отправке':'Номер накладной сохранён'):'Изменения сохранены локально. Проверьте синхронизацию');
 }
 async function delOrder(id){
+  var o=orders.find(function(x){return x.id===id;});if(o&&(o.financePayments||o.financePaymentHistory||o.advancePaid||o.postpayPaid||o.sashaPaid||o.dividendPaid||finance.some(function(t){return t.orderId===id||(t.paymentLines||[]).concat(t.payoutLines||[]).some(function(l){return l.orderId===id;});}))){toast('У заказа есть финансовая история. Перенесите его в архив');return;}
   if(!confirm('Удалить заказ?'))return;
   orders=orders.filter(function(x){return x.id!==id;});
   pendingDeletes.orders.push(id);
@@ -3236,7 +3242,7 @@ async function addOrder(){
     count:orderQty({items:items}),
     price:orderTotal({items:items}),
     gender:first.gender||'',clothes:first.clothes||'',
-    prepaid:parseFloat(v('fpre'))||0,advancePaid:false,postpayPaid:false,
+    prepaid:0,advancePaid:false,postpayPaid:false,
     month:v('fm'),master:v('fmas'),source:v('fsrc'),status:v('fst'),
     // Ставка материалов фиксируется в заказе — правка справочника не перепишет прошлые месяцы
     varRate:masterCfg(v('fmas')).varRate,
@@ -3246,12 +3252,13 @@ async function addOrder(){
     comment:v('fcm'),
     notes:[],created:Date.now()
   };
+  const requestedPrepaid=Math.max(0,parseFloat(v('fpre'))||0);
   orders.unshift(o);
   renderTab('list');
   toast('Сохраняем заказ '+o.num+'...');
-  await saveOrders(orders);
+  if(!await saveOrders(orders)){toast('Заказ ожидает синхронизации. Оплату внесите после сохранения.');return;}
   toast('Заказ '+o.num+' добавлен');
-  offerOrderIncome(o,parseFloat(o.prepaid)||0);   // если внесли предоплату — предложить провести её по банку
+  offerOrderIncome(o,requestedPrepaid);   // если внесли предоплату — предложить провести её по банку
 }
 
 function openEdit(id){
@@ -3280,7 +3287,8 @@ function openEdit(id){
     +'<div class="fg"><label>Источник</label><select id="esrc">'+srcOpts+'</select></div>'
     +'<div class="fg"><label>Статус</label><select id="est">'+stOpts+'</select></div>'
     +'<div class="fg" style="min-width:0"><label>Месяц</label><input id="em" type="month" style="width:100%" value="'+(o.month||'')+'" oninput="updateDayMax(\'em\',\'edd\')"></div>'
-    +'<div class="fg"><label>Предоплата (₽)</label><input id="epre" type="number" value="'+(o.prepaid||0)+'"></div>'
+    +'<div class="fg"><label>Оплачено клиентом (₽)</label><input id="epre" readonly type="number" value="'+(o.prepaid||0)+'"></div>'
+    +'<div class="fg"><button type="button" class="btn btn-secondary" data-id="'+uiText(o.id)+'" onclick="closeModal();finReview(this.dataset.id)">Оплаты и возвраты</button></div>'
     +'<div class="fg"><label>День сдачи (1–'+maxDay(o.month)+')</label><input id="edd" type="number" min="1" max="'+maxDay(o.month)+'" value="'+(o.deliveryDay||'')+'" oninput="updateDayMax(\'em\',\'edd\')"></div>'
     +'</div>'
     +'<div style="font-size:11px;font-weight:700;color:var(--text3);letter-spacing:0;margin:14px 0 8px">Игрушки в заказе</div>'
@@ -3303,6 +3311,7 @@ async function saveEdit(id){
   if(!canManageOrders()){toast('Назначение и планирование заказов доступны руководству');return;}
   const o=orders.find(function(x){return x.id===id;});
   if(!o)return;
+  if(v('emas')!==o.master&&(o.advancePaid||o.postpayPaid)){toast('Сначала оформите отмену выплат прежнему мастеру в разделе «Выплаты»');return;}
   const newNum=v('enum');
   if(!newNum){toast('Укажите номер');return;}
   const conflict=orders.find(function(x){return x.num===newNum&&x.id!==id;});
@@ -3324,7 +3333,7 @@ async function saveEdit(id){
   o.count=orderQty({items:items});
   o.price=orderTotal({items:items});
   o.gender=first.gender||'';o.clothes=first.clothes||'';
-  o.prepaid=parseFloat(v('epre'))||0;
+  // Оплаты изменяются отдельной финансовой операцией.
   o.month=v('em');o.master=v('emas');o.source=v('esrc');o.status=v('est');if(o.status!==previousStatus)stampReady(o,previousStatus);
   o.varRate=masterCfg(o.master).varRate;   // мастер мог смениться — ставка пересчитывается
   o.deliveryDay=clampDay(v('edd'),v('em'));
@@ -3333,7 +3342,7 @@ async function saveEdit(id){
   o.comment=v('ecm');
   syncSdekReady(o);
   await saveOrders(orders);
-  closeModal();toast('Заказ сохранён');renderTab(tab);
+  closeModal();toast(saveState.pending?'Изменения ожидают синхронизации':'Заказ сохранён');renderTab(tab);
   offerOrderIncome(o,(parseFloat(o.prepaid)||0)-prevPrepaid);
 }
 
@@ -3353,7 +3362,7 @@ const SASHA_PCT = 0.20;           // % Александры
 // только если закрыты не раньше URGENT_FROM: так аналитика и финансы прошлых
 // недель остаются ровно такими, какими были, а текущая неделя пересчитывается.
 const URGENT_PCT = 0.5;
-const URGENT_FROM = Date.parse('2026-08-10T00:00:00');
+const URGENT_FROM = Date.parse('2026-08-10T00:00:00+10:00');
 function urgentBonusPct(o){
   if(!o||!o.urgent)return 0;
   if(!isClosed(o))return URGENT_PCT;            // заказ ещё в работе — надбавка всегда
@@ -3366,7 +3375,7 @@ const TAX_PCT = 0;                // налог (0 = не учитываем)
 const DARYA_DIVIDEND_PCT = 0.1;  // дивиденды Дарьи как автора проекта — 10% от чистой прибыли
 // Выплаты Александре (комиссия) и Дарье (дивиденды) считаются только с этой даты —
 // иначе при первом включении в сумму попали бы все закрытые заказы с начала CRM.
-const OFFICE_PAYOUT_FROM = Date.parse('2026-08-17T00:00:00');
+const OFFICE_PAYOUT_FROM = Date.parse('2026-08-17T00:00:00+10:00');
 function officeEligible(o){return isClosed(o)&&closedDate(o)>=OFFICE_PAYOUT_FROM;}
 function calcDividend(o){return Math.round(Math.max(0,calcCosts(o).profit)*DARYA_DIVIDEND_PCT);}
 function sashaNeedList(){return orders.filter(function(o){return officeEligible(o)&&!o.sashaPaid&&calcCosts(o).sasha>0;});}
@@ -4963,12 +4972,12 @@ function tplSvetaFinance(){
   var closedOrds=myOrders.filter(function(o){return isClosed(o);});
 
   var totalGot=myOrders.reduce(function(s,o){
-    return s+(o.advancePaid?calcAdvance(o):0)+(o.postpayPaid?calcPostpay(o):0);
+    return s+finPaid(o,'advance')+finPaid(o,'postpay');
   },0);
   // «Ожидается» — невыплаченное по всем заказам в работе/готов/планируется (без фильтра по периоду)
   var pendingOrds=myAll.filter(function(o){return o.status==='work'||o.status==='ready'||o.status==='planned';});
   var totalPending=pendingOrds.reduce(function(s,o){
-    return s+(!o.advancePaid?calcAdvance(o):0)+(!o.postpayPaid?calcPostpay(o):0);
+    return s+remainingPay(o);
   },0);
 
   // ── Переключатели периода ──
@@ -5057,8 +5066,8 @@ function tplSvetaFinance(){
       +'<div style="font-size:12px;color:var(--text3);margin-bottom:8px">'+orderToyLabel(o)+' · '+wInfo+' · '+moLbl(o.month)+'</div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:12px">'
       +'<div><div style="color:var(--text3)">ЗП итого'+urgentBonusLbl(o)+'</div><div style="font-weight:700">'+fmt(total)+'</div></div>'
-      +'<div><div style="color:var(--text3)">Получено</div><div style="font-weight:700;color:var(--green-ink)">'+fmt((o.advancePaid?adv:0)+(o.postpayPaid?post:0))+'</div></div>'
-      +'<div><div style="color:var(--text3)">Ожидается</div><div style="font-weight:700;color:var(--orange-ink)">'+fmt((!o.advancePaid?adv:0)+(!o.postpayPaid?post:0))+'</div></div>'
+      +'<div><div style="color:var(--text3)">Получено</div><div style="font-weight:700;color:var(--green-ink)">'+fmt(finPaid(o,'advance')+finPaid(o,'postpay'))+'</div></div>'
+      +'<div><div style="color:var(--text3)">Ожидается</div><div style="font-weight:700;color:var(--orange-ink)">'+fmt(remainingPay(o))+'</div></div>'
       +'</div></div>';
   });
   return html;
@@ -5737,14 +5746,7 @@ async function bankSetupDefaults(){
 function tplBank(){
   if(!canSeeBank())return '<div class="empty">Раздел недоступен</div>';
 
-  if(!financeTableOk){
-    return '<div class="card" style="padding:16px">'
-      +'<div style="font-weight:700;letter-spacing:-.4px;font-size:17px;color:var(--accent);margin-bottom:8px">Нужен один шаг настройки</div>'
-      +'<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">В Supabase ещё нет таблицы <b>finance</b>. Откройте проект → SQL Editor и выполните:</div>'
-      +'<pre style="background:var(--bg2);border-radius:10px;padding:12px;font-size:11px;overflow-x:auto;white-space:pre-wrap">create table if not exists finance (\n  id text primary key,\n  data jsonb\n);\nalter table finance enable row level security;\ncreate policy "finance rw" on finance\n  for all using (true) with check (true);</pre>'
-      +'<div style="font-size:12px;color:var(--text3);margin-top:10px">После этого обновите страницу.</div>'
-      +'</div>';
-  }
+  if(!financeTableOk)return '<div class="empty">Банк временно недоступен. Обновите страницу и проверьте подключение.</div>';
 
   var accs=bankAccounts();
   if(!accs.length){
@@ -6446,6 +6448,219 @@ async function crmReadMasterOrders(){
   const next=String(rows[rows.length-1].id);if(next===after)throw Error('Повтор страницы');after=next;
  }
 }
+
+</script>
+<script>
+// Finance v2: server-confirmed cash movements and compact work queues.
+var finBusy=false,finView='due',finSearch='',finShowAll=false,finLimit=40,finModalCtx=null;
+var FIN_FP=['master','status','items','price','weightG','weight','count','embCount','bandOn','capOn','urgent','closed','closedAt','readyAt','advancePaid','postpayPaid','sashaPaid','dividendPaid','financePayments','varRate'];
+var FIN_LABEL={advance:'Аванс',postpay:'За готовый заказ',sasha:'Комиссия',dividend:'Дивиденды'};
+function finClone(x){return JSON.parse(JSON.stringify(x));}
+function finFP(o){var x={};FIN_FP.forEach(function(k){if(Object.prototype.hasOwnProperty.call(o,k))x[k]=o[k];});return x;}
+function finFlag(k){return {advance:'advancePaid',postpay:'postpayPaid',sasha:'sashaPaid',dividend:'dividendPaid'}[k];}
+function finPaid(o,k){
+ if(o.financePayments&&o.financePayments[k])return Number(o.financePayments[k].amount)||0;
+ if(o.masterPaidActual&&o.masterPaidActual[k]!=null)return Number(o.masterPaidActual[k])||0;
+ if(!o[finFlag(k)])return 0;
+ return k==='advance'?calcAdvance(o):k==='postpay'?calcPostpay(o):k==='sasha'?calcCosts(o).sasha:calcDividend(o);
+}
+function remainingPay(o){return o.postpayPaid?0:Math.max(0,calcMasterPay(o)-finPaid(o,'advance')-finPaid(o,'postpay'));}
+function finOutstanding(k,o){return o[finFlag(k)]?0:k==='postpay'?remainingPay(o):k==='advance'?calcAdvance(o):k==='sasha'?calcCosts(o).sasha:calcDividend(o);}
+function finPending(){try{return JSON.parse(crmStorage.getItem('finance_command_v2')||'null');}catch(e){return null;}}
+function finApply(r){
+ [['orders',orders,r.orders],['finance',finance,r.finance]].forEach(function(a){
+  (a[2]||[]).forEach(function(row){var old=a[1].find(function(x){return x.id===row.id;});if(old)replaceInPlace(old,row);else a[1].push(row);_sbSnap[a[0]][row.id]=JSON.stringify(row);});
+ });
+ try{crmStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks,finance:finance}));}catch(e){}
+}
+async function finSend(command){
+ if(finBusy)throw Error('Дождитесь завершения операции');
+ if(!canSeeBank()||isPreviewMode)throw Error('Операция недоступна в режиме просмотра');
+ if(saveState.pending||saveInFlight)throw Error('Сначала дождитесь сохранения текущих изменений');
+ finBusy=true;saveInFlight++;saveSeq++;
+ try{
+  crmStorage.setItem('finance_command_v2',JSON.stringify(command));
+  var r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_finance_action',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_id:command.id,p_action:command.action,p_payload:command.payload})});
+  var data=await r.json();
+  if(!r.ok){if(r.status>=400&&r.status<500)crmStorage.removeItem('finance_command_v2');throw Error(data.message||'Операция не проведена ('+r.status+')');}
+  finApply(data);crmStorage.removeItem('finance_command_v2');return data;
+ }finally{finBusy=false;saveInFlight--;saveSeq++;}
+}
+async function finCommand(action,payload){
+ if(finPending())throw Error('Сначала проверьте предыдущую операцию кнопкой «Повторить проверку»');
+ return finSend({id:(typeof crypto!=='undefined'&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+'-'+uid()+'-'+uid(),action:action,payload:payload});
+}
+async function finRetry(){try{var p=finPending();if(!p)return;await finSend(p);if(p.action==='bank_import')bankAiDraft=null;finClose();renderTab(tab);toast('Операция подтверждена. Повторного списания нет.');}catch(e){toast(e.message);}}
+function finBanner(){return finPending()?'<div class="fin-alert">Не получено подтверждение последней операции. Проверка использует тот же номер и не создаст дубль.<button class="btn btn-sm btn-secondary" onclick="finRetry()">Повторить проверку</button></div>':'';}
+function finAccounts(){return bankAccounts().filter(function(a){return a.type!=='debt'&&a.type!=='savings';});}
+function finAccountSelect(id){return '<select id="'+id+'">'+finAccounts().map(function(a){return '<option value="'+uiText(a.id)+'">'+uiText(a.name)+' · '+fmt(accBalance(a.id))+'</option>';}).join('')+'</select>';}
+function finOpen(title,body,button,handler){
+ finClose();var el=document.createElement('div');el.id='finance-dialog';el.className='modal-bg';
+ el.innerHTML='<div class="modal fin-dialog" role="dialog" aria-modal="true" aria-labelledby="finance-dialog-title"><h2 id="finance-dialog-title" class="modal-title">'+uiText(title)+'</h2>'+body+'<div id="fin-error" class="fin-error" role="alert"></div><div class="modal-actions"><button class="btn btn-secondary" onclick="finClose()">Закрыть</button>'+(button?'<button id="fin-submit" class="btn btn-primary" onclick="'+handler+'">'+button+'</button>':'')+'</div></div>';
+ document.body.appendChild(el);
+}
+function finClose(){if(finBusy)return;var el=document.getElementById('finance-dialog');if(el)el.remove();finModalCtx=null;}
+async function finSubmit(fn){var btn=document.getElementById('fin-submit');if(btn)btn.disabled=true;try{await fn();finClose();renderTab(tab);toast('Операция сохранена');}catch(e){var err=document.getElementById('fin-error');if(err)err.textContent=e.message;else toast(e.message);}finally{if(btn)btn.disabled=false;}}
+function finSetView(v){finView=v;finLimit=40;navigateApp('payments');}
+function finSetSearch(value){finSearch=value;finLimit=40;var el=document.getElementById('fin-results');if(el)el.innerHTML=finViewContent();}
+function finMatches(o){return !finSearch||[o.num,o.orderNum,o.master,o.client,o.recipient,o.comment,o.category,(o.payoutLines||[]).map(function(l){return l.orderNum;}).join(' ')].join(' ').toLowerCase().includes(finSearch.toLowerCase());}
+function finSum(a,fn){return a.reduce(function(s,x){return s+Number(fn(x)||0);},0);}
+function finSettlements(person,mode){return finance.filter(function(x){return x.kind==='settlement'&&Number(x.remaining)>0&&(!person||x.recipient===person)&&(!mode||x.mode===mode);});}
+function finPeople(){return payoutMasters().map(function(m){return {name:m.name,kind:'master',advance:advNeedFor(m.name),post:postNeedFor(m.name)};}).concat([{name:'Александра — комиссия',kind:'sasha',list:sashaNeedList()},{name:'Дарья — дивиденды',kind:'dividend',list:dividendNeedList()}]);}
+function finDue(p){return p.kind==='master'?finSum(p.advance,calcAdvance)+finSum(p.post,remainingPay):finSum(p.list,function(o){return finOutstanding(p.kind,o);});}
+function finChip(text){return '<span class="fin-tag">'+uiText(text)+'</span>';}
+function finNav(){return '<div class="fin-tabs">'+[['due','К выплате'],['settlements','Зачёты и возвраты'],['reconcile','Сверка'],['history','История']].map(function(x){return '<button class="chip '+(finView===x[0]?'active':'')+'" onclick="finSetView(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</div>';}
+function tplPayments(){
+ if(!canSeeBank())return '<div class="empty">Раздел доступен руководству</div>';
+ var due=finSum(finPeople(),finDue),range=getAnalyticsWeekRange(0),paid=finSum(bankTxAll().filter(function(t){return t.type==='expense'&&(t.source==='payout'||t.payoutLines)&&new Date(t.date+'T12:00:00')>=range.start&&new Date(t.date+'T12:00:00')<=range.end;}),function(t){return t.amount;}),issues=finReconcile().orders.length;
+ return finBanner()+'<div class="fin-metrics">'+finMetric('К выплате сейчас',fmt(due),'Начисления по заказам')+finMetric('Переведено за неделю',fmt(paid),'По записям банка')+finMetric('Нужна сверка',issues,'Оплаты клиентов')+'</div>'+finNav()+'<input class="fin-search" aria-label="Поиск в финансах" placeholder="Номер заказа, мастер или клиент" value="'+uiText(finSearch)+'" oninput="finSetSearch(this.value)"><div id="fin-results">'+finViewContent()+'</div>';
+}
+function finMetric(label,value,note){return '<div class="fin-metric"><span>'+label+'</span><strong>'+value+'</strong><small>'+note+'</small></div>';}
+function finViewContent(){return finView==='settlements'?finSettlementView():finView==='reconcile'?finReconcileView():finView==='history'?finHistoryView():finDueView();}
+function finDueView(){
+ var people=finPeople(),h='';
+ people.forEach(function(p,i){
+  var own=p.kind==='master'?orders.filter(function(o){return o.master===p.name;}):orders.filter(officeEligible);
+  var visible=own.filter(finMatches),due=finDue(p);
+  if(finSearch&&!visible.length&&!p.name.toLowerCase().includes(finSearch.toLowerCase()))return;
+  var n=p.kind==='master'?p.advance.length+p.post.length:p.list.length;
+  h+='<details class="fin-person"'+(finSearch?' open':'')+'><summary><span class="fin-avatar">'+uiText(p.name.slice(0,1))+'</span><span class="fin-person-name"><b>'+uiText(p.name)+'</b><small>'+(n?n+' заказов к выплате':'Нет текущих начислений')+'</small></span><strong>'+fmt(due)+'</strong><span>⌄</span></summary><div class="fin-person-body">';
+  var credit=finSum(finSettlements(p.name,'credit'),function(s){return s.remaining;});if(credit)h+='<div class="fin-note">Есть зачёт '+fmt(credit)+' — его можно использовать при выплате.</div>';
+  if(due>0)h+='<button class="btn btn-primary btn-sm" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person)">Подготовить выплату '+fmt(due)+'</button>';
+  var active=visible.filter(function(o){return true;}).sort(function(a,b){return (p.kind==='master'?(remainingPay(b)>0)-(remainingPay(a)>0):0)||(b.created||0)-(a.created||0);});
+  var shown=finSearch?active:active.slice(0,20);
+  shown.forEach(function(o){h+=finOrderPayRow(o,p.kind);});
+  if(active.length>shown.length)h+='<div class="fin-note">Показаны 20 последних заказов. Найдите нужный по номеру в поиске.</div>';
+  h+='</div></details>';
+ });return h||'<div class="empty">Ничего не найдено</div>';
+}
+function finOrderPayRow(o,kind){
+ var keys=kind==='master'?['advance','postpay']:[kind],h='<div class="fin-order-row"><div><button class="fin-link" data-id="'+uiText(o.id)+'" onclick="jumpTo(this.dataset.id)">'+uiText(o.num)+'</button> '+finChip((STATUSES[o.status]||STATUSES.new).label)+'<small>'+uiText(orderToyLabel(o))+'</small></div><div class="fin-row-actions">';
+ keys.forEach(function(k){
+  var paid=finPaid(o,k),canPay=k==='advance'?PAY_ADV_STATUSES.includes(o.status)&&!o.postpayPaid&&calcAdvance(o)>0:k==='postpay'?postNeedFor(o.master).some(function(x){return x.id===o.id;}):officeEligible(o);
+  if(o[finFlag(k)]&&paid>0)h+='<button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" data-kind="'+k+'" onclick="finCancel(this.dataset.id,this.dataset.kind)">'+FIN_LABEL[k]+' '+fmt(paid)+' · отменить</button>';
+  else if(canPay&&finOutstanding(k,o)>0)h+='<button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" data-kind="'+k+'" onclick="markPay(this.dataset.id,this.dataset.kind)">'+FIN_LABEL[k]+' '+fmt(finOutstanding(k,o))+'</button>';
+ });return h+'</div></div>';
+}
+function finPayPerson(name){var p=finPeople().find(function(x){return x.name===name;});if(!p)return;var es=p.kind==='master'?p.advance.map(function(o){return {o:o,kind:'advance'};}).concat(p.post.map(function(o){return {o:o,kind:'postpay'};})):p.list.map(function(o){return {o:o,kind:p.kind};});finPayout(name,es);}
+function markPay(id,type){var o=orders.find(function(x){return x.id===id;});if(o)finPayout(type==='sasha'?'Александра — комиссия':type==='dividend'?'Дарья — дивиденды':o.master,[{o:o,kind:type}]);}
+function payOnlyAdvances(m){finPayout(m,advNeedFor(m).map(function(o){return {o:o,kind:'advance'};}));}
+function payOnlyPost(m){finPayout(m,postNeedFor(m).map(function(o){return {o:o,kind:'postpay'};}));}
+function markAllPayments(m){finPayPerson(m);}
+function paySashaAll(){finPayPerson('Александра — комиссия');}
+function payDividendAll(){finPayPerson('Дарья — дивиденды');}
+function finPayout(person,entries){
+ if(!canSeeBank()||isPreviewMode)return;if(!entries.length){toast('Нет начислений');return;}if(!finAccounts().length){toast('Сначала создайте расчётный счёт в банке');return;}
+ var legacy=entries.filter(function(e){return e.kind==='postpay'&&e.o.advancePaid&&!(e.o.financePayments&&e.o.financePayments.advance);});
+ var body='<p class="fin-note">Один перевод, одна запись в банке. Получатель: <b>'+uiText(person)+'</b>.</p><div class="fin-lines">';
+ entries.forEach(function(e,i){body+='<div class="fin-line"><span>'+uiText(e.o.num)+' · '+FIN_LABEL[e.kind]+'</span><b id="fin-line-'+i+'">'+fmt(finOutstanding(e.kind,e.o))+'</b></div>';if(legacy.includes(e))body+='<label class="fin-note">Фактически выданный старый аванс по '+uiText(e.o.num)+'<input id="fin-old-'+i+'" type="number" min="0" step="0.01" inputmode="decimal" value="'+finPaid(e.o,'advance')+'" oninput="finPayoutTotal()"></label>';});
+ body+='</div>'+(legacy.length?'<label class="checkbox-row"><input id="fin-legacy-confirm" type="checkbox"> Проверила суммы старых авансов по переводам</label>':'')+'<div class="fg"><label>Счёт списания</label>'+finAccountSelect('fin-account')+'</div><div class="fg"><label>Дата перевода</label><input id="fin-date" type="date" value="'+todayISO()+'"></div>';
+ var credit=finSum(finSettlements(person,'credit'),function(s){return s.remaining;});
+ if(credit>0)body+='<label class="checkbox-row"><input id="fin-use-credit" type="checkbox" onchange="finPayoutTotal()"> Использовать зачёт до '+fmt(credit)+'</label>';
+ body+='<div id="fin-payout-total" class="fin-total"></div><p class="fin-note">Нажимайте «Провести», когда перевод действительно выполнен. CRM фиксирует движение денег, банковский перевод здесь не выполняется.</p>';
+ finOpen('Подтвердить выплату',body,'Провести','finConfirmPayout()');finModalCtx={person:person,entries:entries.map(function(e){return {o:finClone(e.o),kind:e.kind};}),legacy:legacy.length,credit:credit};finPayoutTotal();
+}
+function finPayoutPayload(){var x=finModalCtx;return {recipient:x.person,accountId:v('fin-account'),date:v('fin-date'),useCredit:!!(document.getElementById('fin-use-credit')&&document.getElementById('fin-use-credit').checked),entries:x.entries.map(function(e,i){var n=document.getElementById('fin-old-'+i),old=n?Number(n.value):null;var out={orderId:e.o.id,kind:e.kind,expected:finFP(e.o),amount:n?Math.max(0,calcMasterPay(e.o)-old):finOutstanding(e.kind,e.o)};if(n)out.legacyAdvance=old;return out;})};}
+function finPayoutTotal(){if(!finModalCtx)return;var p=finPayoutPayload(),sum=finSum(p.entries,function(e){return e.amount;}),credit=p.useCredit?Math.min(sum,finModalCtx.credit):0;p.entries.forEach(function(e,i){var el=document.getElementById('fin-line-'+i);if(el)el.textContent=fmt(e.amount);});document.getElementById('fin-payout-total').textContent='Начислено '+fmt(sum)+(credit?' · зачёт '+fmt(credit):'')+' · перевод '+fmt(sum-credit);}
+function finConfirmPayout(){finSubmit(async function(){if(finModalCtx.legacy&&!document.getElementById('fin-legacy-confirm').checked)throw Error('Подтвердите фактические старые авансы');var p=finPayoutPayload();var r=await finCommand('payout',p);window.lastPayout={date:payoutDate(),person:p.recipient,accName:accName(p.accountId),lines:[{sum:r.cash,label:'переведено; зачёт '+fmt(r.total-r.cash),orderNums:p.entries.map(function(e){var o=orders.find(function(x){return x.id===e.orderId;});return o?o.num:'';})}]};});}
+function undoPay(id,type){finCancel(id,type);}
+function openAdvanceUndo(id){finCancel(id,'advance');}
+function finCancel(id,kind){
+ var o=orders.find(function(x){return x.id===id;});if(!o||!o[finFlag(kind)]||!canSeeBank()||isPreviewMode)return;
+ if(kind==='advance'&&o.postpayPaid){toast('Сначала отмените итоговую выплату');return;}
+ var payment=o.financePayments&&o.financePayments[kind],exact=payment&&payment.amount!=null,txid=payment&&payment.txId;
+ var candidates=bankTxAll().filter(function(t){return t.type==='expense'&&t.amount>=0&&(txid?t.id===txid:t.source==='payout'&&payoutCommentNums(t.comment).includes(o.num));});
+ var who=payment&&payment.recipient||kind==='sasha'&&'Александра — комиссия'||kind==='dividend'&&'Дарья — дивиденды'||o.advancePayment&&kind==='advance'&&o.advancePayment.master||o.master;
+ var body='<p class="fin-note">'+uiText(o.num)+' · '+FIN_LABEL[kind]+'. Выберите, что произошло с деньгами.</p><div class="fin-choice">'+[['void','Перевод не состоялся','Уменьшить исходный расход в банке.'],['credit','Оставить в счёт будущих выплат','Расход сохранить, сумму учитывать как зачёт получателю.'],['refund','Ожидаем возврат','Расход сохранить до фактического возврата денег.']].map(function(x){return '<label><input type="radio" name="fin-cancel-mode" value="'+x[0]+'"><span><b>'+x[1]+'</b><small>'+x[2]+'</small></span></label>';}).join('')+'</div><div class="fg"><label>Получатель исходной выплаты</label><input id="fin-person" value="'+uiText(who)+'"'+(exact?' readonly':'')+'></div><div class="fg"><label>Фактическая сумма, ₽</label><input id="fin-amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="'+(exact?payment.amount:o.advancePayment&&kind==='advance'?o.advancePayment.amount:'')+'"'+(exact?' readonly':'')+'></div>';
+ if(!exact)body+='<p class="fin-note">У старой отметки нет точной суммы. Впишите сумму по истории перевода.</p>';
+ body+='<div class="fg"><label>Исходная операция банка</label><select id="fin-tx"'+(txid?' disabled':'')+'><option value="">Не найдена / историческая отметка</option>'+candidates.map(function(t){return '<option value="'+uiText(t.id)+'"'+(t.id===txid||candidates.length===1?' selected':'')+'>'+uiText(t.date+' · '+t.category)+' · '+fmt(t.amount)+'</option>';}).join('')+'</select></div><div class="fg"><label>Причина отмены</label><textarea id="fin-reason" placeholder="Например: заказ передан другому мастеру"></textarea></div>';
+ finOpen('Отмена выплаты',body,'Оформить отмену','finConfirmCancel()');finModalCtx={order:finClone(o),kind:kind,candidates:finClone(candidates)};
+}
+function finConfirmCancel(){finSubmit(async function(){var x=finModalCtx,sel=document.querySelector('input[name="fin-cancel-mode"]:checked');if(!sel)throw Error('Выберите действие с деньгами');var tx=x.candidates.find(function(t){return t.id===v('fin-tx');});await finCommand('cancel',{orderId:x.order.id,kind:x.kind,mode:sel.value,expected:x.order,txId:tx?tx.id:'',expectedTx:tx||null,recipient:v('fin-person'),amount:Number(v('fin-amount')),reason:v('fin-reason')});});}
+function finSettlementView(){var rows=finSettlements().filter(finMatches);return rows.length?rows.map(function(s){return '<div class="fin-settlement"><div><b>'+uiText(s.recipient)+'</b><small>'+uiText(s.orderNum||'')+' · '+(s.mode==='credit'?'В зачёт будущей выплаты':'Ожидаем возврат')+'</small><small>'+uiText(s.reason)+'</small></div><strong>'+fmt(s.remaining)+'</strong><button class="btn btn-secondary btn-sm" data-id="'+uiText(s.id)+'" onclick="finReturn(this.dataset.id)">Возврат получен</button></div>';}).join(''):'<div class="empty">Нет открытых зачётов и возвратов</div>';}
+function finReturn(id){var s=finance.find(function(x){return x.id===id;});if(!s)return;finOpen('Получен возврат от '+s.recipient,'<div class="fg"><label>Фактически получено, ₽</label><input id="fin-amount" type="number" min="0.01" max="'+s.remaining+'" step="0.01" value="'+s.remaining+'"></div><div class="fg"><label>Счёт поступления</label>'+finAccountSelect('fin-account')+'</div><div class="fg"><label>Дата</label><input id="fin-date" type="date" value="'+todayISO()+'"></div>','Записать возврат','finConfirmReturn()');finModalCtx={settlement:finClone(s)};}
+function finConfirmReturn(){finSubmit(async function(){var s=finModalCtx.settlement;await finCommand('settlement_return',{settlementId:s.id,expectedRemaining:s.remaining,amount:Number(v('fin-amount')),accountId:v('fin-account'),date:v('fin-date')});});}
+function finLinkedTotals(){var totals={},unknown=[],known=new Set(orders.map(function(o){return o.id;}));bankTxAll().forEach(function(t){var lines=t.paymentLines||(t.type==='income'&&t.orderId?[{orderId:t.orderId,amount:t.amount}]:[]);lines.forEach(function(l){totals[l.orderId]=(totals[l.orderId]||0)+(t.type==='expense'?-1:1)*Number(l.amount||0);if(!known.has(l.orderId))unknown.push({tx:t,orderId:l.orderId});});});return {totals:totals,unknown:unknown};}
+function finReconcile(){var linked=finLinkedTotals(),reviewed=0;var rows=orders.map(function(o){var bank=linked.totals[o.id]||0,paid=Number(o.prepaid)||0,review=o.financeReview;if(review&&review.prepaid===paid&&review.bank===bank){reviewed++;return null;}return Math.abs(paid-bank)>.01?{o:o,bank:bank,paid:paid,diff:paid-bank}:null;}).filter(Boolean);return {orders:rows,unknown:linked.unknown,reviewed:reviewed,legacy:bankTxAll().filter(function(t){return t.source==='payout'&&(!Array.isArray(t.payoutLines)||Math.abs(finSum(t.payoutLines,function(l){return l.amount;})-Number(t.settledAmount==null?t.originalAmount==null?t.amount:t.originalAmount:t.settledAmount))>.01);})};}
+function finReconcileView(){var r=finReconcile(),rows=r.orders.filter(function(x){return finMatches(x.o);}),h='<div class="fin-note">Разница означает, что записи пока не сопоставлены. Она не доказывает недополученные деньги. Проверено вручную: '+r.reviewed+'.</div>';
+ h+='<div class="fin-section-title">Оплата клиента и банк · '+rows.length+'</div>';
+ rows.slice(0,finLimit).forEach(function(x){h+='<div class="fin-reconcile-row"><div><b>'+uiText(x.o.num)+'</b><small>'+uiText(x.o.client||'')+'</small></div><div><small>В заказе</small><b>'+fmt(x.paid)+'</b></div><div><small>В банке</small><b>'+fmt(x.bank)+'</b></div><button class="btn btn-secondary btn-sm" data-id="'+uiText(x.o.id)+'" onclick="finReview(this.dataset.id)">Проверить</button></div>';});
+ if(rows.length>finLimit)h+='<button class="btn btn-secondary btn-full" onclick="finLimit+=40;renderTab(\'payments\')">Показать ещё</button>';
+ if(!rows.length)h+='<div class="empty">Несопоставленных оплат не найдено</div>';
+ h+='<details class="fin-person"><summary>Исторические выплаты без расшифровки <b>'+r.legacy.length+'</b></summary><div class="fin-person-body"><p class="fin-note">История сохранена. Сумму конкретного аванса приложение спросит при отмене или окончательной выплате.</p>'+r.legacy.filter(finMatches).slice(0,20).map(function(t){return '<button class="fin-history-row" data-id="'+uiText(t.id)+'" onclick="finReceipt(this.dataset.id)"><span>'+uiText(t.date+' · '+t.category)+'</span><b>'+fmt(t.amount)+'</b></button>';}).join('')+'</div></details>';
+ var oldFlags=orders.filter(finMatches).flatMap(function(o){return ['advance','postpay','sasha','dividend'].filter(function(k){return o[finFlag(k)]&&!(o.financePayments&&o.financePayments[k]&&o.financePayments[k].txId);}).map(function(k){return {o:o,k:k};});});
+ h+='<details class="fin-person"><summary>Отметки выплат без точной связи <b>'+oldFlags.length+'</b></summary><div class="fin-person-body"><p class="fin-note">Это исторические отметки. При отмене подтвердите сумму и получателя по переводу.</p>'+oldFlags.slice(0,finLimit).map(function(x){return '<div class="fin-line"><span>'+uiText(x.o.num+' · '+x.o.master+' · '+FIN_LABEL[x.k])+'</span><button class="btn btn-secondary btn-sm" data-id="'+uiText(x.o.id)+'" data-kind="'+x.k+'" onclick="finCancel(this.dataset.id,this.dataset.kind)">Проверить отмену</button></div>';}).join('')+'</div></details>';
+ var loose=bankTxAll().filter(function(t){return t.type==='income'&&!t.settlementId&&!isBankCorrection(t)&&finUnallocated(t)>0&&finMatches(t);});
+ h+='<details class="fin-person"><summary>Поступления без полного распределения <b>'+loose.length+'</b></summary><div class="fin-person-body"><p class="fin-note">Здесь могут быть и поступления, не связанные с заказами. Связывайте только после проверки назначения платежа.</p>'+loose.slice(0,finLimit).map(function(t){return '<button class="fin-history-row" data-id="'+uiText(t.id)+'" onclick="finReceipt(this.dataset.id)"><span>'+uiText(t.date+' · '+t.category+' · '+(t.comment||''))+'</span><b>'+fmt(finUnallocated(t))+'</b></button>';}).join('')+'</div></details>';
+ if(r.unknown.length)h+='<div class="fin-alert">У '+r.unknown.length+' строк поступлений не найден заказ. Операции сохранены; проверьте их связь перед переносом.</div>';
+ return h;
+}
+function finReview(id){var o=orders.find(function(x){return x.id===id;});if(!o)return;var bank=finLinkedTotals().totals[id]||0;finOpen('Сверка · '+o.num,'<p class="fin-note">В заказе '+fmt(o.prepaid||0)+' · связанные поступления '+fmt(bank)+'.</p><div class="fin-choice"><button class="btn btn-secondary" data-id="'+uiText(id)+'" onclick="finLinkIncome(this.dataset.id)">Связать существующее поступление</button><button class="btn btn-secondary" data-id="'+uiText(id)+'" onclick="finReviewConfirmForm(this.dataset.id,\'acknowledge\')">Подтвердить исторические данные</button><button class="btn btn-secondary" data-id="'+uiText(id)+'" onclick="finReviewConfirmForm(this.dataset.id,\'adjust_payment\')">Исправить отмеченную оплату</button><button class="btn btn-secondary" data-id="'+uiText(id)+'" onclick="finReceive(this.dataset.id,false,false)">Получена новая оплата</button><button class="btn btn-secondary" data-id="'+uiText(id)+'" onclick="finReceive(this.dataset.id,false,true)">Возврат клиенту</button></div>','','');}
+function finReviewConfirmForm(id,action){var o=orders.find(function(x){return x.id===id;});finOpen('Подтверждение сверки · '+o.num,(action==='adjust_payment'?'<div class="fg"><label>Фактически оплачено клиентом, ₽</label><input id="fin-amount" type="number" value="'+Number(o.prepaid||0)+'" min="0" step="0.01"></div>':'')+'<p class="fin-note">Движение денег в банке не создаётся. Сохранится отметка проверки с вашим именем и причиной.</p><div class="fg"><label>Основание</label><textarea id="fin-reason" placeholder="Например: оплата до начала ведения банка, проверена по выписке"></textarea></div>','Подтвердить','finConfirmReview()');finModalCtx={order:finClone(o),action:action};}
+function finConfirmReview(){finSubmit(async function(){var x=finModalCtx;await finCommand(x.action,{orderId:x.order.id,expected:x.order,amount:Number(v('fin-amount')),reason:v('fin-reason')});});}
+function finUnallocated(t){return t.paymentLines?Math.max(0,Number(t.amount)-finSum(t.paymentLines,function(l){return l.amount;})):t.orderId?0:Number(t.amount)||0;}
+function finLinkIncome(id){var o=orders.find(function(x){return x.id===id;});var list=bankTxAll().filter(function(t){return t.type==='income'&&!t.settlementId&&finUnallocated(t)>0;});finOpen('Связать поступление · '+o.num,'<p class="fin-note">Выберите уже существующую операцию. Нового поступления и изменения оплаты в заказе не будет.</p><div class="fg"><label>Операция банка</label><select id="fin-link-tx" onchange="finLinkAmount()"><option value="">Выберите операцию</option>'+list.map(function(t){return '<option value="'+uiText(t.id)+'">'+uiText(t.date+' · '+accName(t.accountId)+' · '+t.category+' · '+(t.comment||''))+' · '+fmt(finUnallocated(t))+'</option>';}).join('')+'</select></div><div class="fg"><label>Сумма для этого заказа, ₽</label><input id="fin-amount" type="number" min="0.01" step="0.01"></div>','Связать','finConfirmLink()');finModalCtx={order:finClone(o),transactions:finClone(list)};}
+function finLinkAmount(){var t=finModalCtx.transactions.find(function(x){return x.id===v('fin-link-tx');});document.getElementById('fin-amount').value=t?finUnallocated(t):'';}
+function finConfirmLink(){finSubmit(async function(){var x=finModalCtx,t=x.transactions.find(function(t){return t.id===v('fin-link-tx');});if(!t)throw Error('Выберите поступление');await finCommand('link_income',{orderId:x.order.id,txId:t.id,expectedTx:t,amount:Number(v('fin-amount'))});});}
+function finHistoryView(){var rows=bankTxAll().filter(function(t){return (t.source==='payout'||t.source==='finance_v2'||t.changeHistory||t.voided)&&finMatches(t);});return rows.slice(0,finLimit).map(function(t){return '<button class="fin-history-row" data-id="'+uiText(t.id)+'" onclick="finReceipt(this.dataset.id)"><span><b>'+uiText(t.category||'Операция')+'</b><small>'+uiText(t.date+' · '+accName(t.accountId))+'</small></span><strong>'+fmt(t.amount)+'</strong></button>';}).join('')+(rows.length>finLimit?'<button class="btn btn-secondary btn-full" onclick="finLimit+=40;renderTab(\'payments\')">Показать ещё</button>':'')||'<div class="empty">Нет операций</div>';}
+function finReceipt(id){var t=finance.find(function(x){return x.id===id;});if(!t)return;var h='<p>'+uiText(t.date+' · '+accName(t.accountId)+' · '+(t.category||''))+'</p><div class="fin-total">По банку '+fmt(t.amount)+(t.creditUsed?' · зачёт '+fmt(t.creditUsed):'')+'</div><p class="fin-note">'+uiText(t.comment||'')+'</p>';
+ (t.payoutLines||[]).forEach(function(l){h+='<div class="fin-line"><span>'+uiText(l.orderNum+' · '+(FIN_LABEL[l.type]||l.type))+(l.canceled?' · отменено':'')+'</span><b>'+fmt(l.amount)+'</b></div>';});
+ (t.paymentLines||[]).forEach(function(l){var o=orders.find(function(x){return x.id===l.orderId;});h+='<div class="fin-line"><span>'+uiText(o?o.num:'Заказ не найден')+'</span><b>'+fmt(l.amount)+'</b></div>';});
+ (t.financeCancellations||[]).forEach(function(c){h+='<p class="fin-note">Отмена '+fmt(c.amount)+' · '+uiText(c.mode==='void'?'перевод не состоялся':c.mode==='credit'?'зачёт':'ожидаем возврат')+' · '+uiText(c.by)+'<br>'+uiText(c.reason)+'</p>';});
+ if(t.voided)h+='<p class="fin-note">Отменено: '+uiText(t.voidReason||'')+'</p>';
+ if(!t.payoutLines&&t.source==='payout')h+='<p class="fin-note">Историческая выплата: точная разбивка по заказам не сохранена. Отмена выполняется из соответствующего заказа.</p>';
+ if(t.orderId&&orders.some(function(o){return o.id===t.orderId;}))h+='<button class="btn btn-secondary" data-id="'+uiText(t.orderId)+'" onclick="finReview(this.dataset.id)">Оплаты и сверка заказа</button>';
+ if(t.type==='income'&&!t.settlementId&&finUnallocated(t)>0)h+='<div class="fg"><label>Связать с заказом</label><select id="fin-receipt-order">'+orders.map(function(o){return '<option value="'+uiText(o.id)+'">'+uiText(o.num+' · '+o.client)+'</option>';}).join('')+'</select><button class="btn btn-secondary" onclick="finLinkIncome(v(\'fin-receipt-order\'))">Выбрать сумму распределения</button></div>';
+ (t.changeHistory||[]).forEach(function(e){h+='<p class="fin-note">Исправлено '+uiText(e.by)+' · '+uiText(e.reason)+' · предыдущая сумма '+fmt(e.before.amount)+'</p>';});
+ finOpen('Операция банка',h,'','');}
+function finReceive(id,close,refund,initial){var o=orders.find(function(x){return x.id===id;});if(!o||!canSeeBank()||isPreviewMode)return;if(!finAccounts().length){toast('Сначала добавьте расчётный счёт в Банке');return;}var rest=Math.max(0,orderTotal(o)-Number(o.prepaid||0));finOpen((refund?'Возврат клиенту · ':close?'Закрыть заказ · ':'Оплата клиента · ')+o.num,'<p class="fin-note">Стоимость '+fmt(orderTotal(o))+' · получено '+fmt(o.prepaid||0)+' · остаток '+fmt(rest)+'</p><div class="fg"><label>'+(refund?'Фактически возвращено':'Новое поступление')+', ₽</label><input id="fin-amount" type="number" min="0" step="0.01" value="'+(initial!=null?initial:refund?0:rest)+'"></div><div class="fg"><label>Счёт</label>'+finAccountSelect('fin-account')+'</div><div class="fg"><label>Дата</label><input id="fin-date" type="date" value="'+todayISO()+'"></div><div class="fg"><label>'+(refund?'Причина возврата':'Комментарий (необязательно)')+'</label><input id="fin-reason"></div><p class="fin-note">Подтверждайте после фактического '+(refund?'возврата':'поступления')+' денег. Заказ и запись банка сохранятся вместе.</p>','Подтвердить','finConfirmReceive()');finModalCtx={order:finClone(o),close:close,refund:refund};}
+function finConfirmReceive(){finSubmit(async function(){var x=finModalCtx;await finCommand(x.refund?'customer_refund':'receive',{orderId:x.order.id,expectedPrepaid:Number(x.order.prepaid)||0,expectedTotal:orderTotal(x.order),amount:Number(v('fin-amount')),accountId:v('fin-account'),date:v('fin-date'),close:x.close,reason:v('fin-reason')});});}
+function closeOrder(id){finReceive(id,true,false);}
+function offerOrderIncome(o,delta){if(delta>0)finReceive(o.id,false,false,delta);}
+function tplStats(){
+ var r=getFinanceRange(),active=orders.filter(function(o){return ['work','ready','planned'].includes(o.status);}),unpaid=active.filter(function(o){return !isClosed(o);}),closed=r.start&&r.end?orders.filter(function(o){return isClosed(o)&&new Date(closedDate(o))>=r.start&&new Date(closedDate(o))<=r.end;}):[],scope=r.start&&r.end?bankTxAll().filter(function(t){var d=new Date(t.date+'T12:00:00');return d>=r.start&&d<=r.end&&!isBankCorrection(t);}):[];
+ var wait=finSum(unpaid,function(o){return Math.max(0,orderTotal(o)-Number(o.prepaid||0));}),future=finSum(orders.filter(function(o){return ['new','nextweek','work'].includes(o.status)&&!isClosed(o);}),function(o){return o.prepaid;}),balances=bankTotals();
+ var h=finBanner()+'<div class="fin-section-title">Сейчас · текущая работа</div><div class="fin-metrics">'+finMetric('Ждём от клиентов',fmt(wait),unpaid.length+' активных заказов')+finMetric('К выплате',fmt(finSum(finPeople(),finDue)),'Начисления мастерам и руководству')+finMetric('На расчётных счетах',fmt(balances.spendable),'Фактический остаток по банку')+'</div><div class="fin-note">Предоплаты за невыполненные заказы: <b>'+fmt(future)+'</b>. Они включены в остатки счетов, если поступления внесены в банк.</div><div class="fin-actions"><button class="btn btn-secondary btn-sm" onclick="finSetView(\'due\')">Выплаты</button><button class="btn btn-secondary btn-sm" onclick="finSetView(\'reconcile\')">Сверка</button><button class="btn btn-secondary btn-sm" onclick="navigateApp(\'bank\')">Банк</button></div>';
+ h+='<div class="fin-section-title">Результат за период</div><div class="fin-tabs">'+[['week','Неделя'],['month','Месяц'],['custom','Период']].map(function(p){return '<button class="chip '+(finPeriod===p[0]?'active':'')+'" onclick="setFinPeriod(\''+p[0]+'\')">'+p[1]+'</button>';}).join('')+'</div>';
+ if(finPeriod==='week')h+='<div class="fin-period"><button class="btn btn-sm btn-secondary" onclick="finWeekNav(-1)">←</button><b>'+uiText(r.label)+'</b><button class="btn btn-sm btn-secondary" onclick="finWeekNav(1)">→</button></div>';
+ else if(finPeriod==='month')h+='<input type="month" value="'+uiText(r.monthKey||'')+'" onchange="setFinMonth(this.value)">';
+ else h+='<div class="fin-period"><input type="date" value="'+finFrom+'" onchange="setFinFrom(this.value)"><input type="date" value="'+finTo+'" onchange="setFinTo(this.value)"></div>';
+ var income=finSum(scope.filter(function(t){return t.type==='income';}),function(t){return t.amount;}),expense=finSum(scope.filter(function(t){return t.type==='expense';}),function(t){return t.amount;});
+ h+='<div class="fin-metrics">'+finMetric('Поступило',fmt(income),'По датам операций банка')+finMetric('Потрачено',fmt(expense),'По датам операций банка')+finMetric('Денежный поток',fmt(income-expense),'Поступления минус расходы')+'</div><div class="fin-metrics">'+finMetric('Закрыто заказов',closed.length,'По дате закрытия')+finMetric('Стоимость закрытых',fmt(finSum(closed,orderTotal)),'Сумма заказов')+finMetric('Расчётная прибыль',fmt(finSum(closed,function(o){return calcCosts(o).profit;})),'По формуле себестоимости')+'</div><p class="fin-note">Расчётная прибыль учитывает нормативные материалы и начисления. Денежный поток показывает движение по счетам; даты этих событий могут различаться.</p>';
+ h+='<details class="fin-person"><summary>План по текущим заказам <b>'+active.length+'</b></summary><div class="fin-person-body">'+finMetric('Плановая стоимость',fmt(finSum(active,orderTotal)),'Только «В работе», «Готов», «Готов к отправке»')+finMetric('Плановая прибыль',fmt(finSum(active,function(o){return calcCosts(o).profit;})),'Расчёт по текущим условиям')+'</div></details>';
+ if(role==='manager')h+=granuleSettingsHtml();return h;
+}
+function tplBankReconcile(){var r=finReconcile();return '<div class="fin-alert">К сверке: '+r.orders.length+' оплат клиентов · '+r.legacy.length+' выплат без расшифровки. <button class="btn btn-sm btn-secondary" onclick="finSetView(\'reconcile\')">Открыть сверку</button></div>';}
+var finOriginalBank=tplBank;tplBank=function(){return finBanner()+finOriginalBank();};
+var finOriginalTxForm=openTxForm;openTxForm=function(id,type){var t=id&&finance.find(function(x){return x.id===id;});if(t&&(t.source==='finance_v2'||t.source==='payout'||t.paymentLines||t.financeCancellations||t.orderId)){finReceipt(id);return;}finOriginalTxForm(id,type);};
+async function saveTx(){
+ var id=v('tx-id'),old=id?finance.find(function(x){return x.id===id;}):null,reason='';
+ if(old){reason=prompt('Причина изменения банковской операции:')||'';if(reason.trim().length<3){toast('Укажите причину');return;}}
+ var rec={type:v('tx-type'),amount:Number(v('tx-amount')),accountId:v('tx-acc'),toAccountId:v('tx-acc2'),category:v('tx-cat')||'Прочее',comment:v('tx-comment'),orderId:v('tx-order')};
+ try{await finCommand('bank_tx',{txId:id,expectedTx:old||null,record:rec,date:v('tx-date'),reason:reason});closeTxModal();renderTab('bank');toast('Операция сохранена');}catch(e){toast(e.message);}
+}
+async function deleteTx(id){var t=finance.find(function(x){return x.id===id;});if(!t)return;var reason=prompt('Почему отменяем операцию? История сохранится.');if(!reason)return;try{await finCommand('bank_void',{txId:id,expectedTx:finClone(t),reason:reason});closeTxModal();renderTab('bank');toast('Операция отменена, история сохранена');}catch(e){toast(e.message);}}
+
+async function commitAiDraft(){
+ if(!bankAiDraft||!bankAiDraft.length)return;
+ var records=finClone(bankAiDraft);
+ try{await finCommand('bank_import',{records:records});bankAiDraft=null;renderTab('bank');toast('Операций сохранено: '+records.length);}catch(e){toast(e.message);}
+}
+
+function advNeedFor(m){return orders.filter(function(o){return o.master===m&&o.status===ADV_PAY_STATUS&&!o.advancePaid&&!o.postpayPaid&&calcAdvance(o)>0;});}
+
+async function applyAccCorrection(id){
+ var target=Number(v('acc-correct-val'));if(!Number.isFinite(target)||v('acc-correct-val')===''){toast('Укажите сумму');return;}
+ var diff=Math.round((target-accBalance(id))*100)/100;if(!diff){toast('Расхождения нет');return;}
+ var reason=prompt('Основание корректировки баланса:')||'';if(reason.trim().length<3){toast('Укажите основание');return;}
+ try{await finCommand('bank_tx',{record:{type:diff>0?'income':'expense',amount:Math.abs(diff),accountId:id,category:'Корректировка',comment:reason+' · остаток по проверке '+fmt(target)},date:todayISO(),reason:reason});closeAccModal();renderTab('bank');toast('Корректировка записана отдельно от доходов и расходов');}catch(e){toast(e.message);}
+}
+
+var finHistoryBase=finHistoryView;finHistoryView=function(){
+ var events=finance.filter(function(x){return x.kind==='finance_event';}).sort(function(a,b){return b.created-a.created;});
+ var labels={payout:'Выплата',cancel:'Отмена выплаты',receive:'Оплата клиента',customer_refund:'Возврат клиенту',settlement_return:'Получен возврат',acknowledge:'Подтверждение сверки',adjust_payment:'Исправление оплаты',link_income:'Распределение поступления',bank_tx:'Запись банка',bank_void:'Отмена банковской записи',bank_import:'Импорт операций'};
+ return finHistoryBase()+'<details class="fin-person"><summary>Журнал изменений <b>'+events.length+'</b></summary><div class="fin-person-body">'+events.slice(0,finLimit).map(function(e){return '<div class="fin-note"><b>'+uiText(labels[e.action]||e.action)+'</b> · '+uiText(e.author)+' · '+new Date(e.created).toLocaleString('ru')+'<br>'+uiText(e.reason||'')+'</div>';}).join('')+'</div></details>';
+};
 
 </script>
 </body>
