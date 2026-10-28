@@ -743,28 +743,34 @@ let cloudOrderCount=0;  // сколько заказов мы считаем в 
 const OPENROUTER_PROXY='https://openrouter-proxy.zaytsevalexandara.workers.dev';
 const AI_MODELS=['google/gemini-3.8-flash','openai/gpt-4o-mini'];
 async function aiProxyRequest(prompt,maxTokens){
-  var last='';
+  var last='',lastStatus=0;
   for(var i=0;i<AI_MODELS.length;i++){
-    try{
-      var payload={
-        model:AI_MODELS[i],max_tokens:maxTokens||1800,
-        messages:[{role:'user',content:prompt}]
-      };
-      if(AI_MODELS[i].indexOf('google/gemini-')===0)payload.reasoning={effort:'low',exclude:true};
-      var r=await fetch(OPENROUTER_PROXY,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(payload)
-      });
-      var body=await r.text(),data=null;
-      try{data=JSON.parse(body);}catch(e){}
-      if(r.ok&&data&&data.choices&&data.choices[0]&&data.choices[0].message&&data.choices[0].message.content)return data;
-      var detail=data&&data.error&&(data.error.message||data.error)||body.slice(0,180);
-      last='HTTP '+r.status+(detail?': '+detail:'');
-      if(![403,408,409,429,500,502,503,504].includes(r.status))break;
-    }catch(e){last=e&&e.message||String(e);}
+    for(var attempt=0;attempt<2;attempt++){
+      try{
+        var payload={
+          model:AI_MODELS[i],max_tokens:maxTokens||1800,
+          messages:[{role:'user',content:prompt}]
+        };
+        if(AI_MODELS[i].indexOf('google/gemini-')===0)payload.reasoning={effort:'low',exclude:true};
+        var r=await fetch(OPENROUTER_PROXY,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(payload)
+        });
+        var body=await r.text(),data=null;
+        try{data=JSON.parse(body);}catch(e){}
+        if(r.ok&&data&&data.choices&&data.choices[0]&&data.choices[0].message&&data.choices[0].message.content)return data;
+        lastStatus=r.status;
+        var detail=data&&data.error&&(data.error.message||data.error)||body.slice(0,180);
+        last='HTTP '+r.status+(detail?': '+detail:'');
+        if(![408,409,429,500,502,503,504].includes(r.status))break;
+      }catch(e){lastStatus=0;last=e&&e.message||String(e);}
+      if(attempt===0)await new Promise(function(resolve){setTimeout(resolve,700);});
+    }
   }
   console.error('AI proxy failed:',last);
+  if(lastStatus===403)throw new Error('Сервис ИИ отклонил запрос. Попробуйте ещё раз; если повторится, проверьте доступ и лимит ИИ.');
+  if(lastStatus===413)throw new Error('Слишком длинная переписка для ИИ. Сократите текст и попробуйте ещё раз.');
   throw new Error('Сервис ИИ временно не ответил. Попробуйте ещё раз через несколько секунд.');
 }
 
