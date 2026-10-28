@@ -444,6 +444,18 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 <style>
 .cap-summary{margin:24px 0}.cap-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.cap-head h2{font-size:17px;margin:0}.cap-head p{font-size:12px;color:var(--text3);margin:3px 0 0}.cap-total{display:flex;gap:18px;flex-wrap:wrap;margin-top:13px}.cap-total div{display:flex;align-items:baseline;gap:6px}.cap-total b{font-size:19px;color:var(--accent)}.cap-total span{font-size:11px;color:var(--text3)}.cap-overall{height:9px;background:#fff;border-radius:8px;overflow:hidden;margin-top:10px;box-shadow:inset 0 0 0 1px var(--border2)}.cap-overall i{display:block;height:100%;background:var(--accent);border-radius:8px}.cap-empty{font-size:12px;color:var(--text3);margin:12px 0 0}.load-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.load-tile{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:11px;min-width:0}.load-title{display:flex;align-items:center;justify-content:space-between;gap:6px}.load-title b{font-size:13px;overflow:hidden;text-overflow:ellipsis}.load-link,.load-next{border:0;background:none;font:inherit;color:inherit;cursor:pointer}.load-link{font-size:11px;color:var(--text3);white-space:nowrap;padding:5px}.load-now>span{display:block;font-size:10px;color:var(--text3);margin:3px 0 5px}.load-bar{display:flex;height:9px;background:#fff;border:1px solid var(--green-ink);border-radius:6px;overflow:hidden}.load-bar i{height:100%;background:transparent}.load-bar .ready{background:var(--green-ink)}.load-next{display:block;width:100%;text-align:left;padding:9px 0 0;margin-top:8px;border-top:1px solid var(--border)}.load-next>span{display:flex;justify-content:space-between;gap:6px;font-size:11px}.load-next small{display:block;font-size:10px;color:var(--text3);margin-top:2px}.cap-cells{display:flex;gap:3px;flex-wrap:wrap;margin-top:7px;min-height:10px}.cap-cells i{width:9px;height:9px;border-radius:2px;background:#fff;box-shadow:inset 0 0 0 1px var(--border2)}.cap-cells i.filled{background:var(--accent);box-shadow:none}.cap-cells i.over{background:var(--orange-ink);box-shadow:none}.cap-cells b{font-size:9px}.cap-legend{font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px}.cap-legend i{width:7px;height:7px;border-radius:2px;background:var(--green-ink)}.cap-inputs{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cap-input{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg);border-radius:10px;padding:8px 10px;font-size:13px}.cap-input input{width:70px;padding:7px}.cap-modal{max-width:480px}
 @media(max-width:760px){.load-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cap-legend{display:none}.cap-total{gap:8px 14px}.cap-total div{display:block}.cap-total span{display:block}.load-tile{padding:10px}.cap-cells i{width:8px;height:8px}.cap-inputs{grid-template-columns:1fr}}
+.order-delivery{margin:8px 16px 0;border:1px solid var(--border);border-radius:9px;background:var(--bg);font-size:12px;color:var(--text2);min-width:0}
+.order-delivery summary{display:flex;align-items:center;gap:6px;min-width:0;padding:7px 9px;cursor:pointer;list-style:none}
+.order-delivery summary::-webkit-details-marker{display:none}
+.order-delivery-label{font-weight:600;white-space:nowrap;color:var(--text3)}
+.order-delivery-preview{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.order-delivery-chevron{flex:none;color:var(--text3);font-size:16px;line-height:1}
+.order-delivery[open] .order-delivery-chevron{transform:rotate(180deg)}
+.order-delivery-full{border-top:1px solid var(--border);padding:8px 9px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;overflow-wrap:anywhere}
+.order-delivery-full span{min-width:0;flex:1}
+.order-delivery-full button{flex:none}
+.order-delivery-missing{padding:7px 9px}
+.order-quick-actions{padding:8px 16px 0}
 
 </style>
 </head>
@@ -483,7 +495,7 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
   <div class="page-shell" id="page-shell">
     <div class="page-heading">
       <div><div class="page-eyebrow" id="page-eyebrow">Рабочее пространство</div><h1 class="page-title" id="page-title">Заказы</h1></div>
-      <button id="page-new" class="btn btn-primary page-new" onclick="navigateApp('add')">+ Новый заказ</button>
+      <button id="page-new" class="btn btn-primary page-new" onclick="navigateApp('add')">+ Добавить заказ</button>
     </div>
     <main class="main" id="main"></main>
   </div>
@@ -1792,7 +1804,7 @@ function renderTabs(){
   document.getElementById('page-eyebrow').textContent=category;
   document.getElementById('header-context').textContent=category;
   document.getElementById('page-shell').dataset.page=tab;
-  document.getElementById('page-new').style.display=(role==='manager'||role==='director')&&!isPreviewMode&&tab==='list'?'inline-flex':'none';
+  document.getElementById('page-new').style.display=(role==='manager'||role==='director')&&!isPreviewMode&&(tab==='list'||tab==='overview')?'inline-flex':'none';
 }
 function tplMore(){
   const primary=appPrimaryIds();
@@ -2230,6 +2242,19 @@ function orderCard(o){
   // Бейджи
   html+='<div data-toggle-id="'+o.id+'"  onclick="toggleCard(this.dataset.toggleId)" style="padding:8px 16px 0 16px;cursor:pointer;display:flex;flex-wrap:wrap;gap:4px">'+badges+'</div>';
 
+  // Доставка остаётся доступной из списка, без открытия всей карточки.
+  if(canFinance){
+    var deliveryAddress=String(o.address||'').trim();
+    if(deliveryAddress){
+      html+='<details class="order-delivery"><summary><span class="order-delivery-label">Доставка:</span><span class="order-delivery-preview" title="'+uiText(deliveryAddress)+'">'+uiText(deliveryAddress)+'</span><span class="order-delivery-chevron" aria-hidden="true">⌄</span></summary>'
+        +'<div class="order-delivery-full"><span>'+uiText(deliveryAddress)+'</span><button type="button" class="btn btn-sm btn-ghost" data-val="'+uiText(deliveryAddress)+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div></details>';
+    }else html+='<div class="order-delivery order-delivery-missing">Доставка: адрес не указан</div>';
+  }
+
+  if(canFinance&&o.status==='ready'){
+    html+='<div class="order-quick-actions"><button type="button" class="btn btn-sm btn-secondary" data-val="'+uiText(payMsgText(o))+'" onclick="copyField(this.dataset.val,this)">Сообщение на оплату</button></div>';
+  }
+
   // «В архив» — видна сразу, без разворачивания карточки, но только пока заказ «Отправлен».
   // До этого статуса убирать заказ из работы рано.
   if(canEdit&&o.status==='sent'){
@@ -2293,12 +2318,6 @@ function orderCard(o){
       :'<span style="color:var(--red-ink);font-size:12px">Без предоплаты</span>');
   }
   html+='</div></div>';
-
-  // Краткая доставка; оформление накладных находится в разделе СДЭК.
-  if(canFinance){
-    html+='<div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px">'
-      +'<span style="color:var(--text3)">Доставка: </span>'+uiText(deliveryCitySummary(o))+'</div>';
-  }
 
   if(canFinance&&o.advancePaid&&!isPreviewMode){
     html+='<div style="padding:10px 16px"><button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" data-type="advance" onclick="undoPayBtn(this)">Отменить аванс</button></div>';
@@ -2527,6 +2546,7 @@ const SDEK_ORIGINS={
   'Даша':{city:'Владивосток',address:'Басаргина, 6а'},
   'Дарья':{city:'Владивосток',address:'Басаргина, 6а'},
   'Вика':{city:'Санкт-Петербург',address:'Народного Ополчения, 10А'},
+  'Виктория':{city:'Санкт-Петербург',address:'ул. Антонова-Овсеенко, д. 25, корпус 1'},
   'Юлия':{city:'Санкт-Петербург',address:'Возрождения, 20'},
   'Света':{city:'Усолье-Сибирское',address:'Красных Партизан',incomplete:true},
   'Цветочек':{city:'Санкт-Петербург',address:'Пулковское шоссе, 24'}
@@ -6861,7 +6881,7 @@ function capacityCells(assigned,limit){
 }
 function capacityCurrentBar(person){
   if(!person.orders)return '<div class="load-bar" aria-label="Текущих заказов нет"><i></i></div>';
-  var ready=person.stages.find(function(s){return s.key==='ready';}).n;
+  var ready=person.ready;
   return '<div class="load-bar" role="progressbar" aria-label="Готово '+ready+' из '+person.orders+'" aria-valuemin="0" aria-valuemax="'+person.orders+'" aria-valuenow="'+ready+'"><i class="ready" style="width:'+(ready/person.orders*100)+'%"></i></div>';
 }
 function openCapacityPlan(){
