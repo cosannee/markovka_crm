@@ -456,21 +456,22 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .order-delivery-full button{flex:none}
 .order-delivery-missing{padding:7px 9px}
 .order-card-body{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:0 16px 12px;min-width:0}
-.order-card-body.has-finance{grid-template-columns:minmax(0,1fr) 124px}
+.order-card-body.has-finance{grid-template-columns:minmax(0,1fr) 146px}
 .order-card-content{min-width:0}
 .order-card-content .order-badges{padding:8px 0 0}
 .order-card-content .order-delivery{margin:8px 0 0}
 .order-quick-actions{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 0}
 .order-quick-actions .btn{font-size:11px;line-height:1.25;padding:7px 9px;white-space:normal;text-align:center}
-.order-card-finance{align-self:stretch;border-left:1px solid var(--border);padding:8px 0 0 10px;display:flex;flex-direction:column;gap:5px;min-width:0}
-.order-card-finance-row{display:flex;flex-direction:column;align-items:flex-end;min-width:0;line-height:1.12;text-align:right}
-.order-card-finance-row span{font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-.order-card-finance-row b{font-size:12px;color:var(--text2);white-space:nowrap}
-.order-card-finance-row.is-price b{font-size:14px;color:var(--text1)}
+.order-card-finance{align-self:stretch;border-left:1px solid var(--border);padding:8px 0 0 10px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.order-card-finance-row{display:flex;align-items:baseline;justify-content:space-between;gap:4px;min-width:0;line-height:1.25}
+.order-card-finance-row span{font-size:9px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.order-card-finance-row b{font-size:11px;color:var(--text2);white-space:nowrap;flex:none}
+.order-card-finance-row.is-price b{font-size:13px;color:var(--text1)}
 .order-card-finance-row.is-due b{color:var(--orange-ink)}
 .order-card-finance-row.is-muted b{color:var(--text3);font-weight:600}
 .order-card-finance-row.is-margin b{color:var(--green-ink)}
-@media(max-width:420px){.order-card-body.has-finance{grid-template-columns:minmax(0,1fr) 104px;gap:6px}.order-card-finance{padding-left:7px}.order-card-finance-row b{font-size:11px}.order-card-finance-row.is-price b{font-size:13px}}
+.order-card-finance-row.is-wage-first{border-top:1px solid var(--border);margin-top:2px;padding-top:5px}
+@media(max-width:420px){.order-card-body.has-finance{grid-template-columns:minmax(0,1fr) 124px;gap:6px}.order-card-finance{padding-left:7px}.order-card-finance-row span{font-size:8px}.order-card-finance-row b{font-size:10px}.order-card-finance-row.is-price b{font-size:12px}}
 
 </style>
 </head>
@@ -2296,7 +2297,7 @@ function orderCard(o){
     html+='<div class="order-card-finance-row is-price"><span>Стоимость</span><b>'+fmt(oPrice)+'</b></div>';
     html+='<div class="order-card-finance-row is-muted"><span>Оплачено</span><b>'+fmt(o.prepaid||0)+'</b></div>';
     html+='<div class="order-card-finance-row '+(rest?'is-due':'is-muted')+'"><span>Осталось</span><b>'+fmt(rest)+'</b></div>';
-    html+='<div class="order-card-finance-row"><span>ЗП '+uiText(o.master||'мастера')+'</span><b>'+fmt(mZp)+'</b></div>';
+    html+='<div class="order-card-finance-row is-wage-first"><span>ЗП '+uiText(o.master||'мастера')+'</span><b>'+fmt(mZp)+'</b></div>';
     if(role==='manager'){
       html+='<div class="order-card-finance-row"><span>ЗП Саши</span><b>'+fmt(calcCosts(o).sasha)+'</b></div>';
     }
@@ -2311,9 +2312,9 @@ function orderCard(o){
   html+='<div id="det-'+o.id+'" style="display:'+(isExpanded?'block':'none')+';border-top:1px solid var(--border)">';
 
   // Параметры + финансы
-  html+='<div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border)">';
+  html+='<div style="display:grid;grid-template-columns:'+(canFinance?'1fr':'1fr 1fr')+';border-bottom:1px solid var(--border)">';
   // Параметры (по каждой игрушке)
-  html+='<div style="padding:12px 16px;border-right:1px solid var(--border)">';
+  html+='<div style="padding:12px 16px;'+(canFinance?'':'border-right:1px solid var(--border)')+'">';
   html+='<div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:0;margin-bottom:8px">Параметры</div>';
   oItems.forEach(function(it,idx){
     // Для каждой игрушки — всегда показываем название (жирным для одной, акцентом для нескольких)
@@ -2332,20 +2333,15 @@ function orderCard(o){
   });
   if(o.comment)html+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
   html+='</div>';
-  // Финансы
-  html+='<div style="padding:12px 16px">';
-  html+='<div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:0;margin-bottom:8px">Финансы</div>';
-  if(canFinance){
-    html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Цена: </span><b>'+fmt(oPrice)+'</b></div>';
-    html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Предоплата: </span><span style="color:'+(paid?'var(--green-ink)':'var(--orange-ink)')+'">'+fmt(o.prepaid)+'</span></div>';
-    html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Остаток: </span><span style="color:'+(paid?'var(--text3)':'var(--red-ink)')+'">'+fmt(rest)+'</span></div>';
-    if(margin!==null)html+='<div style="font-size:12px;margin-top:4px"><span style="color:var(--text3)">Маржа: </span><b style="color:'+(margin>0?'var(--green-ink)':'var(--red-ink)')+'">'+fmt(margin)+'</b></div>';
-  }else{
+  // Мастеру показываем только состояние оплаты; у руководителя все суммы уже видны справа.
+  if(!canFinance){
+    html+='<div style="padding:12px 16px"><div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:0;margin-bottom:8px">Финансы</div>';
     html+=paid?'<span style="color:var(--green-ink);font-size:12px">✓ Полностью оплачен</span>'
       :(o.prepaid>0?'<span style="color:var(--orange-ink);font-size:12px">Частичная оплата</span>'
       :'<span style="color:var(--red-ink);font-size:12px">Без предоплаты</span>');
+    html+='</div>';
   }
-  html+='</div></div>';
+  html+='</div>';
 
   if(canFinance&&o.advancePaid&&!isPreviewMode){
     html+='<div style="padding:10px 16px"><button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" data-type="advance" onclick="undoPayBtn(this)">Отменить аванс</button></div>';
