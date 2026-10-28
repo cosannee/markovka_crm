@@ -436,6 +436,11 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 @media(max-width:600px){.dash-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.dash-metrics>div{padding:12px}.dash-metrics>div:first-child{grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.dash-metrics>div:first-child strong{font-size:20px;margin:0}.dash-metrics>div:first-child span{margin-left:auto}.dash-metrics strong{font-size:20px}.dash-stages{grid-template-columns:repeat(2,minmax(0,1fr))}.dash-wages>summary{align-items:flex-start;flex-direction:column}.dash-load{margin-top:18px}.dash-person summary{gap:8px}.overview-grid{gap:8px}.overview-tile{padding:14px!important}.overview-count{font-size:26px!important}}
 
 </style>
+<style>
+.an-report{padding:2px 0 24px}.an-report h2{font-size:17px;margin:28px 0 8px}.an-period{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;margin:12px 0}.an-period b{text-align:center;font-size:12px}.an-month{display:flex;align-items:center;gap:10px;margin:12px 0;font-size:13px;font-weight:600}.an-month input{max-width:220px}.an-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0 20px}.an-metric{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:15px;min-width:0}.an-metric>small,.an-metric>span{display:block;font-size:11px;color:var(--text3);line-height:1.45}.an-metric>strong{display:block;color:var(--accent);font-size:21px;letter-spacing:-.4px;margin:7px 0;overflow-wrap:anywhere}.an-metric .an-delta{display:block;margin-top:8px;padding-top:7px;border-top:1px solid var(--border);color:var(--text2)}.an-section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px 15px;margin:9px 0}.an-section>summary{display:flex;justify-content:space-between;gap:12px;align-items:center;list-style:none;cursor:pointer;min-height:34px;font-size:13px}.an-section>summary::-webkit-details-marker{display:none}.an-section>summary span{font-size:11px;color:var(--text3);text-align:right}.an-lines{margin-top:10px}.an-lines>div{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--border);padding:9px 0;font-size:12px}.an-lines span{color:var(--text2)}.an-lines b{text-align:right}.an-order-links{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+@media(max-width:600px){.an-grid{grid-template-columns:1fr 1fr;gap:8px}.an-grid .an-metric:first-child:last-child{grid-column:1/-1}.an-metric{padding:12px}.an-metric>strong{font-size:18px}.an-section>summary{align-items:flex-start}.an-period b{font-size:11px}}
+
+</style>
 </head>
 <body>
 
@@ -6722,6 +6727,103 @@ function tplDashboardSummary(list){
  if(idle.length)h+='<details class="dash-idle"><summary>Без заказов в текущем плане · '+idle.length+'</summary><p>'+idle.map(function(p){return uiText(p.name);}).join(' · ')+'</p></details>';
  h+='</section><details class="dash-wages"><summary><span>План зарплат, включая COO<small>Осталось выдать при выполнении плана</small></span><b>'+fmt(d.left)+'</b></summary>'+finWagePlan(d.active)+'</details>';
  return h;
+}
+
+</script>
+<script>
+// Analytics reads existing records only. Business dates always use Vladivostok (UTC+10).
+var AN_TZ=10*3600000;
+function anStamp(v){
+ if(typeof v==='number')return Number.isFinite(v)&&v>0?v:null;
+ if(typeof v==='string'&&/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(v)){var n=Date.parse(v);return Number.isFinite(n)?n:null;}
+ return null;
+}
+function anDay(v){
+ if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v))return null;
+ var n=Date.parse(v+'T00:00:00Z');return Number.isFinite(n)&&new Date(n).toISOString().slice(0,10)===v?n-AN_TZ:null;
+}
+function anMonthNow(){return new Date(Date.now()+AN_TZ).toISOString().slice(0,7);}
+function getAnalyticsWeekRange(offset){
+ var n=new Date(Date.now()+AN_TZ),day=(n.getUTCDay()+6)%7;
+ var start=Date.UTC(n.getUTCFullYear(),n.getUTCMonth(),n.getUTCDate()-day+offset*7)-AN_TZ;
+ return {start:new Date(start),end:new Date(start+7*86400000-1)};
+}
+function getAnalyticsRange(){
+ var r;
+ if(analyticsPeriod==='week')r=getAnalyticsWeekRange(analyticsWeekOffset);
+ else if(analyticsPeriod==='month'){
+  var mk=/^\d{4}-(0[1-9]|1[0-2])$/.test(analyticsMonthKey)?analyticsMonthKey:anMonthNow(),p=mk.split('-').map(Number);
+  r={start:new Date(Date.UTC(p[0],p[1]-1,1)-AN_TZ),end:new Date(Date.UTC(p[0],p[1],1)-AN_TZ-1),monthKey:mk};
+ }else return {start:new Date(0),end:new Date(8640000000000000),label:'Всё время'};
+ r.label=overviewDate(+r.start)+' — '+overviewDate(+r.end)+' '+new Date(+r.end+AN_TZ).getUTCFullYear();return r;
+}
+function anPrevious(r){
+ if(analyticsPeriod==='all')return null;
+ if(analyticsPeriod==='week')return {start:new Date(+r.start-7*86400000),end:new Date(+r.start-1)};
+ var d=new Date(+r.start+AN_TZ);return {start:new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()-1,1)-AN_TZ),end:new Date(+r.start-1)};
+}
+function anInside(n,r){return n!==null&&n>=+r.start&&n<=+r.end;}
+function getClosedPeriodOrders(){var r=getAnalyticsRange();return orders.filter(function(o){return isClosed(o)&&anInside(anStamp(o.closedAt),r);});}
+function getClosedWeekOrders(){return getClosedPeriodOrders();}
+function analyticsWeekNav(d){analyticsWeekOffset=Math.min(0,analyticsWeekOffset+Number(d));renderTab('analytics');}
+function setAnalyticsMonth(m){if(/^\d{4}-(0[1-9]|1[0-2])$/.test(m)&&m<=anMonthNow())analyticsMonthKey=m;renderTab('analytics');}
+function anRecipient(t){
+ if(t.recipient)return t.recipient;
+ var names=Array.from(new Set((t.payoutLines||[]).map(function(l){return l.master;}).filter(Boolean)));
+ if(names.length===1&&!(t.payoutLines||[]).some(function(l){return ['sasha','dividend'].includes(l.type);}))return names[0];
+ var cat=t.category||'';
+ if(cat==='ЗП Саши'||cat==='ЗП Александры'||cat==='ЗП Александра — комиссия')return 'Александра — комиссия';
+ return MASTERS.find(function(n){return cat==='ЗП '+n;})||'';
+}
+function anModel(r){
+ var closed=orders.filter(function(o){return isClosed(o)&&anInside(anStamp(o.closedAt),r);});
+ var tx=bankTxAll().filter(function(t){return !t.voided&&!isBankCorrection(t)&&['income','expense'].includes(t.type)&&anInside(anDay(t.date),r);});
+ var income=finSum(tx.filter(function(t){return t.type==='income';}),function(t){return t.amount;}),expense=finSum(tx.filter(function(t){return t.type==='expense';}),function(t){return t.amount;});
+ var costs={materials:0,master:0,sasha:0,nastya:0,tax:0,profit:0};
+ closed.forEach(function(o){var c=calcCosts(o);Object.keys(costs).forEach(function(k){costs[k]+=c[k];});});
+ var dividend=finSum(closed,calcDividend),ready=orders.filter(function(o){return anInside(anStamp(o.readyAt),r)&&!(o.status==='planned'&&o.sdekPreviousStatus==='work');}),sent=orders.filter(function(o){return anInside(anStamp(o.sentAt),r);});
+ var names=Array.from(new Set(MASTERS.concat(orders.map(function(o){return o.master||'Не назначен';}))));
+ var people=names.map(function(name){var own=closed.filter(function(o){return (o.master||'Не назначен')===name;}),made=ready.filter(function(o){return (o.master||'Не назначен')===name;}),shipped=sent.filter(function(o){return (o.master||'Не назначен')===name;});return {name:name,closed:own.length,toys:finSum(own,orderQty),ready:made.length,madeToys:finSum(made,orderQty),sent:shipped.length,sentToys:finSum(shipped,orderQty),calculated:finSum(own,calcMasterPay),paid:finSum(tx.filter(function(t){return t.type==='expense'&&anRecipient(t)===name;}),function(t){return t.amount;}),list:own};}).filter(function(p){return p.closed||p.ready||p.sent||p.paid;});
+ return {closed:closed,tx:tx,income:income,expense:expense,flow:income-expense,rev:finSum(closed,orderTotal),toys:finSum(closed,orderQty),costs:costs,dividend:dividend,net:costs.profit-dividend,people:people,cooPaid:finSum(tx.filter(function(t){return t.type==='expense'&&anRecipient(t)==='Александра — комиссия';}),function(t){return t.amount;}),ready:ready.length,sent:sent.length};
+}
+function anDelta(value,prev,money){if(prev==null)return '';var d=value-prev;return '<small class="an-delta">К предыдущему периоду: '+(d>0?'+':'')+(money?fmt(d):d)+(prev>0?' ('+(d>0?'+':'')+Math.round(d/prev*100)+'%)':'')+'</small>';}
+function anMetric(label,value,note,delta){return '<div class="an-metric"><small>'+label+'</small><strong>'+value+'</strong><span>'+note+'</span>'+(delta||'')+'</div>';}
+function anCsvRows(m,r){
+ var rows=[['Аналитика',r.label],['Часовой пояс','Владивосток UTC+10'],['Показатель','Значение'],['Поступления по банку',m.income],['Расходы по банку',m.expense],['Денежный поток',m.flow],['Стоимость закрытых заказов',m.rev],['Закрыто заказов',m.closed.length],['Игрушек в закрытых заказах',m.toys],['Расчётная прибыль до дивидендов',m.costs.profit],['Расчётные дивиденды по заказам',m.dividend],['Расчётный остаток после дивидендов',m.net],[],['Мастер (текущее назначение)','Готово заказов','Готово игрушек','Отправлено заказов','Отправлено игрушек','Закрыто заказов','Расчётная ЗП по закрытым','Выплачено по банку']];
+ m.people.forEach(function(p){rows.push([p.name,p.ready,p.madeToys,p.sent,p.sentToys,p.closed,p.calculated,p.paid]);});
+ rows.push(['COO — Александра','','','','','',m.costs.sasha,m.cooPaid],[],['Номер','Дата закрытия UTC','Мастер','Игрушек','Стоимость','Материалы (расчёт)','Мастер (расчёт)','COO (расчёт)','Одежда (расчёт)','Налог (расчёт)','Прибыль (расчёт)','Дивиденды (расчёт)']);
+ m.closed.forEach(function(o){var c=calcCosts(o);rows.push([o.num,new Date(anStamp(o.closedAt)).toISOString(),o.master,orderQty(o),orderTotal(o),c.materials,c.master,c.sasha,c.nastya,c.tax,c.profit,calcDividend(o)]);});return rows;
+}
+function exportAnalyticsCsv(){
+ if(!canSeeOverview())return;
+ var r=getAnalyticsRange(),rows=anCsvRows(anModel(r),r),csv=rows.map(function(row){return row.map(function(v){var s=String(v==null?'':v);if(typeof v==='string'&&/^[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}).join(';');}).join('\r\n');
+ var url=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'})),a=document.createElement('a');a.href=url;a.download='markovka-analytics-'+analyticsPeriod+'.csv';a.click();setTimeout(function(){URL.revokeObjectURL(url);},1000);
+}
+function tplWeeklyAnalytics(){
+ if(!canSeeOverview())return '';
+ var r=getAnalyticsRange(),m=anModel(r),pr=anPrevious(r),prev=pr?anModel(pr):null;
+ var h='<div id="analytics-report" class="an-report"><div class="filters">'+[['week','Неделя'],['month','Месяц'],['all','Всё время']].map(function(p){return '<button class="chip '+(analyticsPeriod===p[0]?'active':'')+'" onclick="setAnalyticsPeriod(\''+p[0]+'\')">'+p[1]+'</button>';}).join('')+'</div>';
+ if(analyticsPeriod==='week')h+='<div class="an-period"><button class="btn btn-sm btn-secondary" aria-label="Предыдущая неделя" onclick="analyticsWeekNav(-1)">←</button><b>'+uiText(r.label)+'</b><button class="btn btn-sm btn-secondary" aria-label="Следующая неделя" onclick="analyticsWeekNav(1)"'+(analyticsWeekOffset===0?' disabled':'')+'>→</button></div>';
+ else if(analyticsPeriod==='month')h+='<label class="an-month">Месяц <input type="month" max="'+anMonthNow()+'" value="'+r.monthKey+'" onchange="setAnalyticsMonth(this.value)"></label>';
+ h+='<p class="fin-note">Владивосток · '+(prev?'Сравнение с полным предыдущим периодом: '+overviewDate(+pr.start)+' — '+overviewDate(+pr.end)+'. '+(+r.end>Date.now()?'Текущий период ещё не завершён.':''):'Все записи с сохранёнными датами.')+'</p>';
+ h+='<h2>Движение денег</h2><p class="fin-note">По внесённым операциям банка, все направления. Включает авансы, возвраты и выводы. Внутренние переводы, корректировки остатков и отменённые операции исключены. Это не прибыль.</p><div class="an-grid">'
+ +anMetric('Поступило',fmt(m.income),'По датам поступлений',anDelta(m.income,prev&&prev.income,true))
+ +anMetric('Потрачено',fmt(m.expense),'По датам расходов',anDelta(m.expense,prev&&prev.expense,true))
+ +anMetric('Денежный поток',fmt(m.flow),'Поступления минус расходы',anDelta(m.flow,prev&&prev.flow,true))+'</div>';
+ h+='<h2>Закрытые заказы</h2><p class="fin-note">По сохранённой дате закрытия. Стоимость заказов может отличаться от поступлений за тот же период.</p><div class="an-grid">'
+ +anMetric('Стоимость закрытых',fmt(m.rev),'Сумма заказов',anDelta(m.rev,prev&&prev.rev,true))
+ +anMetric('Закрыто',m.closed.length+' '+pluralZakaz(m.closed.length),'Игрушек: '+m.toys,anDelta(m.closed.length,prev&&prev.closed.length,false))
+ +anMetric('Средний чек',m.closed.length?fmt(m.rev/m.closed.length):'—','На один закрытый заказ','')+'</div>';
+ h+='<details class="an-section" open><summary>Расчётная экономика закрытых заказов</summary><p class="fin-note">По текущим ставкам и данным заказов. Это оценка, а не фактическая бухгалтерская прибыль: все накладные расходы здесь не распределены. Изменение ставок или заказа может пересчитать прошлые периоды.</p><div class="an-lines">';
+ [['Материалы',m.costs.materials],['ЗП мастеров',m.costs.master],['COO — Александра',m.costs.sasha],['Одежда',m.costs.nastya],['Налог',m.costs.tax],['Прибыль до дивидендов',m.costs.profit],['Дивиденды Дарьи · по каждому заказу',m.dividend],['Остаток после дивидендов',m.net]].forEach(function(x){h+='<div><span>'+x[0]+'</span><b>'+fmt(x[1])+'</b></div>';});
+ h+='</div></details><h2>Результаты мастеров</h2><p class="fin-note">Готовность и отправка — по последним сохранённым датам событий и текущему назначению мастера. Расчётная ЗП — по закрытым заказам; выплачено — по расходам банка за период, включая авансы. Эти суммы не обязаны совпадать. Возвраты от мастеров учитываются в поступлениях.</p>';
+ if(!m.people.length)h+='<p class="fin-note">Нет датированных событий или выплат мастерам за этот период.</p>';
+ m.people.forEach(function(p){h+='<details class="an-section"><summary><b>'+uiText(p.name)+'</b><span>Готово '+p.ready+' · отправлено '+p.sent+'</span></summary><div class="an-lines"><div><span>Изготовлено игрушек</span><b>'+p.madeToys+'</b></div><div><span>Отправлено игрушек</span><b>'+p.sentToys+'</b></div><div><span>Закрыто заказов / игрушек</span><b>'+p.closed+' / '+p.toys+'</b></div><div><span>Расчётная ЗП по закрытым</span><b>'+fmt(p.calculated)+'</b></div><div><span>Выплачено по банку</span><b>'+fmt(p.paid)+'</b></div></div><div class="an-order-links">'+p.list.map(function(o){return '<button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" onclick="jumpTo(this.dataset.id)">'+uiText(o.num)+'</button>';}).join('')+'</div></details>';});
+ h+='<div class="an-section"><b>COO — Александра</b><div class="an-lines"><div><span>Расчёт по закрытым заказам</span><b>'+fmt(m.costs.sasha)+'</b></div><div><span>Выплачено по банку</span><b>'+fmt(m.cooPaid)+'</b></div></div></div>';
+ var missing=orders.filter(function(o){return isClosed(o)&&anStamp(o.closedAt)===null;}),badDates=bankTxAll().filter(function(t){return !t.voided&&!isBankCorrection(t)&&['income','expense'].includes(t.type)&&anDay(t.date)===null;});
+ var unknown=m.tx.filter(function(t){return t.type==='expense'&&(t.source==='payout'||/^ЗП/.test(t.category||''))&&!anRecipient(t)&&t.category!=='Дивиденды/выводы';});
+ h+='<details class="an-section"><summary>Полнота данных'+(missing.length+badDates.length+unknown.length?' · есть ограничения':'')+'</summary><p class="fin-note">По всей базе: закрытых заказов без даты — '+missing.length+'; операций банка без корректной даты — '+badDates.length+'. Они не включены в итоги. По старым заказам без дат готовности или отправки производственные итоги также неполные.</p><p class="fin-note">В выбранном периоде выплат без однозначного получателя: '+unknown.length+' ('+fmt(finSum(unknown,function(t){return t.amount;}))+'). Они включены в расходы, но не распределены по мастерам. Зачёт ранее выданного аванса не является новым расходом. Данные отражают текущее состояние записей после исправлений.</p><div class="an-order-links">'+missing.slice(0,30).map(function(o){return '<button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" onclick="jumpTo(this.dataset.id)">'+uiText(o.num||'Без номера')+'</button>';}).join('')+'</div>'+(missing.length>30?'<p class="fin-note">Показаны первые 30 заказов без даты.</p>':'')+'</details>';
+ return h+'<div class="an-order-links"><button class="btn btn-primary" onclick="exportAnalyticsCsv()">Скачать CSV</button><button class="btn btn-secondary" onclick="downloadAnalyticsPng()">Скачать PNG</button></div></div>';
 }
 
 </script>
