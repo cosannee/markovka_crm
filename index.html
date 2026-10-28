@@ -455,7 +455,22 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .order-delivery-full span{min-width:0;flex:1}
 .order-delivery-full button{flex:none}
 .order-delivery-missing{padding:7px 9px}
-.order-quick-actions{padding:8px 16px 0}
+.order-card-body{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:0 16px 12px;min-width:0}
+.order-card-body.has-finance{grid-template-columns:minmax(0,1fr) 124px}
+.order-card-content{min-width:0}
+.order-card-content .order-badges{padding:8px 0 0}
+.order-card-content .order-delivery{margin:8px 0 0}
+.order-quick-actions{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 0}
+.order-quick-actions .btn{font-size:11px;line-height:1.25;padding:7px 9px;white-space:normal;text-align:center}
+.order-card-finance{align-self:stretch;border-left:1px solid var(--border);padding:8px 0 0 10px;display:flex;flex-direction:column;gap:5px;min-width:0}
+.order-card-finance-row{display:flex;flex-direction:column;align-items:flex-end;min-width:0;line-height:1.12;text-align:right}
+.order-card-finance-row span{font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.order-card-finance-row b{font-size:12px;color:var(--text2);white-space:nowrap}
+.order-card-finance-row.is-price b{font-size:14px;color:var(--text1)}
+.order-card-finance-row.is-due b{color:var(--orange-ink)}
+.order-card-finance-row.is-muted b{color:var(--text3);font-weight:600}
+.order-card-finance-row.is-margin b{color:var(--green-ink)}
+@media(max-width:420px){.order-card-body.has-finance{grid-template-columns:minmax(0,1fr) 104px;gap:6px}.order-card-finance{padding-left:7px}.order-card-finance-row b{font-size:11px}.order-card-finance-row.is-price b{font-size:13px}}
 
 </style>
 </head>
@@ -2239,8 +2254,9 @@ function orderCard(o){
   html+='<div style="display:flex;align-items:center;gap:4px;flex-shrink:0">'+noteInd+'<div id="arr-'+o.id+'" style="font-size:20px;color:var(--text3);line-height:1">'+(isExpanded?'⌃':'⌄')+'</div></div>';
   html+='</div>';
 
+  html+='<div class="order-card-body'+(canFinance?' has-finance':'')+'"><div class="order-card-content">';
   // Бейджи
-  html+='<div data-toggle-id="'+o.id+'"  onclick="toggleCard(this.dataset.toggleId)" style="padding:8px 16px 0 16px;cursor:pointer;display:flex;flex-wrap:wrap;gap:4px">'+badges+'</div>';
+  html+='<div class="order-badges" data-toggle-id="'+o.id+'" onclick="toggleCard(this.dataset.toggleId)" style="cursor:pointer;display:flex;flex-wrap:wrap;gap:4px">'+badges+'</div>';
 
   // Доставка остаётся доступной из списка, без открытия всей карточки.
   if(canFinance){
@@ -2251,31 +2267,37 @@ function orderCard(o){
     }else html+='<div class="order-delivery order-delivery-missing">Доставка: адрес не указан</div>';
   }
 
-  if(canFinance&&o.status==='ready'){
-    html+='<div class="order-quick-actions"><button type="button" class="btn btn-sm btn-secondary" data-val="'+uiText(payMsgText(o))+'" onclick="copyField(this.dataset.val,this)">Сообщение на оплату</button></div>';
+  if((canFinance&&o.status==='ready')||(canEdit&&!closed)){
+    html+='<div class="order-quick-actions">';
+    if(canFinance&&o.status==='ready')html+='<button type="button" class="btn btn-sm btn-secondary" data-val="'+uiText(payMsgText(o))+'" onclick="copyField(this.dataset.val,this)">Сообщение на оплату</button>';
+    if(canEdit&&!closed)html+='<button type="button" class="btn btn-sm btn-green" data-oid="'+uiText(o.id)+'" onclick="closeOrder(this.dataset.oid)">Закрыть заказ</button>';
+    html+='</div>';
   }
 
   // «В архив» — видна сразу, без разворачивания карточки, но только пока заказ «Отправлен».
   // До этого статуса убирать заказ из работы рано.
   if(canEdit&&o.status==='sent'){
-    html+='<div style="padding:6px 16px 0 16px">'
+    html+='<div style="padding:6px 0 0">'
       +'<button class="btn btn-sm btn-ghost" style="font-size:11px" data-oid="'+o.id+'" onclick="event.stopPropagation();archiveOrder(this.dataset.oid)">В архив</button>'
       +'</div>';
   }
 
-  // Стоимость + маржа
-  html+='<div data-toggle-id="'+o.id+'"  onclick="toggleCard(this.dataset.toggleId)" style="padding:8px 16px 12px 16px;cursor:pointer;display:flex;align-items:center;justify-content:flex-end;gap:16px">';
+  html+='</div>';
+  // Все ключевые суммы видны рядом с действиями, без открытия карточки.
   if(canFinance){
     var mZp=calcMasterPay(o);
-    html+='<div style="text-align:right"><div style="font-size:11px;color:var(--text3)">ЗП '+(o.master||'мастера')+'</div><div style="font-size:13px;font-weight:700;color:var(--accent)">'+fmt(mZp)+'</div></div>';
+    html+='<aside class="order-card-finance" aria-label="Оплата и расчёты заказа">';
+    html+='<div class="order-card-finance-row is-price"><span>Стоимость</span><b>'+fmt(oPrice)+'</b></div>';
+    html+='<div class="order-card-finance-row is-muted"><span>Оплачено</span><b>'+fmt(o.prepaid||0)+'</b></div>';
+    html+='<div class="order-card-finance-row '+(rest?'is-due':'is-muted')+'"><span>Осталось</span><b>'+fmt(rest)+'</b></div>';
+    html+='<div class="order-card-finance-row"><span>ЗП '+uiText(o.master||'мастера')+'</span><b>'+fmt(mZp)+'</b></div>';
     if(role==='manager'){
-      html+='<div style="text-align:right"><div style="font-size:11px;color:var(--text3)">ЗП Саши</div><div style="font-size:13px;font-weight:700;color:var(--purple-ink)">'+fmt(calcCosts(o).sasha)+'</div></div>';
+      html+='<div class="order-card-finance-row"><span>ЗП Саши</span><b>'+fmt(calcCosts(o).sasha)+'</b></div>';
     }
     if(margin!==null){
-      var mcolor=margin>0?'var(--green-ink)':'var(--red-ink)';
-      html+='<div style="text-align:right"><div style="font-size:11px;color:var(--text3)">маржа</div><div style="font-size:13px;font-weight:700;color:'+mcolor+'">'+fmt(margin)+'</div></div>';
+      html+='<div class="order-card-finance-row is-margin"><span>Маржа</span><b style="color:'+(margin>0?'var(--green-ink)':'var(--red-ink)')+'">'+fmt(margin)+'</b></div>';
     }
-    html+='<div style="font-size:15px;font-weight:700;color:var(--text1)">'+fmt(oPrice)+'</div>';
+    html+='</aside>';
   }
   html+='</div>';
 
@@ -2350,8 +2372,6 @@ function orderCard(o){
     if(!o.sdek)html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="markSdek(this.dataset.oid)">СДЭК ✓</button>';
     if(closed)
       html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="reopenOrder(this.dataset.oid)">Открыть</button>';
-    else
-      html+='<button class="btn btn-sm btn-green" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="closeOrder(this.dataset.oid)">Закрыть заказ</button>';
     html+='<button class="btn btn-sm btn-secondary" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="openEdit(this.dataset.oid)">Изменить</button>';
     if(o.status==='archived')
       html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="unarchiveOrder(this.dataset.oid)">Вернуть из архива</button>';
