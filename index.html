@@ -457,12 +457,12 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .order-delivery-missing{padding:7px 9px}
 .order-card-body{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:0 16px 12px;min-width:0}
 .order-card-body.has-finance{grid-template-columns:minmax(0,1fr) 146px}
-.order-card-content{min-width:0}
+.order-card-content{grid-column:1;grid-row:1;min-width:0}
 .order-card-content .order-badges{padding:8px 0 0}
 .order-card-content .order-delivery{margin:8px 0 0}
-.order-quick-actions{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0 0}
+.order-quick-actions{grid-column:1;grid-row:2;display:flex;flex-wrap:wrap;gap:6px;padding:0}
 .order-quick-actions .btn{font-size:11px;line-height:1.25;padding:7px 9px;white-space:normal;text-align:center}
-.order-card-finance{align-self:stretch;border-left:1px solid var(--border);padding:8px 0 0 10px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.order-card-finance{grid-column:2;grid-row:1 / span 2;align-self:stretch;border-left:1px solid var(--border);padding:8px 0 0 10px;display:flex;flex-direction:column;gap:4px;min-width:0}
 .order-card-finance-row{display:flex;align-items:baseline;justify-content:space-between;gap:4px;min-width:0;line-height:1.25}
 .order-card-finance-row span{font-size:9px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .order-card-finance-row b{font-size:11px;color:var(--text2);white-space:nowrap;flex:none}
@@ -471,7 +471,7 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .order-card-finance-row.is-muted b{color:var(--text3);font-weight:600}
 .order-card-finance-row.is-margin b{color:var(--green-ink)}
 .order-card-finance-row.is-wage-first{border-top:1px solid var(--border);margin-top:2px;padding-top:5px}
-@media(max-width:420px){.order-card-body.has-finance{grid-template-columns:minmax(0,1fr) 124px;gap:6px}.order-card-finance{padding-left:7px}.order-card-finance-row span{font-size:8px}.order-card-finance-row b{font-size:10px}.order-card-finance-row.is-price b{font-size:12px}}
+@media(max-width:420px){.order-card-body.has-finance{grid-template-columns:minmax(0,1fr) 124px;gap:6px}.order-card-finance{grid-row:1;padding-left:7px}.order-card-finance-row span{font-size:10px}.order-card-finance-row b{font-size:11px}.order-card-finance-row.is-price b{font-size:12px}.order-quick-actions{grid-column:1/-1;grid-row:2}}
 
 </style>
 </head>
@@ -2274,11 +2274,12 @@ function orderCard(o){
     }else html+='<div class="order-delivery order-delivery-missing">Доставка: адрес не указан</div>';
   }
 
+  var quickActions='';
   if((canFinance&&o.status==='ready')||(canEdit&&!closed)){
-    html+='<div class="order-quick-actions">';
-    if(canFinance&&o.status==='ready')html+='<button type="button" class="btn btn-sm btn-secondary" data-val="'+uiText(payMsgText(o))+'" onclick="copyField(this.dataset.val,this)">Сообщение на оплату</button>';
-    if(canEdit&&!closed)html+='<button type="button" class="btn btn-sm btn-green" data-oid="'+uiText(o.id)+'" onclick="closeOrder(this.dataset.oid)">Закрыть заказ</button>';
-    html+='</div>';
+    quickActions='<div class="order-quick-actions">';
+    if(canFinance&&o.status==='ready')quickActions+='<button type="button" class="btn btn-sm btn-secondary" data-val="'+uiText(payMsgText(o))+'" onclick="copyField(this.dataset.val,this)">Сообщение на оплату</button>';
+    if(canEdit&&!closed)quickActions+='<button type="button" class="btn btn-sm btn-green" data-oid="'+uiText(o.id)+'" onclick="closeOrder(this.dataset.oid)">Закрыть заказ</button>';
+    quickActions+='</div>';
   }
 
   // «В архив» — видна сразу, без разворачивания карточки, но только пока заказ «Отправлен».
@@ -2306,6 +2307,7 @@ function orderCard(o){
     }
     html+='</aside>';
   }
+  html+=quickActions;
   html+='</div>';
 
   // ── DETAIL BLOCK ──
