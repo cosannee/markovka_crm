@@ -431,6 +431,11 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 @media(max-width:600px){.fin-wage-head{display:none}.fin-wage-row{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px;margin-bottom:6px;border:1px solid var(--border);border-radius:12px}.fin-wage-name{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px}.fin-wage-row small{display:block;margin:0 0 4px;font-size:10px}.fin-wage-name small{font-size:11px;margin:0}.fin-wage-row>div:not(:first-child){text-align:left}.fin-wage-row b{font-size:13px;overflow-wrap:anywhere}.fin-wage-total b{font-size:14px}}
 
 </style>
+<style>
+.dash-summary{margin:0 0 24px}.dash-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.dash-metrics>div{background:var(--card,#fff);border:1px solid var(--border,#e4e9e5);border-radius:16px;padding:18px;min-width:0}.dash-metrics small,.dash-metrics span{display:block;color:var(--text3);font-size:12px;line-height:1.5}.dash-metrics strong{display:block;font-size:23px;letter-spacing:-.5px;margin:8px 0;color:var(--accent);overflow-wrap:anywhere}.dash-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.dash-load{margin:24px 0}.dash-person{border-bottom:1px solid var(--border,#e4e9e5);padding:4px 0}.dash-person summary{display:flex;align-items:center;gap:12px;cursor:pointer;min-height:64px;list-style:none}.dash-person summary::-webkit-details-marker,.dash-wages summary::-webkit-details-marker{display:none}.dash-name{flex:1;min-width:0;font-weight:600;overflow-wrap:anywhere}.dash-name small,.dash-wages small{display:block;font-size:12px;color:var(--text3);font-weight:400;margin-top:4px}.dash-ready{font-size:12px;color:var(--accent);white-space:nowrap}.dash-stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:4px 0 12px}.dash-stages span{font-size:12px;background:var(--bg);border-radius:8px;padding:10px;display:flex;justify-content:space-between;gap:8px}.dash-zero{color:var(--text3)}.dash-idle{font-size:12px;color:var(--text3);margin:14px 0}.dash-idle summary{cursor:pointer;min-height:32px}.dash-wages{border:1px solid var(--border,#e4e9e5);border-radius:14px;padding:14px;margin:20px 0}.dash-wages>summary{display:flex;gap:12px;justify-content:space-between;align-items:center;cursor:pointer;list-style:none;min-height:44px;font-size:14px}.dash-wages>summary>b{white-space:nowrap;color:var(--accent)}#overview-attention{scroll-margin-top:90px}.dash-history{margin:22px 0}.dash-history>summary{cursor:pointer;font-size:14px;min-height:44px;display:flex;align-items:center;color:var(--text3)}
+@media(max-width:600px){.dash-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.dash-metrics>div{padding:12px}.dash-metrics>div:first-child{grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.dash-metrics>div:first-child strong{font-size:20px;margin:0}.dash-metrics>div:first-child span{margin-left:auto}.dash-metrics strong{font-size:20px}.dash-stages{grid-template-columns:repeat(2,minmax(0,1fr))}.dash-wages>summary{align-items:flex-start;flex-direction:column}.dash-load{margin-top:18px}.dash-person summary{gap:8px}.overview-grid{gap:8px}.overview-tile{padding:14px!important}.overview-count{font-size:26px!important}}
+
+</style>
 </head>
 <body>
 
@@ -1371,7 +1376,7 @@ async function login(r,userName,userLabel,mName){
   realRole=r;isPreviewMode=false;
   document.getElementById('btn-switch-role').style.display=r==='manager'?'inline-flex':'none';
   document.getElementById('h-preview-badge').style.display='none';
-  tab=r==='master'?'master':'list';
+  tab=r==='master'?'master':'overview';
   fStatus='all';
   // 1) Сначала показываем данные из локального кэша (быстрое открытие)
   const cached=readCache();
@@ -1667,7 +1672,7 @@ function switchPreview(r,name,label,mName){
     document.getElementById('h-preview-badge').style.display='inline-block';
     document.getElementById('h-preview-badge').textContent='просмотр';
   }
-  tab=r==='master'?'master':'list';
+  tab=r==='master'?'master':'overview';
   fStatus='all';
   renderTabs();renderTab(tab);
 }
@@ -1702,7 +1707,7 @@ function appNavItems(){
       // не нужен ни Даше, ни Александре.
       ...((role==='director'||role==='manager')?[{id:'week',label:'Моя неделя'}]:[]),
       ...(canEdit?[{id:'add',label:'Добавить'}]:[]),
-      ...(canEdit?[{id:'overview',label:'Обзор недели'}]:[]),
+      ...(canEdit?[{id:'overview',label:'Обзор'}]:[]),
       // Банк доступен только Александре (manager) и Дарье (director) — Свете раздел не показывается
       ...(role==='manager'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       ...(role==='director'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
@@ -1711,7 +1716,7 @@ function appNavItems(){
       {id:'fabrics',label:'Палитра тканей'},
     ];
 }
-function appPrimaryIds(){return role==='master'?['master','week','finance']:['list','week','payments'];}
+function appPrimaryIds(){return role==='master'?['master','week','finance']:['overview','list','payments'];}
 function appNavCount(id){
   if(id==='sdek')return role==='manager'?sdekQueueOrders().filter(function(o){return !hasSdekNumber(o);}).length:sdekExportList().length;
   if(id==='todos')return unreadTaskCount();
@@ -2660,7 +2665,7 @@ function tplWeekOverview(){
   if(!canSeeOverview())return '';
   var list=overviewOrders(),groups={shipping:[],unpaid:[],waybill:[],production:[],check:[]};
   list.forEach(function(o){var key=overviewBucket(o);if(key)groups[key].push(o);});
-  var attention=list.filter(function(o){var key=overviewBucket(o);return key&&(overviewGroup==='all'||key===overviewGroup);});
+  var attention=list.filter(function(o){var key=overviewBucket(o);return key&&(overviewGroup==='all'?(key!=='production'||!!overviewIssue(o)):key===overviewGroup);});
   var priority={check:0,unpaid:1,waybill:2,shipping:3,production:4};
   attention.sort(function(a,b){return priority[overviewBucket(a)]-priority[overviewBucket(b)]||(a.readyAt||a.created||0)-(b.readyAt||b.created||0);});
   var bounds=overviewWeekBounds(),stats=overviewWeekStats(list,bounds),totalDue=groups.unpaid.reduce(function(s,o){return s+Math.max(0,orderTotal(o)-(parseFloat(o.prepaid)||0));},0);
@@ -2668,7 +2673,7 @@ function tplWeekOverview(){
   var html='<p class="fabric-intro">Текущая работа: «В работе», «Готов» и «Готов к отправке». Новые заказы и план следующей недели сюда не входят.</p>'
     +'<div class="fg" style="margin-bottom:16px"><label for="overview-master">Мастер</label><select id="overview-master" onchange="setOverviewFilter(\'master\',this.value)"><option value="all">Все мастера</option>';
   Array.from(new Set(orders.map(function(o){return o.master;}).filter(Boolean))).sort().forEach(function(m){html+='<option value="'+uiText(m)+'"'+(overviewMaster===m?' selected':'')+'>'+uiText(m)+'</option>';});
-  html+='</select></div><div class="overview-grid">';
+  html+='</select></div>'+tplDashboardSummary(list)+'<div class="overview-toolbar"><h2>Оплаты и отправки</h2></div><div class="overview-grid">';
   ['shipping','unpaid','waybill','production'].forEach(function(key){
     html+='<button type="button" class="overview-tile'+(overviewGroup===key?' selected':'')+'" aria-pressed="'+(overviewGroup===key)+'" data-group="'+key+'" onclick="setOverviewFilter(\'group\',this.dataset.group)">'
       +'<span class="overview-count">'+groups[key].length+'</span><span class="overview-label">'+OVERVIEW_GROUPS[key].title+'</span>'
@@ -2676,11 +2681,11 @@ function tplWeekOverview(){
   });
   html+='</div>';
   if(groups.check.length)html+='<button class="btn btn-secondary btn-full" style="margin:12px 0" onclick="setOverviewFilter(\'group\',\'check\')">Проверить данные · '+groups.check.length+'</button>';
-  html+='<section class="overview-week"><div class="overview-toolbar"><h2>Итоги недели</h2><div style="display:flex;gap:6px"><button class="btn btn-sm btn-secondary" aria-label="Предыдущая неделя" onclick="setOverviewFilter(\'week\',-1)">←</button><button class="btn btn-sm btn-secondary" aria-label="Следующая неделя" onclick="setOverviewFilter(\'week\',1)"'+(overviewWeekOffset===0?' disabled':'')+'>→</button></div></div>'
+  html+='<details class="dash-history"'+(overviewWeekOffset!==0?' open':'')+'><summary>События за календарную неделю</summary><section class="overview-week"><div class="overview-toolbar"><h2>Итоги недели</h2><div style="display:flex;gap:6px"><button class="btn btn-sm btn-secondary" aria-label="Предыдущая неделя" onclick="setOverviewFilter(\'week\',-1)">←</button><button class="btn btn-sm btn-secondary" aria-label="Следующая неделя" onclick="setOverviewFilter(\'week\',1)"'+(overviewWeekOffset===0?' disabled':'')+'>→</button></div></div>'
     +'<p class="overview-note">'+overviewDate(bounds.start)+' — '+overviewDate(bounds.end-1)+' · Владивосток</p>'
     +'<div class="overview-totals"><span>Закрыли <b>'+stats.closed+'</b></span><span>Изготовили <b>'+stats.ready+'</b></span><span>Отправили <b>'+stats.sent+'</b></span></div>'
-    +'<p class="overview-note">По сохранённым датам событий. Заказ может учитываться в нескольких итогах. Старые события без даты не включаются.'+(stats.missingSent?' Без даты отправки: '+stats.missingSent+'.':'')+'</p></section>';
-  html+='<div class="overview-toolbar"><h2>'+(overviewGroup==='all'?'Требуют внимания':OVERVIEW_GROUPS[overviewGroup].title)+' · '+attention.length+'</h2>'
+    +'<p class="overview-note">По сохранённым датам событий. Заказ может учитываться в нескольких итогах. Старые события без даты не включаются.'+(stats.missingSent?' Без даты отправки: '+stats.missingSent+'.':'')+'</p></section></details>';
+  html+='<div class="overview-toolbar" id="overview-attention"><h2>'+(overviewGroup==='all'?'Требуют внимания':OVERVIEW_GROUPS[overviewGroup].title)+' · '+attention.length+'</h2>'
     +(overviewGroup!=='all'?'<button class="btn btn-sm btn-ghost" onclick="setOverviewFilter(\'group\',\'all\')">Все группы</button>':'')+'</div>';
   if(!attention.length)html+='<div class="empty">Нет заказов, требующих действий</div>';
   attention.slice(0,overviewLimit).forEach(function(o){
@@ -6677,6 +6682,46 @@ function finWagePlan(active){
  rows.forEach(function(r){h+='<div class="fin-wage-row"><div class="fin-wage-name"><b>'+uiText(r.name==='Александра'?'Александра — мастер':r.name)+'</b><small>'+r.n+' '+pluralZakaz(r.n)+'</small></div><div><small>По плану</small><b>'+fmt(r.plan)+'</b></div><div><small>Уже выдано</small><b>'+fmt(r.paid)+'</b></div><div><small>Осталось выдать</small><b>'+fmt(r.left)+'</b></div></div>';});
  if(!rows.length)h+='<p class="fin-note">В текущем плане пока нет заказов.</p>';
  h+='<div class="fin-wage-row fin-wage-total"><div class="fin-wage-name"><b>Итого</b><small>'+active.length+' '+pluralZakaz(active.length)+'</small></div><div><small>По плану</small><b>'+fmt(total.plan)+'</b></div><div><small>Уже выдано</small><b>'+fmt(total.paid)+'</b></div><div><small>Осталось выдать</small><b>'+fmt(total.left)+'</b></div></div><p class="fin-note">«Осталось выдать» — бюджет до завершения всего плана, с учётом авансов и итоговых выплат. Доступные сейчас выплаты находятся в разделе «Выплаты». По старым отметкам без точной суммы показан расчёт; новые выплаты учитываются по фактически проведённым суммам.</p></section>';
+ return h;
+}
+
+</script>
+<script>
+// Read-only weekly management dashboard. Membership follows workflow status, not created date.
+function dashboardData(list){
+ var active=list.filter(function(o){return ['work','ready','planned'].includes(o.status);});
+ var names=Array.from(new Set(MASTERS.concat(active.map(function(o){return o.master||'Не назначен';}))));
+ var people=names.map(function(name){
+  var own=active.filter(function(o){return (o.master||'Не назначен')===name;});
+  var stages=[{key:'unmarked',label:'Этап не отмечен'}].concat(CRAFT_STAGES).concat([{key:'ready',label:'Готов'},{key:'planned',label:'Готов к отправке'}]);
+  return {name:name,orders:own.length,toys:finSum(own,orderQty),ready:own.filter(productionReady).length,stages:stages.map(function(s){return {key:s.key,label:s.label,n:own.filter(function(o){return (o.status==='work'?(CRAFT_STAGES.some(function(c){return c.key===effectiveCraftStage(o);})?effectiveCraftStage(o):'unmarked'):o.status)===s.key;}).length};})};
+ }).sort(function(a,b){return b.orders-a.orders||a.name.localeCompare(b.name,'ru');});
+ return {active:active,people:people,toys:finSum(active,orderQty),due:finSum(active,function(o){return Math.max(0,orderTotal(o)-(Number(o.prepaid)||0));}),wages:finSum(active,function(o){return calcMasterPay(o)+calcCosts(o).sasha;}),coo:finSum(active,function(o){return calcCosts(o).sasha;}),left:finSum(active,function(o){return remainingPay(o)+(o.sashaPaid?0:Math.max(0,calcCosts(o).sasha-finPaid(o,'sasha')));})};
+}
+function dashboardMaster(name){
+ if(!canSeeOverview())return;
+ overviewMaster=name;overviewGroup='production';overviewLimit=25;
+ renderTab('overview');document.getElementById('overview-attention')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function tplDashboardSummary(list){
+ if(!canSeeOverview())return '';
+ var d=dashboardData(list);
+ var h='<section class="dash-summary" aria-label="Текущая рабочая неделя"><div class="dash-metrics">'
+ +'<div><small>Текущий план</small><strong>'+d.active.length+' '+pluralZakaz(d.active.length)+'</strong><span>Игрушек: '+d.toys+'</span></div>'
+ +'<div><small>Ждём от клиентов</small><strong>'+fmt(d.due)+'</strong><span>Остаток оплаты по текущему плану</span></div>'
+ +'<div><small>Зарплаты при выполнении плана</small><strong>'+fmt(d.wages)+'</strong><span>В том числе COO: '+fmt(d.coo)+'</span></div></div>'
+ +'<div class="dash-links"><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'week\')">Моя неделя</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'sdek\')">СДЭК</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'stats\')">Финансы</button></div></section>'
+ +'<section class="dash-load" aria-label="Загрузка мастеров"><div class="overview-toolbar"><h2>Загрузка мастеров</h2></div><p class="overview-note">Количество заказов и игрушек, без оценки сложности. Этапы указаны в заказах.</p>';
+ var people=overviewMaster==='all'?d.people:d.people.filter(function(p){return p.name===overviewMaster;});
+ people.filter(function(p){return p.orders;}).forEach(function(p){
+  h+='<details class="dash-person"><summary><span class="dash-name">'+uiText(p.name)+'<small>'+p.orders+' '+pluralZakaz(p.orders)+' · игрушек: '+p.toys+'</small></span><span class="dash-ready">Готово '+p.ready+' / '+p.orders+'</span><span aria-hidden="true">⌄</span></summary><div class="dash-stages">';
+  p.stages.forEach(function(s){h+='<span'+(!s.n?' class="dash-zero"':'')+'>'+uiText(s.label)+' <b>'+s.n+'</b></span>';});
+  h+='</div><button class="btn btn-sm btn-ghost" data-master="'+uiText(p.name)+'" onclick="dashboardMaster(this.dataset.master)">Открыть заказы в работе</button></details>';
+ });
+ if(!d.active.length)h+='<p class="overview-note">В текущем плане пока нет заказов.</p>';
+ var idle=people.filter(function(p){return !p.orders;});
+ if(idle.length)h+='<details class="dash-idle"><summary>Без заказов в текущем плане · '+idle.length+'</summary><p>'+idle.map(function(p){return uiText(p.name);}).join(' · ')+'</p></details>';
+ h+='</section><details class="dash-wages"><summary><span>План зарплат, включая COO<small>Осталось выдать при выполнении плана</small></span><b>'+fmt(d.left)+'</b></summary>'+finWagePlan(d.active)+'</details>';
  return h;
 }
 
