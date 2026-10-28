@@ -441,6 +441,11 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 @media(max-width:600px){.an-grid{grid-template-columns:1fr 1fr;gap:8px}.an-grid>.an-metric:last-child:nth-child(odd){grid-column:1/-1}.an-metric{padding:12px}.an-metric>strong{font-size:18px}.an-section>summary{align-items:flex-start}.an-period b{font-size:11px}}
 
 </style>
+<style>
+.cap-summary{margin:24px 0}.cap-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.cap-head h2{font-size:17px;margin:0}.cap-head p{font-size:12px;color:var(--text3);margin:3px 0 0}.cap-total{display:flex;gap:18px;flex-wrap:wrap;margin-top:13px}.cap-total div{display:flex;align-items:baseline;gap:6px}.cap-total b{font-size:19px;color:var(--accent)}.cap-total span{font-size:11px;color:var(--text3)}.cap-overall{height:8px;background:var(--bg2);border-radius:8px;overflow:hidden;margin-top:10px}.cap-overall i{display:block;height:100%;background:var(--accent);border-radius:8px}.cap-empty{font-size:12px;color:var(--text3);margin:12px 0 0}.load-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.load-tile{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:11px;min-width:0}.load-title{display:flex;align-items:center;justify-content:space-between;gap:6px}.load-title b{font-size:13px;overflow:hidden;text-overflow:ellipsis}.load-link,.load-next{border:0;background:none;font:inherit;color:inherit;cursor:pointer}.load-link{font-size:11px;color:var(--text3);white-space:nowrap;padding:5px}.load-now>span{display:block;font-size:10px;color:var(--text3);margin:3px 0 5px}.load-bar{display:flex;height:5px;background:var(--bg2);border-radius:5px;overflow:hidden}.load-bar i{height:100%;background:var(--text3)}.load-bar .ready{background:var(--green)}.load-bar .ship{background:var(--blue)}.load-next{display:block;width:100%;text-align:left;padding:9px 0 0;margin-top:8px;border-top:1px solid var(--border)}.load-next>span{display:flex;justify-content:space-between;gap:6px;font-size:11px}.load-next small{display:block;font-size:10px;color:var(--text3);margin-top:2px}.cap-cells{display:flex;gap:3px;flex-wrap:wrap;margin-top:7px;min-height:8px}.cap-cells i{width:8px;height:8px;border-radius:2px;background:var(--bg2)}.cap-cells i.filled{background:var(--accent)}.cap-cells i.over{background:var(--orange)}.cap-cells b{font-size:9px}.cap-legend{font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px}.cap-legend i{width:7px;height:7px;border-radius:2px;background:var(--text3)}.cap-legend i:nth-of-type(2){background:var(--green)}.cap-legend i:nth-of-type(3){background:var(--blue)}.cap-inputs{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cap-input{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--bg);border-radius:10px;padding:8px 10px;font-size:13px}.cap-input input{width:70px;padding:7px}.cap-modal{max-width:480px}
+@media(max-width:760px){.load-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cap-legend{display:none}.cap-total{gap:8px 14px}.cap-total div{display:block}.cap-total span{display:block}.load-tile{padding:10px}.cap-cells i{width:7px;height:7px}.cap-inputs{grid-template-columns:1fr}}
+
+</style>
 </head>
 <body>
 
@@ -5393,6 +5398,7 @@ function tplTasks(){
   // Видимость: личные задачи (to=мое имя) видны только мне; остальное видят только Саша/Даша
   const me=myTaskName();
   const visible=tasks.filter(function(t){
+    if(t.kind==='capacity_plan')return false;
     if(t.to===me) return true; // личные видны только мне
     return role!=='master'; // остальное видят только Саша/Даша
   });
@@ -5464,6 +5470,7 @@ function unreadTaskCount(){
   var me=myTaskName();
   var seen=0;try{seen=parseInt(crmStorage.getItem('tasks_seen_'+me))||0;}catch(e){}
   return tasks.filter(function(t){
+    if(t.kind==='capacity_plan')return false;
     if(t.done||t.from===me)return false;
     var forMe=t.to===me||(t.to==='all'&&role!=='master');
     return forMe&&(t.created>seen);
@@ -6824,6 +6831,83 @@ function tplWeeklyAnalytics(){
  var unknown=m.tx.filter(function(t){return t.type==='expense'&&(t.source==='payout'||/^ЗП/.test(t.category||''))&&!anRecipient(t)&&t.category!=='Дивиденды/выводы';});
  h+='<details class="an-section"><summary>Полнота данных'+(missing.length+badDates.length+unknown.length?' · есть ограничения':'')+'</summary><p class="fin-note">По всей базе: закрытых заказов без даты — '+missing.length+'; операций банка без корректной даты — '+badDates.length+'. Они не включены в итоги. По старым заказам без дат готовности или отправки производственные итоги также неполные.</p><p class="fin-note">В выбранном периоде выплат без однозначного получателя: '+unknown.length+' ('+fmt(finSum(unknown,function(t){return t.amount;}))+'). Они включены в расходы, но не распределены по мастерам. Зачёт ранее выданного аванса не является новым расходом. Данные отражают текущее состояние записей после исправлений.</p><div class="an-order-links">'+missing.slice(0,30).map(function(o){return '<button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" onclick="jumpTo(this.dataset.id)">'+uiText(o.num||'Без номера')+'</button>';}).join('')+'</div>'+(missing.length>30?'<p class="fin-note">Показаны первые 30 заказов без даты.</p>':'')+'</details>';
  return h+'<div class="an-order-links"><button class="btn btn-primary" onclick="exportAnalyticsCsv()">Скачать CSV</button><button class="btn btn-secondary" onclick="downloadAnalyticsPng()">Скачать PNG</button></div></div>';
+}
+
+</script>
+<script>
+// Compact current workload and a persistent, week-specific capacity plan.
+var CAPACITY_KIND='capacity_plan';
+function capacityWeek(){
+  var b=overviewWeekBounds(),start=b.end,end=b.end+7*86400000-1;
+  return {start:start,end:end,key:new Date(start+10*3600000).toISOString().slice(0,10),label:overviewDate(start)+' — '+overviewDate(end)};
+}
+function capacityRows(){return tasks.filter(function(t){return t&&t.kind===CAPACITY_KIND;});}
+function capacityPlan(){var w=capacityWeek();return capacityRows().find(function(t){return t.weekStart===w.key;})||null;}
+function capacityValues(){var p=capacityPlan();return p&&p.capacities&&typeof p.capacities==='object'?p.capacities:{};}
+function capacityAssigned(){
+  var known=new Set(MASTERS),map={};MASTERS.forEach(function(n){map[n]=[];});var unassigned=[];
+  orders.filter(function(o){return o.status==='nextweek';}).forEach(function(o){if(known.has(o.master))map[o.master].push(o);else unassigned.push(o);});
+  return {map:map,unassigned:unassigned,total:finSum(Object.values(map),function(list){return list.length;})+unassigned.length};
+}
+function capacityLatestValues(){
+  var rows=capacityRows().filter(function(t){return t.capacities&&typeof t.capacities==='object';}).sort(function(a,b){return String(b.weekStart||'').localeCompare(String(a.weekStart||''));});
+  return rows.length?rows[0].capacities:{};
+}
+function capacityCells(assigned,limit){
+  var h='<div class="cap-cells" aria-label="Назначено '+assigned+' из '+limit+'">',shown=Math.min(Math.max(limit,assigned),30);
+  for(var i=0;i<shown;i++)h+='<i class="'+(i<assigned?'filled':'')+(i>=limit?' over':'')+'" aria-hidden="true"></i>';
+  if(Math.max(limit,assigned)>30)h+='<b>+'+(Math.max(limit,assigned)-30)+'</b>';
+  return h+'</div>';
+}
+function capacityCurrentBar(person){
+  if(!person.orders)return '<div class="load-bar" aria-label="Текущих заказов нет"><i></i></div>';
+  var planned=person.stages.find(function(s){return s.key==='planned';}).n,ready=person.stages.find(function(s){return s.key==='ready';}).n,work=Math.max(0,person.orders-ready-planned);
+  return '<div class="load-bar" role="img" aria-label="В работе '+work+', готово '+ready+', готово к отправке '+planned+'"><i style="width:'+(work/person.orders*100)+'%"></i><i class="ready" style="width:'+(ready/person.orders*100)+'%"></i><i class="ship" style="width:'+(planned/person.orders*100)+'%"></i></div>';
+}
+function openCapacityPlan(){
+  if(!canSeeOverview()||isPreviewMode)return;
+  var w=capacityWeek(),current=capacityValues(),seed=Object.keys(current).length?current:capacityLatestValues(),old=document.getElementById('capacity-dialog');if(old)old.remove();
+  var el=document.createElement('div');el.id='capacity-dialog';el.className='modal-bg';
+  var rows=MASTERS.map(function(name){return '<label class="cap-input"><span>'+uiText(name)+'</span><input type="number" min="0" max="30" step="1" inputmode="numeric" data-capacity-master="'+uiText(name)+'" value="'+Math.max(0,Math.min(30,parseInt(seed[name])||0))+'"></label>';}).join('');
+  el.innerHTML='<div class="modal cap-modal" role="dialog" aria-modal="true" aria-labelledby="cap-title"><h2 id="cap-title" class="modal-title">План на следующую неделю</h2><p class="fin-note">'+uiText(w.label)+' · укажите количество заказов, которое мастер готов взять. Максимум 30 на человека.</p><div class="cap-inputs">'+rows+'</div><div id="cap-error" class="fin-error" role="alert"></div><div class="modal-actions"><button class="btn btn-secondary" onclick="document.getElementById(\'capacity-dialog\').remove()">Отмена</button><button id="cap-save" class="btn btn-primary" onclick="saveCapacityPlan()">Сохранить план</button></div></div>';
+  document.body.appendChild(el);el.addEventListener('click',function(e){if(e.target===el)el.remove();});
+}
+async function saveCapacityPlan(){
+  if(!canSeeOverview()||isPreviewMode)return;
+  var values={},valid=true;document.querySelectorAll('[data-capacity-master]').forEach(function(inp){var n=Number(inp.value);if(!Number.isInteger(n)||n<0||n>30)valid=false;values[inp.dataset.capacityMaster]=n;});
+  var err=document.getElementById('cap-error');if(!valid){if(err)err.textContent='Введите целое число от 0 до 30';return;}
+  var btn=document.getElementById('cap-save');if(btn)btn.disabled=true;
+  var w=capacityWeek(),row=capacityPlan(),before=row?JSON.parse(JSON.stringify(row)):null;
+  if(row){row.capacities=values;row.updatedAt=Date.now();row.updatedBy=myTaskName();}
+  else{row={id:'capacity_'+w.key,kind:CAPACITY_KIND,weekStart:w.key,capacities:values,from:myTaskName(),to:'all',text:'План загрузки мастеров',done:false,created:Date.now(),updatedAt:Date.now(),updatedBy:myTaskName()};tasks.push(row);}
+  var ok=await saveTasks(tasks);
+  if(!ok){if(before)replaceInPlace(row,before);else tasks=tasks.filter(function(t){return t!==row;});if(err)err.textContent='Не удалось сохранить план. Проверьте связь и повторите.';if(btn)btn.disabled=false;return;}
+  document.getElementById('capacity-dialog')?.remove();renderTab('overview');toast('План следующей недели сохранён');
+}
+function dashboardMaster(name,status){
+  if(!canSeeOverview())return;
+  overviewMaster=name;overviewGroup=status==='nextweek'?'all':'production';overviewLimit=25;
+  if(status==='nextweek'){fMaster=name;fStatus='nextweek';navigateApp('list');return;}
+  renderTab('overview');document.getElementById('overview-attention')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function tplDashboardSummary(list){
+  if(!canSeeOverview())return '';
+  var d=dashboardData(orders),assigned=capacityAssigned(),caps=capacityValues(),plan=capacityPlan(),w=capacityWeek();
+  var totalCap=finSum(MASTERS,function(n){return Math.max(0,parseInt(caps[n])||0);}),assignedKnown=assigned.total-assigned.unassigned.length,find=Math.max(0,totalCap-assigned.total),over=Math.max(0,assigned.total-totalCap);
+  var h='<section class="dash-summary" aria-label="Текущая рабочая неделя"><div class="dash-metrics">'
+   +'<div><small>Текущий план</small><strong>'+d.active.length+' '+pluralZakaz(d.active.length)+'</strong><span>Игрушек: '+d.toys+'</span></div>'
+   +'<div><small>Ждём от клиентов</small><strong>'+fmt(d.due)+'</strong><span>Остаток оплаты</span></div>'
+   +'<div><small>Зарплаты по плану</small><strong>'+fmt(d.wages)+'</strong><span>В том числе COO: '+fmt(d.coo)+'</span></div></div>'
+   +'<div class="dash-links"><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'week\')">Моя неделя</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'sdek\')">СДЭК</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'stats\')">Финансы</button></div></section>';
+  h+='<section class="cap-summary" aria-label="План следующей недели"><div class="cap-head"><div><h2>Следующая неделя</h2><p>'+uiText(w.label)+'</p></div><button class="btn btn-sm btn-secondary" onclick="openCapacityPlan()">'+(plan?'Изменить план':'Настроить план')+'</button></div>';
+  if(plan){var pct=totalCap?Math.min(100,assignedKnown/totalCap*100):0;h+='<div class="cap-total"><div><b>'+assignedKnown+' / '+totalCap+'</b><span>назначено мастерам</span></div><div><b>'+find+'</b><span>ещё нужно найти</span></div>'+(assigned.unassigned.length?'<div><b>'+assigned.unassigned.length+'</b><span>ждут назначения</span></div>':'')+(over?'<div><b>'+over+'</b><span>сверх общего плана</span></div>':'')+'</div><div class="cap-overall" role="progressbar" aria-label="Общий план следующей недели" aria-valuemin="0" aria-valuemax="'+totalCap+'" aria-valuenow="'+Math.min(assignedKnown,totalCap)+'"><i style="width:'+pct+'%"></i></div>';}
+  else h+='<p class="cap-empty">Укажите, сколько заказов готов взять каждый мастер. Сейчас в статусе «След. неделя»: <b>'+assigned.total+'</b>.</p>';
+  h+='</section><section class="dash-load" aria-label="Загрузка мастеров"><div class="overview-toolbar"><h2>Загрузка мастеров</h2><span class="cap-legend"><i></i> в работе <i></i> готово <i></i> к отправке</span></div><div class="load-grid">';
+  var people=d.people.slice().sort(function(a,b){return MASTERS.indexOf(a.name)-MASTERS.indexOf(b.name);});
+  people.forEach(function(p){var next=assigned.map[p.name]?assigned.map[p.name].length:0,limit=Math.max(0,parseInt(caps[p.name])||0),left=Math.max(0,limit-next);
+    h+='<article class="load-tile"><div class="load-title"><b>'+uiText(p.name)+'</b><button class="load-link" data-master="'+uiText(p.name)+'" onclick="dashboardMaster(this.dataset.master,\'work\')">Сейчас '+p.orders+'</button></div><div class="load-now"><span>Готово '+p.ready+' из '+p.orders+'</span>'+capacityCurrentBar(p)+'</div><button class="load-next" data-master="'+uiText(p.name)+'" onclick="dashboardMaster(this.dataset.master,\'nextweek\')"><span>След. неделя <b>'+next+(plan?' / '+limit:'')+'</b></span><small>'+(plan?(next>limit?'Сверх плана '+(next-limit):'Свободно '+left):'План не задан')+'</small>'+capacityCells(next,plan?limit:next)+'</button></article>';});
+  h+='</div></section><details class="dash-wages"><summary><span>План зарплат, включая COO<small>Осталось выдать при выполнении плана</small></span><b>'+fmt(d.left)+'</b></summary>'+finWagePlan(d.active)+'</details>';
+  return h;
 }
 
 </script>
