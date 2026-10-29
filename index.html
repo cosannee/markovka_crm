@@ -2282,9 +2282,9 @@ function orderCard(o){
     quickActions+='</div>';
   }
 
-  // «В архив» — видна сразу, без разворачивания карточки, но только пока заказ «Отправлен».
-  // До этого статуса убирать заказ из работы рано.
-  if(canEdit&&o.status==='sent'){
+  // Архив — отдельное хранилище, поэтому отложенный заказ можно убрать из работы
+  // на любом этапе. Денежные операции остаются связанными с заказом.
+  if(canEdit&&o.status!=='archived'){
     html+='<div style="padding:6px 0 0">'
       +'<button class="btn btn-sm btn-ghost" style="font-size:11px" data-oid="'+o.id+'" onclick="event.stopPropagation();archiveOrder(this.dataset.oid)">В архив</button>'
       +'</div>';
@@ -2360,7 +2360,7 @@ function orderCard(o){
   html+='<div style="display:flex;flex-direction:column;gap:2px">'
     +'<span style="font-size:9px;color:var(--text3);font-weight:700;letter-spacing:0">Статус</span>'
     +'<select class="st-select" data-oid="'+o.id+'" onchange="setStatus(this.dataset.oid,this.value)">';
-  orderStatusOptions(o.status).forEach(function(k){
+  (o.status==='archived'?['archived']:orderStatusOptions(o.status)).forEach(function(k){
     var lock=shipBlocked(o,k)||!canChangeOrderStatus(o,k);
     html+='<option value="'+k+'"'+(o.status===k?' selected':'')+(lock?' disabled':'')+'>'+STATUSES[k].label+(lock?' — недоступно':'')+'</option>';
   });
@@ -2379,8 +2379,9 @@ function orderCard(o){
     html+='<button class="btn btn-sm btn-secondary" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="openEdit(this.dataset.oid)">Изменить</button>';
     if(o.status==='archived')
       html+='<button class="btn btn-sm btn-ghost" style="font-size:11px;margin-top:14px" data-oid="'+o.id+'" onclick="unarchiveOrder(this.dataset.oid)">Вернуть из архива</button>';
-    // Ручной перенос «В архив» — на компактном виде карточки (см. orderCard), не здесь
-    html+='<button style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;margin-top:14px;margin-left:auto" data-oid="'+o.id+'" onclick="delOrder(this.dataset.oid)">Удалить</button>';
+    // Ручной перенос «В архив» — на компактном виде карточки (см. orderCard).
+    // Финансовая история должна оставаться связанной с заказом, поэтому её нельзя удалить.
+    if(!hasOrderFinanceHistory(o))html+='<button style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;margin-top:14px;margin-left:auto" data-oid="'+o.id+'" onclick="delOrder(this.dataset.oid)">Удалить</button>';
   }
   html+='</div>';
 
@@ -2446,7 +2447,7 @@ async function archiveOrder(id){
   if(!canManageOrders()){toast('Назначение и планирование заказов доступны руководству');return;}
   var o=orders.find(function(x){return x.id===id;});
   if(!o||o.status==='archived')return;
-  if(!confirm('Убрать заказ '+o.num+' в архив? Он пропадёт из списка, но останется в хранилище.'))return;
+  if(!confirm('Убрать заказ '+o.num+' в архив? Он пропадёт из рабочего списка. Заказ и вся история оплат и возвратов сохранятся.'))return;
   o.prevStatus=o.status;
   o.status='archived';
   await saveOrders(orders);
@@ -2482,8 +2483,12 @@ async function saveSdekNum(id,val){
   renderTab(tab);
   toast(ok?(promoted?'Накладная сохранена · Готов к отправке':'Номер накладной сохранён'):'Изменения сохранены локально. Проверьте синхронизацию');
 }
+function hasOrderFinanceHistory(o){
+  if(!o)return false;
+  return !!(o.financePayments||o.financePaymentHistory||o.advancePaid||o.postpayPaid||o.sashaPaid||o.dividendPaid||finance.some(function(t){return t.orderId===o.id||(t.paymentLines||[]).concat(t.payoutLines||[]).some(function(l){return l.orderId===o.id;});}));
+}
 async function delOrder(id){
-  var o=orders.find(function(x){return x.id===id;});if(o&&(o.financePayments||o.financePaymentHistory||o.advancePaid||o.postpayPaid||o.sashaPaid||o.dividendPaid||finance.some(function(t){return t.orderId===id||(t.paymentLines||[]).concat(t.payoutLines||[]).some(function(l){return l.orderId===id;});}))){toast('У заказа есть финансовая история. Перенесите его в архив');return;}
+  var o=orders.find(function(x){return x.id===id;});if(hasOrderFinanceHistory(o)){toast('У заказа есть финансовая история. Перенесите его в архив');return;}
   if(!confirm('Удалить заказ?'))return;
   orders=orders.filter(function(x){return x.id!==id;});
   pendingDeletes.orders.push(id);
@@ -2504,7 +2509,7 @@ function jumpTo(id){
     },80);
     return;
   }
-  fStatus='all';fMonth='all';search='';showArchive=false;
+  fStatus='all';fMonth='all';search='';showArchive=!!(orders.find(function(o){return o.id===id&&o.status==='archived';}));
   expandedCards.add(id);
   renderTab('list');
   setTimeout(function(){
@@ -4249,7 +4254,7 @@ function paySearchHtml(q){
       var postVal;
       if(o.postpayPaid)postVal=yes('выплачено');
       else if(postNeedFor(m).indexOf(o)>=0)postVal=no('не выплачено — есть в «Выплатах» ('+fmt(remainingPay(o))+')');
-      else if(cfg.payoutFrom&&PAY_POST_STATUSES.concat(['archived']).indexOf(o.status)>=0)postVal=wait('не входит в выплаты (готов до '+new Date(cfg.payoutFrom).toLocaleDateString('ru')+')');
+      else if(cfg.payoutFrom&&payoutReadyStatus(o))postVal=wait('не входит в выплаты (готов до '+new Date(cfg.payoutFrom).toLocaleDateString('ru')+')');
       else if(cfg.closedOnly&&!isClosed(o))postVal=wait('не выплачено — станет к выплате после закрытия');
       else postVal=wait('не выплачено — заказ ещё не готов');
       h+=line(postLbl,postVal);
@@ -4610,15 +4615,21 @@ function advLaterFor(m,withNew){return orders.filter(function(o){
 });}
 // Сколько авансов спрятано фильтром «Новый» — для подписи на переключателе
 function advNewCount(m){return orders.filter(function(o){return o.master===m&&o.status==='new'&&!o.advancePaid&&calcAdvance(o)>0;}).length;}
+function payoutReadyStatus(o){
+  if(PAY_POST_STATUSES.indexOf(o.status)>=0)return true;
+  if(o.status!=='archived')return false;
+  // У старых архивных заказов прежний статус не записывался. Для них закрытие
+  // остаётся единственным подтверждением выполненной работы.
+  return o.prevStatus?PAY_POST_STATUSES.indexOf(o.prevStatus)>=0:isClosed(o);
+}
 function postNeedFor(m){
   var cfg=masterCfg(m);
   return orders.filter(function(o){
     if(o.master!==m||o.postpayPaid)return false;
     if(cfg.payoutFrom&&readyDate(o,cfg.payoutFrom)<cfg.payoutFrom)return false;
-    // 'archived' — тоже допустимый статус: заказ мог уйти в архив (вручную или
-    // автоматически после «Выслала») ДО того, как мастеру заплатили. Перекладывание
-    // бумажки в архив не должно списывать деньги, которые ему причитаются.
-    return cfg.closedOnly ? isClosed(o) : (PAY_POST_STATUSES.indexOf(o.status)>=0||o.status==='archived');
+    // После архивации доплата остаётся только за уже готовый заказ.
+    // Отложенный заказ из «Новый»/«След. неделя»/«В работе» не становится готовым.
+    return cfg.closedOnly ? isClosed(o)&&(o.status!=='archived'||payoutReadyStatus(o)) : payoutReadyStatus(o);
   });
 }
 // Когда заказ стал «Готов» (или дальше) — для отсечки payoutFrom.
@@ -5287,10 +5298,11 @@ function tplMaster(){
   var myBase=masterName?orders.filter(function(o){return o.master===masterName;}):orders;
   var months=[...new Set(myBase.map(function(o){return o.month;}))].sort();
   var filtered=myBase.filter(function(o){
-    if(!showArchive&&(o.status==='sent'||o.status==='done'||o.status==='archived'))return false;
+    if(showArchive){if(o.status!=='sent'&&o.status!=='done'&&o.status!=='archived')return false;}
+    else if(o.status==='sent'||o.status==='done'||o.status==='archived')return false;
     if(fStatus!=='all'&&o.status!==fStatus)return false;
     if(fMonth!=='all'&&o.month!==fMonth)return false;
-    return o.status!=='done'&&o.status!=='sent';
+    return true;
   }).sort(function(a,b){
     // Сначала — у кого раньше срок сдачи (месяц+день, не просто число дня).
     // Без срока — в конец, среди них по дате добавления заказа (кто раньше взят).
