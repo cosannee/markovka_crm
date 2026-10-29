@@ -270,6 +270,8 @@ button{touch-action:manipulation}
 .h-right #h-user-name{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .header-context{display:none;color:var(--text3);font-size:13px}
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;align-items:stretch;padding:7px 8px calc(7px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--border);box-shadow:0 -4px 20px #20302804;overflow:visible;gap:4px}
+@supports (translate:0 1px){.tabs,.to-top,.save-bar,.toast{translate:0 var(--viewport-fix-shift,0px)}}
+html.dock-keyboard .tabs,html.dock-keyboard .to-top{visibility:hidden;pointer-events:none}
 .tab{min-width:0;flex:1 1 0;border:0;border-radius:11px;padding:6px 3px;gap:4px;min-height:48px;font-size:11px;position:relative;color:var(--text3)}
 .tab.active{background:var(--accent-bg);color:var(--accent);border:0}
 .tab-icon{height:20px;width:22px;display:flex;justify-content:center;align-items:center;position:relative;flex-shrink:0}
@@ -805,9 +807,50 @@ function updateToTop(){
   var y=window.pageYOffset||document.documentElement.scrollTop||0;
   btn.classList.toggle('show',y>320);
 }
+// На iOS в режиме приложения WebKit иногда оставляет fixed-панели на высоте
+// уменьшенного (после клавиатуры) viewport. Сверяем фактическую позицию с
+// полным экраном и поправляем только обнаруженное смещение.
+var mobileDockShift=0,mobileDockQueued=false;
+function isIosStandalone(){
+  return /iPhone|iPad|iPod/.test(navigator.userAgent||'')&&
+    (navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches));
+}
+function syncMobileDock(){
+  var root=document.documentElement,app=document.getElementById('app'),nav=document.getElementById('tabs-bar');
+  if(!root||!nav||!app||app.style.display!=='flex')return;
+  if(!isIosStandalone()||window.innerWidth>=960){
+    mobileDockShift=0;root.style.setProperty('--viewport-fix-shift','0px');root.classList.remove('dock-keyboard');return;
+  }
+  var active=document.activeElement;
+  if(active&&active.matches&&active.matches('input:not([type=checkbox]):not([type=radio]),textarea,select,[contenteditable="true"]')){
+    root.classList.add('dock-keyboard');return;
+  }
+  root.classList.remove('dock-keyboard');
+  var rect=nav.getBoundingClientRect();if(rect.height<30)return;
+  var vp=window.visualViewport,visibleBottom=vp?vp.offsetTop+vp.height:window.innerHeight;
+  var screenBottom=window.screen&&window.screen.height||0;
+  // При увеличении жестом используем реальную видимую часть, без экранного фолбэка.
+  var target=vp&&vp.scale>1.02?visibleBottom:Math.max(visibleBottom,screenBottom,window.innerHeight||0);
+  var shift=Math.round(target-(rect.bottom-mobileDockShift));
+  if(!Number.isFinite(shift))return;
+  if(Math.abs(shift-mobileDockShift)>1){mobileDockShift=shift;root.style.setProperty('--viewport-fix-shift',shift+'px');}
+}
+function scheduleMobileDock(){
+  if(mobileDockQueued)return;
+  mobileDockQueued=true;
+  requestAnimationFrame(function(){mobileDockQueued=false;syncMobileDock();});
+}
 if(typeof window!=='undefined'){
   window.addEventListener('scroll',updateToTop,{passive:true});
   window.addEventListener('resize',updateToTop,{passive:true});
+  window.addEventListener('resize',scheduleMobileDock,{passive:true});
+  window.addEventListener('scroll',scheduleMobileDock,{passive:true});
+  window.addEventListener('orientationchange',function(){scheduleMobileDock();setTimeout(scheduleMobileDock,350);});
+  window.addEventListener('pageshow',function(){scheduleMobileDock();setTimeout(scheduleMobileDock,350);});
+  window.addEventListener('touchend',scheduleMobileDock,{passive:true});
+  document.addEventListener('focusin',scheduleMobileDock);
+  document.addEventListener('focusout',function(){setTimeout(scheduleMobileDock,300);});
+  if(window.visualViewport){window.visualViewport.addEventListener('resize',scheduleMobileDock);window.visualViewport.addEventListener('scroll',scheduleMobileDock);}
 }
 
 // ── Параметры синхронизации ──
@@ -1819,6 +1862,7 @@ function renderTabs(){
   const moreCount=secondary.reduce(function(sum,t){return sum+appNavCount(t.id);},0);
   html+='<button type="button" class="tab tab-more'+(moreActive?' active':'')+'"'+(moreActive?' aria-current="page"':'')+' data-nav="more" onclick="navigateApp(this.dataset.nav)"><span class="tab-icon">'+APP_NAV_ICONS.more+(moreCount>0?'<span class="nav-badge">'+moreCount+'</span>':'')+'</span><span>Ещё</span></button>';
   document.getElementById('tabs-bar').innerHTML=html;
+  scheduleMobileDock();
   const current=all.find(function(t){return t.id===tab;});
   const title=tab==='more'?'Ещё':current?current.label:tab==='calendar'||tab==='cal-master'?'Календарь':'Заказы';
   const category=['payments','bank','stats','analytics','finance'].indexOf(tab)>=0?'Финансы':'Рабочее пространство';
