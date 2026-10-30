@@ -2879,6 +2879,12 @@ function pluralZakaz(n){
   if(n10>=2&&n10<=4&&(n100<10||n100>=20))return 'заказа';
   return 'заказов';
 }
+function pluralIgrushka(n){
+  var n10=n%10,n100=n%100;
+  if(n10===1&&n100!==11)return 'игрушка';
+  if(n10>=2&&n10<=4&&(n100<10||n100>=20))return 'игрушки';
+  return 'игрушек';
+}
 function openSdekExport(){
   var list=sdekExportList();
   var now=new Date().toLocaleDateString('ru',{day:'numeric',month:'long'});
@@ -6808,7 +6814,7 @@ function dashboardData(list){
  var people=names.map(function(name){
   var own=active.filter(function(o){return (o.master||'Не назначен')===name;});
   var stages=[{key:'unmarked',label:'Этап не отмечен'}].concat(CRAFT_STAGES).concat([{key:'ready',label:'Готов'},{key:'planned',label:'Готов к отправке'}]);
-  return {name:name,orders:own.length,toys:finSum(own,orderQty),ready:own.filter(productionReady).length,stages:stages.map(function(s){return {key:s.key,label:s.label,n:own.filter(function(o){return (o.status==='work'?(CRAFT_STAGES.some(function(c){return c.key===effectiveCraftStage(o);})?effectiveCraftStage(o):'unmarked'):o.status)===s.key;}).length};})};
+  return {name:name,orders:own.length,toys:finSum(own,orderQty),ready:finSum(own.filter(productionReady),orderQty),stages:stages.map(function(s){return {key:s.key,label:s.label,n:finSum(own.filter(function(o){return (o.status==='work'?(CRAFT_STAGES.some(function(c){return c.key===effectiveCraftStage(o);})?effectiveCraftStage(o):'unmarked'):o.status)===s.key;}),orderQty)};})};
  }).sort(function(a,b){return b.orders-a.orders||a.name.localeCompare(b.name,'ru');});
  return {active:active,people:people,toys:finSum(active,orderQty),due:finSum(active,function(o){return Math.max(0,orderTotal(o)-(Number(o.prepaid)||0));}),wages:finSum(active,function(o){return calcMasterPay(o)+calcCosts(o).sasha;}),coo:finSum(active,function(o){return calcCosts(o).sasha;}),left:finSum(active,function(o){return remainingPay(o)+(o.sashaPaid?0:Math.max(0,calcCosts(o).sasha-finPaid(o,'sasha')));})};
 }
@@ -6821,14 +6827,14 @@ function tplDashboardSummary(list){
  if(!canSeeOverview())return '';
  var d=dashboardData(list);
  var h='<section class="dash-summary" aria-label="Текущая рабочая неделя"><div class="dash-metrics">'
- +'<div><small>Текущий план</small><strong>'+d.active.length+' '+pluralZakaz(d.active.length)+'</strong><span>Игрушек: '+d.toys+'</span></div>'
+ +'<div><small>Текущий план</small><strong>'+d.toys+' '+pluralIgrushka(d.toys)+'</strong><span>Заказов: '+d.active.length+'</span></div>'
  +'<div><small>Ждём от клиентов</small><strong>'+fmt(d.due)+'</strong><span>Остаток оплаты по текущему плану</span></div>'
  +'<div><small>Зарплаты при выполнении плана</small><strong>'+fmt(d.wages)+'</strong><span>В том числе COO: '+fmt(d.coo)+'</span></div></div>'
  +'<div class="dash-links"><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'week\')">Моя неделя</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'sdek\')">СДЭК</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'stats\')">Финансы</button></div></section>'
  +'<section class="dash-load" aria-label="Загрузка мастеров"><div class="overview-toolbar"><h2>Загрузка мастеров</h2></div><p class="overview-note">Количество заказов и игрушек, без оценки сложности. Этапы указаны в заказах.</p>';
  var people=overviewMaster==='all'?d.people:d.people.filter(function(p){return p.name===overviewMaster;});
  people.filter(function(p){return p.orders;}).forEach(function(p){
-  h+='<details class="dash-person"><summary><span class="dash-name">'+uiText(p.name)+'<small>'+p.orders+' '+pluralZakaz(p.orders)+' · игрушек: '+p.toys+'</small></span><span class="dash-ready">Готово '+p.ready+' / '+p.orders+'</span><span aria-hidden="true">⌄</span></summary><div class="dash-stages">';
+  h+='<details class="dash-person"><summary><span class="dash-name">'+uiText(p.name)+'<small>'+p.toys+' '+pluralIgrushka(p.toys)+' · заказов: '+p.orders+'</small></span><span class="dash-ready">Готово '+p.ready+' / '+p.toys+'</span><span aria-hidden="true">⌄</span></summary><div class="dash-stages">';
   p.stages.forEach(function(s){h+='<span'+(!s.n?' class="dash-zero"':'')+'>'+uiText(s.label)+' <b>'+s.n+'</b></span>';});
   h+='</div><button class="btn btn-sm btn-ghost" data-master="'+uiText(p.name)+'" onclick="dashboardMaster(this.dataset.master)">Открыть заказы в работе</button></details>';
  });
@@ -6963,29 +6969,29 @@ function capacityValues(){var p=capacityPlan();return p&&p.capacities&&typeof p.
 function capacityAssigned(){
   var known=new Set(MASTERS),map={};MASTERS.forEach(function(n){map[n]=[];});var unassigned=[];
   orders.filter(function(o){return o.status==='nextweek';}).forEach(function(o){if(known.has(o.master))map[o.master].push(o);else unassigned.push(o);});
-  return {map:map,unassigned:unassigned,total:finSum(Object.values(map),function(list){return list.length;})+unassigned.length};
+  return {map:map,unassigned:unassigned,unassignedToys:finSum(unassigned,orderQty),total:finSum(Object.values(map),function(list){return finSum(list,orderQty);})+finSum(unassigned,orderQty)};
 }
 function capacityLatestValues(){
   var rows=capacityRows().filter(function(t){return t.capacities&&typeof t.capacities==='object';}).sort(function(a,b){return String(b.weekStart||'').localeCompare(String(a.weekStart||''));});
   return rows.length?rows[0].capacities:{};
 }
 function capacityCells(assigned,limit){
-  var h='<div class="cap-cells" aria-label="Назначено '+assigned+' из '+limit+'">',shown=Math.min(Math.max(limit,assigned),30);
+  var h='<div class="cap-cells" aria-label="Назначено '+assigned+' из '+limit+' игрушек">',shown=Math.min(Math.max(limit,assigned),30);
   for(var i=0;i<shown;i++)h+='<i class="'+(i<assigned?'filled':'')+(i>=limit?' over':'')+'" aria-hidden="true"></i>';
   if(Math.max(limit,assigned)>30)h+='<b>+'+(Math.max(limit,assigned)-30)+'</b>';
   return h+'</div>';
 }
 function capacityCurrentBar(person){
-  if(!person.orders)return '<div class="load-bar" aria-label="Текущих заказов нет"><i></i></div>';
+  if(!person.toys)return '<div class="load-bar" aria-label="Игрушек в текущем плане нет"><i></i></div>';
   var ready=person.ready;
-  return '<div class="load-bar" role="progressbar" aria-label="Готово '+ready+' из '+person.orders+'" aria-valuemin="0" aria-valuemax="'+person.orders+'" aria-valuenow="'+ready+'"><i class="ready" style="width:'+(ready/person.orders*100)+'%"></i></div>';
+  return '<div class="load-bar" role="progressbar" aria-label="Готово '+ready+' из '+person.toys+' игрушек" aria-valuemin="0" aria-valuemax="'+person.toys+'" aria-valuenow="'+ready+'"><i class="ready" style="width:'+(ready/person.toys*100)+'%"></i></div>';
 }
 function openCapacityPlan(){
   if(!canSeeOverview()||isPreviewMode)return;
   var w=capacityWeek(),current=capacityValues(),seed=Object.keys(current).length?current:capacityLatestValues(),old=document.getElementById('capacity-dialog');if(old)old.remove();
   var el=document.createElement('div');el.id='capacity-dialog';el.className='modal-bg';
   var rows=MASTERS.map(function(name){return '<label class="cap-input"><span>'+uiText(name)+'</span><input type="number" min="0" max="30" step="1" inputmode="numeric" data-capacity-master="'+uiText(name)+'" value="'+Math.max(0,Math.min(30,parseInt(seed[name])||0))+'"></label>';}).join('');
-  el.innerHTML='<div class="modal cap-modal" role="dialog" aria-modal="true" aria-labelledby="cap-title"><h2 id="cap-title" class="modal-title">План на следующую неделю</h2><p class="fin-note">'+uiText(w.label)+' · укажите количество заказов, которое мастер готов взять. Максимум 30 на человека.</p><div class="cap-inputs">'+rows+'</div><div id="cap-error" class="fin-error" role="alert"></div><div class="modal-actions"><button class="btn btn-secondary" onclick="document.getElementById(\'capacity-dialog\').remove()">Отмена</button><button id="cap-save" class="btn btn-primary" onclick="saveCapacityPlan()">Сохранить план</button></div></div>';
+  el.innerHTML='<div class="modal cap-modal" role="dialog" aria-modal="true" aria-labelledby="cap-title"><h2 id="cap-title" class="modal-title">План игрушек на следующую неделю</h2><p class="fin-note">'+uiText(w.label)+' · укажите количество игрушек, которое мастер готов взять. Максимум 30 на человека. Один заказ может содержать несколько игрушек.</p><div class="cap-inputs">'+rows+'</div><div id="cap-error" class="fin-error" role="alert"></div><div class="modal-actions"><button class="btn btn-secondary" onclick="document.getElementById(\'capacity-dialog\').remove()">Отмена</button><button id="cap-save" class="btn btn-primary" onclick="saveCapacityPlan()">Сохранить план</button></div></div>';
   document.body.appendChild(el);el.addEventListener('click',function(e){if(e.target===el)el.remove();});
 }
 async function saveCapacityPlan(){
@@ -7009,19 +7015,19 @@ function dashboardMaster(name,status){
 function tplDashboardSummary(list){
   if(!canSeeOverview())return '';
   var d=dashboardData(orders),assigned=capacityAssigned(),caps=capacityValues(),plan=capacityPlan(),w=capacityWeek();
-  var totalCap=finSum(MASTERS,function(n){return Math.max(0,parseInt(caps[n])||0);}),assignedKnown=assigned.total-assigned.unassigned.length,find=Math.max(0,totalCap-assigned.total),over=Math.max(0,assigned.total-totalCap);
+  var totalCap=finSum(MASTERS,function(n){return Math.max(0,parseInt(caps[n])||0);}),assignedKnown=assigned.total-assigned.unassignedToys,find=Math.max(0,totalCap-assigned.total),over=Math.max(0,assigned.total-totalCap);
   var h='<section class="dash-summary" aria-label="Текущая рабочая неделя"><div class="dash-metrics">'
-   +'<div><small>Текущий план</small><strong>'+d.active.length+' '+pluralZakaz(d.active.length)+'</strong><span>Игрушек: '+d.toys+'</span></div>'
+   +'<div><small>Текущий план</small><strong>'+d.toys+' '+pluralIgrushka(d.toys)+'</strong><span>Заказов: '+d.active.length+'</span></div>'
    +'<div><small>Ждём от клиентов</small><strong>'+fmt(d.due)+'</strong><span>Остаток оплаты</span></div>'
    +'<div><small>Зарплаты по плану</small><strong>'+fmt(d.wages)+'</strong><span>В том числе COO: '+fmt(d.coo)+'</span></div></div>'
    +'<div class="dash-links"><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'week\')">Моя неделя</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'sdek\')">СДЭК</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'stats\')">Финансы</button></div></section>';
-  h+='<section class="cap-summary" aria-label="План следующей недели"><div class="cap-head"><div><h2>Следующая неделя</h2><p>'+uiText(w.label)+'</p></div><button class="btn btn-sm btn-secondary" onclick="openCapacityPlan()">'+(plan?'Изменить план':'Настроить план')+'</button></div>';
-  if(plan){var pct=totalCap?Math.min(100,assignedKnown/totalCap*100):0;h+='<div class="cap-total"><div><b>'+assignedKnown+' / '+totalCap+'</b><span>назначено мастерам</span></div><div><b>'+find+'</b><span>ещё нужно найти</span></div>'+(assigned.unassigned.length?'<div><b>'+assigned.unassigned.length+'</b><span>ждут назначения</span></div>':'')+(over?'<div><b>'+over+'</b><span>сверх общего плана</span></div>':'')+'</div><div class="cap-overall" role="progressbar" aria-label="Общий план следующей недели" aria-valuemin="0" aria-valuemax="'+totalCap+'" aria-valuenow="'+Math.min(assignedKnown,totalCap)+'"><i style="width:'+pct+'%"></i></div>';}
-  else h+='<p class="cap-empty">Укажите, сколько заказов готов взять каждый мастер. Сейчас в статусе «След. неделя»: <b>'+assigned.total+'</b>.</p>';
-  h+='</section><section class="dash-load" aria-label="Загрузка мастеров"><div class="overview-toolbar"><h2>Загрузка мастеров</h2><span class="cap-legend"><i></i> готово из текущего плана</span></div><div class="load-grid">';
+  h+='<section class="cap-summary" aria-label="План игрушек следующей недели"><div class="cap-head"><div><h2>Следующая неделя · игрушки</h2><p>'+uiText(w.label)+'</p></div><button class="btn btn-sm btn-secondary" onclick="openCapacityPlan()">'+(plan?'Изменить план':'Настроить план')+'</button></div>';
+  if(plan){var pct=totalCap?Math.min(100,assignedKnown/totalCap*100):0;h+='<div class="cap-total"><div><b>'+assignedKnown+' / '+totalCap+'</b><span>игрушек назначено</span></div><div><b>'+find+'</b><span>игрушек ещё найти</span></div>'+(assigned.unassignedToys?'<div><b>'+assigned.unassignedToys+'</b><span>игрушек ждут назначения</span></div>':'')+(over?'<div><b>'+over+'</b><span>игрушек сверх плана</span></div>':'')+'</div><div class="cap-overall" role="progressbar" aria-label="Общий план игрушек следующей недели" aria-valuemin="0" aria-valuemax="'+totalCap+'" aria-valuenow="'+Math.min(assignedKnown,totalCap)+'"><i style="width:'+pct+'%"></i></div>';}
+  else h+='<p class="cap-empty">Укажите, сколько игрушек готов взять каждый мастер. Сейчас в статусе «След. неделя»: <b>'+assigned.total+' '+pluralIgrushka(assigned.total)+'</b>.</p>';
+  h+='</section><section class="dash-load" aria-label="Загрузка мастеров в игрушках"><div class="overview-toolbar"><h2>Загрузка мастеров</h2><span class="cap-legend"><i></i> готово игрушек из текущего плана</span></div><div class="load-grid">';
   var people=d.people.slice().sort(function(a,b){return MASTERS.indexOf(a.name)-MASTERS.indexOf(b.name);});
-  people.forEach(function(p){var next=assigned.map[p.name]?assigned.map[p.name].length:0,limit=Math.max(0,parseInt(caps[p.name])||0),left=Math.max(0,limit-next);
-    h+='<article class="load-tile"><div class="load-title"><b>'+uiText(p.name)+'</b><button class="load-link" data-master="'+uiText(p.name)+'" onclick="dashboardMaster(this.dataset.master,\'work\')">Сейчас '+p.orders+'</button></div><div class="load-now"><span>Готово '+p.ready+' из '+p.orders+'</span>'+capacityCurrentBar(p)+'</div><button class="load-next" data-master="'+uiText(p.name)+'" onclick="dashboardMaster(this.dataset.master,\'nextweek\')"><span>След. неделя <b>'+next+(plan?' / '+limit:'')+'</b></span><small>'+(plan?(next>limit?'Сверх плана '+(next-limit):'Свободно '+left):'План не задан')+'</small>'+capacityCells(next,plan?limit:next)+'</button></article>';});
+  people.forEach(function(p){var next=assigned.map[p.name]?finSum(assigned.map[p.name],orderQty):0,limit=Math.max(0,parseInt(caps[p.name])||0),left=Math.max(0,limit-next);
+    h+='<article class="load-tile"><div class="load-title"><b>'+uiText(p.name)+'</b><button class="load-link" data-master="'+uiText(p.name)+'" onclick="dashboardMaster(this.dataset.master,\'work\')">Сейчас '+p.toys+' шт.</button></div><div class="load-now"><span>Готово '+p.ready+' из '+p.toys+' игрушек</span>'+capacityCurrentBar(p)+'</div><button class="load-next" data-master="'+uiText(p.name)+'" onclick="dashboardMaster(this.dataset.master,\'nextweek\')"><span>След. неделя <b>'+next+(plan?' / '+limit:'')+' шт.</b></span><small>'+(plan?(next>limit?'Сверх плана '+(next-limit):'Свободно '+left):'План не задан')+'</small>'+capacityCells(next,plan?limit:next)+'</button></article>';});
   h+='</div></section><details class="dash-wages"><summary><span>План зарплат, включая COO<small>Осталось выдать при выполнении плана</small></span><b>'+fmt(d.left)+'</b></summary>'+finWagePlan(d.active)+'</details>';
   return h;
 }
