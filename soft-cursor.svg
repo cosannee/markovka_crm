@@ -8,8 +8,8 @@
       <feGaussianBlur stdDeviation="2"/>
     </filter>
   </defs>
-  <circle cx="27" cy="30" r="29" fill="url(#halo)"/>
-  <path d="M14 10v29l7.2-7.5 6.2 14.6 5-2.2-6.1-14.2h11.1z" fill="#26332b" fill-opacity=".25" stroke="#26332b" stroke-opacity=".22" stroke-width="4" filter="url(#blur)"/>
-  <path d="M14 10v29l7.2-7.5 6.2 14.6 5-2.2-6.1-14.2h11.1z" fill="#fff" fill-opacity=".20" stroke="#47554c" stroke-opacity=".23" stroke-width="4" stroke-linejoin="round"/>
-  <path d="M14 10v29l7.2-7.5 6.2 14.6 5-2.2-6.1-14.2h11.1z" fill="#fff" fill-opacity=".26" stroke="#fff" stroke-opacity=".94" stroke-width="2.2" stroke-linejoin="round"/>
+  <circle cx="27" cy="27" r="29" fill="url(#halo)"/>
+  <path d="M14 10 44 23 29 27 24 41Z" fill="none" stroke="#36463d" stroke-opacity=".22" stroke-width="5" stroke-linejoin="round" filter="url(#blur)"/>
+  <path d="M14 10 44 23 29 27 24 41Z" fill="none" stroke="#fff" stroke-opacity=".72" stroke-width="4" stroke-linejoin="round" filter="url(#blur)"/>
+  <path d="M14 10 44 23 29 27 24 41Z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>
 </svg>
