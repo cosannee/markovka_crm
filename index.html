@@ -6650,6 +6650,19 @@ function finPayoutMessage(p){
  lines.push('','Итого: '+fmt(p.total));
  return lines.join('\n');
 }
+function finPayoutLineLabel(e){
+ var num=e.orderNum?' '+e.orderNum:'';
+ return e.type==='advance'?'аванс за заказ'+num:e.type==='postpay'?'за готовый заказ'+num:e.type==='sasha'?'комиссия COO за заказ'+num:'дивиденды за заказ'+num;
+}
+function finPayoutMessageFromTx(t){
+ if(!t||t.type!=='expense'||t.voided||t.financeCancellations&&t.financeCancellations.length||!Array.isArray(t.payoutLines)||!t.payoutLines.length)return null;
+ var person=t.recipient||anRecipient(t),total=Number(t.amount),credit=Number(t.creditUsed||0),accrued=finSum(t.payoutLines,function(l){return l.amount;});
+ if(!person||!/^\d{4}-\d{2}-\d{2}$/.test(t.date||'')||!Number.isFinite(total)||total<0||!Number.isFinite(credit)||credit<0||Math.abs(accrued-credit-total)>.01)return null;
+ if(t.payoutLines.some(function(l){return l.canceled||!l.orderNum||!['advance','postpay','sasha','dividend'].includes(l.type)||!Number.isFinite(Number(l.amount))||Number(l.amount)<0;}))return null;
+ var lines=t.payoutLines.map(function(l){return {sum:Number(l.amount),label:finPayoutLineLabel(l)};});
+ if(credit)lines.push({sum:-credit,label:'зачёт ранее выплаченной суммы'});
+ return {format:'finance',person:person,date:t.date.split('-').reverse().join('.'),lines:lines,total:total};
+}
 function finPayoutMessageCard(){
  if(!window.lastPayout||window.lastPayout.format!=='finance')return '';
  var msg=finPayoutMessage(window.lastPayout);
@@ -6717,7 +6730,7 @@ function finConfirmedPayoutMessage(p,r){
  var tx=(r.finance||[]).find(function(t){return t.kind==='tx'&&t.source==='finance_v2'&&t.recipient===p.recipient;});
  var recorded=tx&&Array.isArray(tx.payoutLines)?tx.payoutLines:[];
  var items=recorded.length?recorded:p.entries.map(function(e){var o=orders.find(function(x){return x.id===e.orderId;});return {type:e.kind,orderNum:o&&o.num||'',amount:e.amount};});
- var lines=items.map(function(e){var num=e.orderNum?' '+e.orderNum:'';return {sum:Number(e.amount)||0,label:e.type==='advance'?'аванс за заказ'+num:e.type==='postpay'?'за готовый заказ'+num:e.type==='sasha'?'комиссия COO за заказ'+num:'дивиденды за заказ'+num};});
+ var lines=items.map(function(e){return {sum:Number(e.amount)||0,label:finPayoutLineLabel(e)};});
  var credit=Math.max(0,Number(r.total||0)-Number(r.cash||0));
  if(credit)lines.push({sum:-credit,label:'зачёт ранее выплаченной суммы'});
  var date=/^\d{4}-\d{2}-\d{2}$/.test(p.date)?p.date.split('-').reverse().join('.'):payoutDate();
@@ -6766,6 +6779,9 @@ function finConfirmLink(){finSubmit(async function(){var x=finModalCtx,t=x.trans
 function finHistoryView(){var rows=bankTxAll().filter(function(t){return (t.source==='payout'||t.source==='finance_v2'||t.changeHistory||t.voided)&&finMatches(t);});return rows.slice(0,finLimit).map(function(t){return '<button class="fin-history-row" data-id="'+uiText(t.id)+'" onclick="finReceipt(this.dataset.id)"><span><b>'+uiText(t.category||'Операция')+'</b><small>'+uiText(t.date+' · '+accName(t.accountId))+'</small></span><strong>'+fmt(t.amount)+'</strong></button>';}).join('')+(rows.length>finLimit?'<button class="btn btn-secondary btn-full" onclick="finLimit+=40;renderTab(\'payments\')">Показать ещё</button>':'')||'<div class="empty">Нет операций</div>';}
 function finReceipt(id){var t=finance.find(function(x){return x.id===id;});if(!t)return;var h='<p>'+uiText(t.date+' · '+accName(t.accountId)+' · '+(t.category||''))+'</p><div class="fin-total">По банку '+fmt(t.amount)+(t.creditUsed?' · зачёт '+fmt(t.creditUsed):'')+'</div><p class="fin-note">'+uiText(t.comment||'')+'</p>';
  (t.payoutLines||[]).forEach(function(l){h+='<div class="fin-line"><span>'+uiText(l.orderNum+' · '+(FIN_LABEL[l.type]||l.type))+(l.canceled?' · отменено':'')+'</span><b>'+fmt(l.amount)+'</b></div>';});
+ var payoutMessage=finPayoutMessageFromTx(t);
+ if(payoutMessage){var message=finPayoutMessage(payoutMessage);h+='<section class="fin-payout-message" aria-label="Сообщение мастеру о выплате"><div class="fin-payout-message-head"><span>Сообщение о выплате</span></div><textarea readonly onclick="this.select()">'+uiText(message)+'</textarea><button class="btn btn-primary btn-sm" data-val="'+uiText(message)+'" onclick="copyField(this.dataset.val,this)">Копировать сообщение</button></section>';}
+ else if(t.payoutLines&&t.payoutLines.length)h+='<p class="fin-note">Сообщение нельзя восстановить автоматически: состав выплаты менялся или не совпадает с суммой операции.</p>';
  (t.paymentLines||[]).forEach(function(l){var o=orders.find(function(x){return x.id===l.orderId;});h+='<div class="fin-line"><span>'+uiText(o?o.num:'Заказ не найден')+'</span><b>'+fmt(l.amount)+'</b></div>';});
  (t.financeCancellations||[]).forEach(function(c){h+='<p class="fin-note">Отмена '+fmt(c.amount)+' · '+uiText(c.mode==='void'?'перевод не состоялся':c.mode==='credit'?'зачёт':'ожидаем возврат')+' · '+uiText(c.by)+'<br>'+uiText(c.reason)+'</p>';});
  if(t.voided)h+='<p class="fin-note">Отменено: '+uiText(t.voidReason||'')+'</p>';
