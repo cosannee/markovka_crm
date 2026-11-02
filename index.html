@@ -414,6 +414,9 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .overview-totals{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:14px}
 .overview-order{padding:16px;margin-bottom:10px;overflow-wrap:anywhere}
 .overview-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.startup-loading{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;max-width:560px;color:var(--text2)}
+.startup-loading strong{display:block;color:var(--text1);font-size:15px;margin-bottom:5px}
+.startup-loading p{font-size:13px;line-height:1.5}
 .overview-personal{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px 16px;margin-bottom:18px}
 .overview-personal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;list-style:none}
 .overview-personal-head::-webkit-details-marker,.overview-personal-more summary::-webkit-details-marker{display:none}
@@ -769,6 +772,7 @@ const USERS=[
 ];
 function userEntry(u){return {role:u.role,name:u.name,label:u.label,masterName:u.masterName};}
 let role=null,masterName=null,tab='list',myTodos=[],fStatus='all',fMonth='all',fMaster='all',fUrgent=false,fSort='date',search='',calDate=new Date(),showArchive=false,weekCol='nextweek';
+let initialDataPending=false,initialDataError=false;
 // Список заказов рисуем не весь сразу — на телефоне сборка сотен карточек ощущается как подвисание.
 const LIST_PAGE_SIZE=20;
 let listShown=LIST_PAGE_SIZE;
@@ -909,7 +913,7 @@ function readCache(){
   try{const d=crmStorage.getItem('markovka_data');return d?JSON.parse(d):null;}catch(e){return null;}
 }
 
-async function loadData(force){
+async function loadData(force,profileAlreadyChecked){
   // Если данные загружены меньше SYNC_INTERVAL назад — используем локальную копию
   lastLoadOk=false;
   if(!force&&lastSyncTime&&(Date.now()-lastSyncTime)<SYNC_INTERVAL){
@@ -919,22 +923,25 @@ async function loadData(force){
   if(syncInProgress&&Date.now()-syncStartedAt<90000)return readCache();
   syncInProgress=true;syncStartedAt=Date.now();
   try{
-    const freshProfile=await crmLoadProfile();
-    if(JSON.stringify(freshProfile)!==JSON.stringify(crmProfile))throw Error('Права изменились. Выйдите и войдите заново.');
-    console.log('Supabase sync');
-    const ord=await sbSelectTable('orders');
-    const tsk=await sbSelectTable('tasks');
-    // Таблица finance может ещё не существовать (модуль «Банк» подключается отдельно) —
-    // её отсутствие не должно ломать загрузку заказов и задач.
-    let fin=[];
-    try{fin=await sbSelectTable('finance');financeTableOk=true;}
-    catch(e){
-      financeTableOk=false;
-      // Пустой банк допустим только при действительно отсутствующей таблице.
-      // Ошибка сети/доступа/полноты чтения сохраняет предыдущий кэш целиком.
-      if(e.code!=='PGRST205'&&e.code!=='42P01')throw e;
-      console.warn('Таблица finance отсутствует',e);
+    // При первом входе профиль только что проверен в crmBegin(). Повторный
+    // запрос здесь задерживал показ данных; фоновые синхронизации проверяют его как прежде.
+    if(!profileAlreadyChecked){
+      const freshProfile=await crmLoadProfile();
+      if(JSON.stringify(freshProfile)!==JSON.stringify(crmProfile))throw Error('Права изменились. Выйдите и войдите заново.');
     }
+    console.log('Supabase sync');
+    // Независимые таблицы читаем одновременно. Данные применяются только после
+    // полного ответа всех трёх запросов — частичная загрузка не попадёт на экран.
+    const [ord,tsk,fin]=await Promise.all([
+      sbSelectTable('orders'),
+      sbSelectTable('tasks'),
+      sbSelectTable('finance').then(function(rows){financeTableOk=true;return rows;}).catch(function(e){
+        financeTableOk=false;
+        if(e.code!=='PGRST205'&&e.code!=='42P01')throw e;
+        console.warn('Таблица finance отсутствует',e);
+        return [];
+      })
+    ]);
     // Сортируем по дате создания (новые сверху) — порядок в БД произвольный
     ord.sort(function(a,b){return (b.created||0)-(a.created||0);});
     tsk.sort(function(a,b){return (b.created||0)-(a.created||0);});
@@ -1534,19 +1541,23 @@ async function login(r,userName,userLabel,mName){
   fStatus='all';
   // 1) Сначала показываем данные из локального кэша (быстрое открытие)
   const cached=readCache();
+  initialDataPending=!(cached&&Array.isArray(cached.orders));
+  initialDataError=false;
   if(cached&&Array.isArray(cached.orders)){
     orders=cached.orders;
     tasks=Array.isArray(cached.tasks)?cached.tasks:[];
     finance=Array.isArray(cached.finance)?cached.finance:[];
     setBase('orders',orders);setBase('tasks',tasks);setBase('finance',finance);
-    renderTabs();renderTab(tab);
   }else{
     orders=[];tasks=[];finance=[];
     setBase('orders',orders);setBase('tasks',tasks);setBase('finance',finance);
   }
+  // Навигация и понятное состояние загрузки появляются сразу, даже если на
+  // устройстве ещё нет кэша. Пользователь может переключить раздел во время чтения.
+  renderTab(tab);
   // 2) Затем загружаем актуальные данные из облака и накладываем их построчно:
   //    правки, которые с прошлого раза не успели уйти в облако, при этом не теряются
-  const data=await loadData(true);
+  const data=await loadData(true,true);
   if(lastLoadOk&&data){
     applyRemote('orders',data.orders||[]);
     applyRemote('tasks',data.tasks||[]);
@@ -1559,10 +1570,24 @@ async function login(r,userName,userLabel,mName){
     if(!cached)toast('Нет связи с облаком — данные не загружены');
     setBase('orders',orders);setBase('tasks',tasks);setBase('finance',finance);
   }
-  renderTabs();renderTab(tab);
+  initialDataPending=false;
+  initialDataError=!lastLoadOk&&!(cached&&Array.isArray(cached.orders));
+  renderTab(tab);
   startSync();
   resumeUnsaved();   // досылаем правки, не уехавшие в облако в прошлый раз
   if(cloudLoadOk&&crmProfile.role!=='master')maybeAutoBackup();  // фоновая ежедневная резервная копия в облако, тихо
+}
+async function retryInitialData(){
+  if(initialDataPending||syncInProgress)return;
+  initialDataPending=true;initialDataError=false;renderTab(tab);
+  const data=await loadData(true);
+  if(lastLoadOk&&data){
+    applyRemote('orders',data.orders||[]);
+    applyRemote('tasks',data.tasks||[]);
+    if(financeTableOk)applyRemote('finance',data.finance||[]);
+    cloudOrderCount=(data.orders||[]).length;
+  }else initialDataError=true;
+  initialDataPending=false;renderTab(tab);
 }
 
 // ═══ АВТОБЭКАП ═══
@@ -1713,11 +1738,12 @@ async function syncFromCloud(){
   if(isUserEditing())return;   // могла начать печатать, пока данные грузились
   // Пока читали — что-то записывали: прочитанное могло устареть. Перечитаем чуть позже.
   if(saveInFlight||seq!==saveSeq){setTimeout(syncFromCloud,1500);return;}
+  var hadInitialError=initialDataError;initialDataError=false;
   var changed=applyRemote('orders',data.orders||[]);
   if(applyRemote('tasks',data.tasks||[]))changed=true;
   if(financeTableOk&&applyRemote('finance',data.finance||[]))changed=true;
   cloudOrderCount=(data.orders||[]).length;
-  if(changed)refreshAfterRemote();
+  if(changed||hadInitialError)refreshAfterRemote();
 }
 
 // ═══ REALTIME: мгновенные обновления ═══
@@ -1911,7 +1937,7 @@ function renderTabs(){
   document.getElementById('page-eyebrow').textContent=category;
   document.getElementById('header-context').textContent=category;
   document.getElementById('page-shell').dataset.page=tab;
-  document.getElementById('page-new').style.display=(role==='manager'||role==='director')&&!isPreviewMode&&(tab==='list'||tab==='overview')?'inline-flex':'none';
+  document.getElementById('page-new').style.display=(role==='manager'||role==='director')&&!isPreviewMode&&!initialDataPending&&(tab==='list'||tab==='overview')?'inline-flex':'none';
 }
 function tplMore(){
   const primary=appPrimaryIds();
@@ -2007,11 +2033,19 @@ function renderTab(t){
   if(t==='fabrics'&&!canSeeSharedFabricPalette())t='master';
   if(t==='sdek'&&role==='master'&&!sdekExportList().length)t='master';
   tab=t;
+  renderTabs();
+  const m=document.getElementById('main');
+  if(initialDataPending){
+    m.innerHTML='<div class="startup-loading" role="status"><strong>Загружаем данные</strong><p>Заказы, задачи и финансы появятся после проверки. Разделы уже доступны в нижнем меню.</p></div>';
+    updateToTop();return;
+  }
+  if(initialDataError){
+    m.innerHTML='<div class="startup-loading" role="alert"><strong>Данные пока не загрузились</strong><p>Проверьте интернет и повторите загрузку. Пустые заказы вместо ваших данных не показываем.</p><button type="button" class="btn btn-primary" style="margin-top:12px" onclick="retryInitialData()">Повторить</button></div>';
+    updateToTop();return;
+  }
   if(t==='todos')markTasksSeen();
   if(t==='list'||t==='master')markOrdersSeen();
   if(t==='payments')markPaymentsSeen();
-  renderTabs();
-  const m=document.getElementById('main');
   if(t==='list'){m.innerHTML=tplList();updateToTop();return;}
   else if(t==='calendar')m.innerHTML=tplCalendar(false);
   else if(t==='cal-master')m.innerHTML=tplCalendar(true);
