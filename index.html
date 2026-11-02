@@ -5599,20 +5599,29 @@ function taskDueChip(t,editable){
 }
 function taskDueControls(prefix,due){
   var mode=due.length===10?'date':due.length===7?'month':'none';
+  var nowYear=new Date().getFullYear(),selectedYear=mode==='month'?Number(due.slice(0,4)):nowYear;
+  var years=[];for(var year=nowYear-1;year<=nowYear+5;year++)years.push(year);
+  if(years.indexOf(selectedYear)<0)years.push(selectedYear);
+  years.sort(function(a,b){return a-b;});
+  var months='Январь Февраль Март Апрель Май Июнь Июль Август Сентябрь Октябрь Ноябрь Декабрь'.split(' ');
   return '<div class="task-due-fields"><select id="'+prefix+'-mode" aria-label="Срок задачи" onchange="syncTaskDueControls(\''+prefix+'\')">'
     +'<option value="none"'+(mode==='none'?' selected':'')+'>Без срока</option><option value="date"'+(mode==='date'?' selected':'')+'>Точная дата</option><option value="month"'+(mode==='month'?' selected':'')+'>Месяц</option></select>'
     +'<input id="'+prefix+'-date" type="date" aria-label="Дата выполнения" value="'+(mode==='date'?due:'')+'"'+(mode==='date'?'':' hidden disabled')+'>'
-    +'<input id="'+prefix+'-month" type="month" aria-label="Месяц выполнения" value="'+(mode==='month'?due:'')+'"'+(mode==='month'?'':' hidden disabled')+'></div>';
+    +'<select id="'+prefix+'-month" aria-label="Месяц выполнения"'+(mode==='month'?'':' hidden disabled')+'>'
+    +months.map(function(name,i){var value=String(i+1).padStart(2,'0');return '<option value="'+value+'"'+(mode==='month'&&due.slice(5,7)===value?' selected':'')+'>'+name+'</option>';}).join('')+'</select>'
+    +'<select id="'+prefix+'-year" aria-label="Год выполнения"'+(mode==='month'?'':' hidden disabled')+'>'
+    +years.map(function(year){return '<option value="'+year+'"'+(year===selectedYear?' selected':'')+'>'+year+'</option>';}).join('')+'</select></div>';
 }
 function syncTaskDueControls(prefix){
   var mode=document.getElementById(prefix+'-mode').value;
-  ['date','month'].forEach(function(kind){var el=document.getElementById(prefix+'-'+kind);el.hidden=kind!==mode;el.disabled=kind!==mode;});
+  ['date','month','year'].forEach(function(kind){var el=document.getElementById(prefix+'-'+kind),show=kind==='year'?mode==='month':kind===mode;el.hidden=!show;el.disabled=!show;});
 }
 function taskDueFromControls(prefix){
   var mode=document.getElementById(prefix+'-mode').value;
   if(mode==='none')return '';
-  var value=document.getElementById(prefix+'-'+mode).value;
-  return (mode==='date'?/^\d{4}-\d{2}-\d{2}$/:/^\d{4}-\d{2}$/).test(value)?value:null;
+  var value=mode==='date'?document.getElementById(prefix+'-date').value:
+    document.getElementById(prefix+'-year').value+'-'+document.getElementById(prefix+'-month').value;
+  return (mode==='date'?/^\d{4}-\d{2}-\d{2}$/:/^\d{4}-(0[1-9]|1[0-2])$/).test(value)?value:null;
 }
 function canEditTask(t){
   if(!t||isPreviewMode)return false;
