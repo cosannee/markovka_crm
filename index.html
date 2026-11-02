@@ -438,6 +438,7 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 </style>
 <style>
 .dash-summary{margin:0 0 24px}.dash-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.dash-metrics>div{background:var(--card,#fff);border:1px solid var(--border,#e4e9e5);border-radius:16px;padding:18px;min-width:0}.dash-metrics small,.dash-metrics span{display:block;color:var(--text3);font-size:12px;line-height:1.5}.dash-metrics strong{display:block;font-size:23px;letter-spacing:-.5px;margin:8px 0;color:var(--accent);overflow-wrap:anywhere}.dash-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.dash-load{margin:24px 0}.dash-person{border-bottom:1px solid var(--border,#e4e9e5);padding:4px 0}.dash-person summary{display:flex;align-items:center;gap:12px;cursor:pointer;min-height:64px;list-style:none}.dash-person summary::-webkit-details-marker,.dash-wages summary::-webkit-details-marker{display:none}.dash-name{flex:1;min-width:0;font-weight:600;overflow-wrap:anywhere}.dash-name small,.dash-wages small{display:block;font-size:12px;color:var(--text3);font-weight:400;margin-top:4px}.dash-ready{font-size:12px;color:var(--accent);white-space:nowrap}.dash-stages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:4px 0 12px}.dash-stages span{font-size:12px;background:var(--bg);border-radius:8px;padding:10px;display:flex;justify-content:space-between;gap:8px}.dash-zero{color:var(--text3)}.dash-idle{font-size:12px;color:var(--text3);margin:14px 0}.dash-idle summary{cursor:pointer;min-height:32px}.dash-wages{border:1px solid var(--border,#e4e9e5);border-radius:14px;padding:14px;margin:20px 0}.dash-wages>summary{display:flex;gap:12px;justify-content:space-between;align-items:center;cursor:pointer;list-style:none;min-height:44px;font-size:14px}.dash-wages>summary>b{white-space:nowrap;color:var(--accent)}#overview-attention{scroll-margin-top:90px}.dash-history{margin:22px 0}.dash-history>summary{cursor:pointer;font-size:14px;min-height:44px;display:flex;align-items:center;color:var(--text3)}
+.dash-brief-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dash-brief-grid>div{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;min-width:0}.dash-brief-grid small,.dash-brief-grid span{display:block;color:var(--text3);font-size:12px;line-height:1.5}.dash-brief-grid strong{display:block;color:var(--accent);font-size:21px;margin:5px 0}.dash-brief-grid b{color:var(--text1)}
 @media(max-width:600px){.dash-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.dash-metrics>div{padding:12px}.dash-metrics>div:first-child{grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.dash-metrics>div:first-child strong{font-size:20px;margin:0}.dash-metrics>div:first-child span{margin-left:auto}.dash-metrics strong{font-size:20px}.dash-stages{grid-template-columns:repeat(2,minmax(0,1fr))}.dash-wages>summary{align-items:flex-start;flex-direction:column}.dash-load{margin-top:18px}.dash-person summary{gap:8px}.overview-grid{gap:8px}.overview-tile{padding:14px!important}.overview-count{font-size:26px!important}}
 
 </style>
@@ -1498,7 +1499,7 @@ async function login(r,userName,userLabel,mName){
   realRole=r;isPreviewMode=false;
   document.getElementById('btn-switch-role').style.display=r==='manager'?'inline-flex':'none';
   document.getElementById('h-preview-badge').style.display='none';
-  tab=r==='master'?'master':'overview';
+  tab=r==='master'?'master':r==='director'?'list':'overview';
   fStatus='all';
   // 1) Сначала показываем данные из локального кэша (быстрое открытие)
   const cached=readCache();
@@ -1794,7 +1795,7 @@ function switchPreview(r,name,label,mName){
     document.getElementById('h-preview-badge').style.display='inline-block';
     document.getElementById('h-preview-badge').textContent='просмотр';
   }
-  tab=r==='master'?'master':'overview';
+  tab=r==='master'?'master':r==='director'?'list':'overview';
   fStatus='all';
   renderTabs();renderTab(tab);
 }
@@ -1838,7 +1839,7 @@ function appNavItems(){
       {id:'fabrics',label:'Палитра тканей'},
     ];
 }
-function appPrimaryIds(){return role==='master'?['master','week','finance']:['overview','list','payments'];}
+function appPrimaryIds(){return role==='master'?['master','week','finance']:role==='director'?['list','week','payments']:['overview','list','payments'];}
 function appNavCount(id){
   if(id==='sdek')return role==='manager'?sdekQueueOrders().filter(function(o){return !hasSdekNumber(o);}).length:sdekExportList().length;
   if(id==='todos')return unreadTaskCount();
@@ -6843,9 +6844,9 @@ var finHistoryBase=finHistoryView;finHistoryView=function(){
 function finWagePlan(active){
  var names=MASTERS.concat(Array.from(new Set(active.map(function(o){return o.master||'Не назначен';}))).filter(function(n){return !MASTERS.includes(n);}));
  var rows=names.map(function(name){var list=active.filter(function(o){return (o.master||'Не назначен')===name;});return {name:name,n:list.length,plan:finSum(list,calcMasterPay),paid:finSum(list,function(o){return finPaid(o,'advance')+finPaid(o,'postpay');}),left:finSum(list,remainingPay)};}).filter(function(r){return r.n>0;});
- if(active.length)rows.push({name:'COO — Александра',n:active.length,plan:finSum(active,function(o){return calcCosts(o).sasha;}),paid:finSum(active,function(o){return finPaid(o,'sasha');}),left:finSum(active,function(o){return o.sashaPaid?0:Math.max(0,calcCosts(o).sasha-finPaid(o,'sasha'));})});
+ if(active.length&&role!=='director')rows.push({name:'COO — Александра',n:active.length,plan:finSum(active,function(o){return calcCosts(o).sasha;}),paid:finSum(active,function(o){return finPaid(o,'sasha');}),left:finSum(active,function(o){return o.sashaPaid?0:Math.max(0,calcCosts(o).sasha-finPaid(o,'sasha'));})});
  var total={plan:finSum(rows,function(r){return r.plan;}),paid:finSum(rows,function(r){return r.paid;}),left:finSum(rows,function(r){return r.left;})};
- var h='<section class="fin-wage-plan" aria-label="План зарплат текущей недели"><div class="fin-section-title">План зарплат текущей недели</div><p class="fin-note">Если текущий план выполнен на 100%. Заказы «В работе», «Готов» и «Готов к отправке». Следующая неделя сюда не входит. Комиссия COO показана отдельно и включена в итог.</p><div class="fin-wage-head"><span>Получатель</span><span>По плану</span><span>Уже выдано</span><span>Осталось выдать</span></div>';
+ var h='<section class="fin-wage-plan" aria-label="План зарплат текущей недели"><div class="fin-section-title">План зарплат текущей недели</div><p class="fin-note">Если текущий план выполнен на 100%. Заказы «В работе», «Готов» и «Готов к отправке». Следующая неделя сюда не входит.'+(role==='director'?' Показаны только зарплаты мастеров.':' Комиссия COO показана отдельно и включена в итог.')+'</p><div class="fin-wage-head"><span>Получатель</span><span>По плану</span><span>Уже выдано</span><span>Осталось выдать</span></div>';
  rows.forEach(function(r){h+='<div class="fin-wage-row"><div class="fin-wage-name"><b>'+uiText(r.name==='Александра'?'Александра — мастер':r.name)+'</b><small>'+r.n+' '+pluralZakaz(r.n)+'</small></div><div><small>По плану</small><b>'+fmt(r.plan)+'</b></div><div><small>Уже выдано</small><b>'+fmt(r.paid)+'</b></div><div><small>Осталось выдать</small><b>'+fmt(r.left)+'</b></div></div>';});
  if(!rows.length)h+='<p class="fin-note">В текущем плане пока нет заказов.</p>';
  h+='<div class="fin-wage-row fin-wage-total"><div class="fin-wage-name"><b>Итого</b><small>'+active.length+' '+pluralZakaz(active.length)+'</small></div><div><small>По плану</small><b>'+fmt(total.plan)+'</b></div><div><small>Уже выдано</small><b>'+fmt(total.paid)+'</b></div><div><small>Осталось выдать</small><b>'+fmt(total.left)+'</b></div></div><p class="fin-note">«Осталось выдать» — бюджет до завершения всего плана, с учётом авансов и итоговых выплат. Доступные сейчас выплаты находятся в разделе «Выплаты». По старым отметкам без точной суммы показан расчёт; новые выплаты учитываются по фактически проведённым суммам.</p></section>';
@@ -7098,6 +7099,13 @@ function tplDashboardSummary(list){
   var d=dashboardData(orders),assigned=capacityAssigned(),caps=capacityValues(),plan=capacityPlan(),w=capacityWeek();
   var nextFinance=nextWeekFinanceData(assigned);
   var totalCap=finSum(MASTERS,function(n){return Math.max(0,parseInt(caps[n])||0);}),assignedKnown=assigned.total-assigned.unassignedToys,find=Math.max(0,totalCap-assigned.total),over=Math.max(0,assigned.total-totalCap);
+  if(role==='director'){
+    var masterPlan=finSum(d.active,calcMasterPay),masterLeft=finSum(d.active,remainingPay);
+    return '<section class="dash-summary dash-brief" aria-label="Краткий план мастеров"><div class="overview-toolbar"><h2>Краткий план</h2></div><div class="dash-brief-grid">'
+      +'<div><small>Текущая неделя</small><strong>'+d.toys+' '+pluralIgrushka(d.toys)+'</strong><span>ЗП мастеров по плану: <b>'+fmt(masterPlan)+'</b></span></div>'
+      +'<div><small>Следующая неделя · '+uiText(w.label)+'</small><strong>'+nextFinance.toys+(plan?' / '+totalCap:'')+' '+pluralIgrushka(nextFinance.toys)+'</strong><span>ЗП мастеров по назначенным: <b>'+fmt(nextFinance.master)+'</b></span></div>'
+      +'</div><details class="dash-wages"><summary><span>План ЗП мастеров<small>Осталось выдать при выполнении текущего плана</small></span><b>'+fmt(masterLeft)+'</b></summary>'+finWagePlan(d.active)+'</details></section>';
+  }
   var h='<section class="dash-summary" aria-label="Текущая рабочая неделя"><div class="dash-metrics">'
    +'<div><small>Текущий план</small><strong>'+d.toys+' '+pluralIgrushka(d.toys)+'</strong><span>Заказов: '+d.active.length+'</span></div>'
    +'<div><small>Ждём от клиентов</small><strong>'+fmt(d.due)+'</strong><span>Остаток оплаты</span></div>'
