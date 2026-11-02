@@ -424,6 +424,11 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .track-reminder-contact a{display:block;min-height:36px;line-height:36px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--pink-ink);font-weight:600;text-decoration:underline}
 .track-reminder-actions .btn{min-height:36px;padding:6px 9px;font-size:11px;flex-shrink:0}
 @media(max-width:480px){.track-reminder-actions{gap:5px}.track-reminder-head{gap:6px}}
+.sdek-export-waybill{margin:8px 0 5px;padding:8px 10px;border-radius:9px;background:var(--accent-bg);color:var(--accent);overflow-wrap:anywhere}
+.sdek-export-waybill-label{display:block;margin-bottom:2px;font-size:10px;font-weight:600;color:var(--text2)}
+.sdek-export-waybill-number{font-size:16px;font-weight:700;letter-spacing:.2px;line-height:1.2}
+.sdek-export-waybill-last{font-size:23px;font-weight:800;letter-spacing:.4px;white-space:nowrap}
+.sdek-export-phone{margin-top:5px;font-size:10px;color:var(--text3);font-weight:400}
 </style>
 <style id="finance-v2-style">
 .fin-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0 18px}.fin-metric{padding:16px;background:var(--card);border:1px solid var(--border);border-radius:16px;min-width:0}.fin-metric span,.fin-metric small{display:block;color:var(--text3);font-size:12px;line-height:1.45}.fin-metric strong{display:block;font-size:23px;color:var(--accent);margin:6px 0;overflow-wrap:anywhere}.fin-tabs,.fin-actions,.fin-period,.fin-row-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}.fin-tabs .chip{white-space:normal}.fin-search{width:100%;margin:4px 0 16px;padding:13px 14px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text1);line-height:1.4;outline-offset:2px}.fin-person{background:var(--card);border:1px solid var(--border);border-radius:16px;margin:8px 0;overflow:hidden}.fin-person summary{display:flex;gap:12px;align-items:center;padding:16px;cursor:pointer;list-style:none}.fin-person summary::-webkit-details-marker{display:none}.fin-person-name{flex:1;min-width:0}.fin-person small,.fin-order-row small,.fin-settlement small,.fin-history-row small,.fin-reconcile-row small{display:block;color:var(--text3);font-size:12px;margin-top:4px}.fin-avatar{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:var(--bg);color:var(--accent);flex-shrink:0}.fin-person-body{padding:0 16px 16px}.fin-order-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--border);margin-top:10px}.fin-link{border:0;background:none;color:var(--accent);font-weight:700;padding:0;cursor:pointer}.fin-tag{font-size:11px;background:var(--bg);border-radius:6px;padding:3px 6px;color:var(--text3)}.fin-note{font-size:13px;line-height:1.55;color:var(--text3);margin:12px 0}.fin-alert{padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card);font-size:13px;line-height:1.5;margin:12px 0}.fin-alert button{margin:8px 0 0 8px}.fin-section-title{font-weight:700;margin:24px 0 12px}.fin-settlement,.fin-reconcile-row{display:flex;gap:14px;align-items:center;background:var(--card);padding:14px;border-bottom:1px solid var(--border)}.fin-settlement>div:first-child,.fin-reconcile-row>div:first-child{flex:1;min-width:0}.fin-history-row{display:flex;align-items:center;justify-content:space-between;text-align:left;width:100%;gap:12px;border:0;border-bottom:1px solid var(--border);padding:14px;background:var(--card);color:var(--text1);cursor:pointer}.fin-history-row span{min-width:0;overflow-wrap:anywhere}.fin-dialog{max-width:600px;width:100%;max-height:calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto}.fin-dialog input:not([type=checkbox]):not([type=radio]),.fin-dialog select,.fin-dialog textarea{width:100%;min-width:0}.fin-dialog .modal-actions{position:sticky;bottom:0;background:var(--card);padding:12px 0;margin-bottom:0}.fin-dialog .fin-error{color:var(--red-ink);font-size:14px;margin:8px 0}.fin-choice{display:grid;gap:10px}.fin-choice label{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--border);border-radius:12px;padding:12px;cursor:pointer}.fin-choice label small{display:block;color:var(--text3);margin-top:4px}.fin-choice input{flex-shrink:0;margin-top:4px}.fin-line{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border);padding:10px 0;font-size:14px}.fin-lines{max-height:35dvh;overflow:auto}.fin-total{font-size:17px;font-weight:700;line-height:1.5;padding:12px 0;color:var(--accent)}#finance-dialog{z-index:420;padding:16px;box-sizing:border-box}.fin-period input{min-width:0;max-width:100%}
@@ -2861,18 +2866,27 @@ function sdekExportText(){
   var isMasterCopy=role==='master';
   list.forEach(function(o){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
-    var nak=o.sdekNum?('накл. '+o.sdekNum):'накл. — (нет!)';
+    var nak=o.sdekNum?('НАКЛАДНАЯ № '+o.sdekNum):'НАКЛАДНАЯ — нет!';
     var toy=orderToyLabel(o);
     lines.push(o.num+(isMasterCopy?'':(' · '+(o.client||'—')))+(role==='manager'&&o.master?' ['+o.master+']':''));
+    lines.push(nak);
     if(role==='manager')lines.push('Откуда отправляем: '+sdekOriginText(o));
     lines.push('Коробка: '+sdekBoxSize(o));
     lines.push(sdekItemWeights(o));
     if(toy)lines.push(toy);
-    if(!isMasterCopy&&o.phone)lines.push(o.phone);
-    lines.push(nak+' · '+wt);
+    lines.push('Вес: '+wt);
+    if(!isMasterCopy&&o.phone)lines.push('Тел.: '+o.phone);
     lines.push('');
   });
   return lines.join('\n').trim();
+}
+function sdekWaybillMarkup(value){
+  var number=String(value||'').trim();
+  if(!number)return '<div class="sdek-export-waybill"><span class="sdek-export-waybill-label">Накладная №</span><span style="color:var(--red-ink);font-weight:700">не указана</span></div>';
+  var parts=number.match(/^(.*?)(\d{4})(\D*)$/);
+  return '<div class="sdek-export-waybill"><span class="sdek-export-waybill-label">Накладная №</span>'
+    +'<span class="sdek-export-waybill-number">'+uiText(parts?parts[1]:number)+'</span>'
+    +(parts?'<strong class="sdek-export-waybill-last">'+uiText(parts[2])+'</strong>'+uiText(parts[3]):'')+'</div>';
 }
 function pluralPosylka(n){
   var n10=n%10,n100=n%100;
@@ -2898,18 +2912,17 @@ function openSdekExport(){
   var isMaster=role==='master';
   var rows=list.map(function(o){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
-    var noNak=!o.sdekNum;
-    var nak=noNak?'<span style="color:var(--red-ink);font-weight:700">накл. — нет!</span>':('накл. '+o.sdekNum);
     var toy=orderToyLabel(o);
     return '<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">'
-      +'<input type="checkbox" class="sdek-chk" data-oid="'+o.id+'" checked style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0">'
-      +'<div style="flex:1">'
-      +'<div style="font-size:14px;font-weight:700;color:var(--text1)">'+o.num+(isMaster?'':(' · '+(o.client||'—')))+(role==='manager'&&o.master?' <span style="font-size:11px;font-weight:700;color:var(--purple-ink);background:var(--purple-bg);padding:1px 7px;border-radius:6px">'+o.master+'</span>':'')+'</div>'
-      +(toy?'<div style="font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-bg);display:inline-block;padding:2px 8px;border-radius:6px;margin:2px 0">'+toy+'</div>':'')
-      +((!isMaster&&o.phone)?'<div style="font-size:13px;color:var(--accent)">'+o.phone+'</div>':'')
-      +'<div style="font-size:12px;color:var(--gray-ink);margin-top:1px">'+nak+' · '+wt+'</div>'
+      +'<input type="checkbox" class="sdek-chk" data-oid="'+uiText(o.id)+'" checked style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0">'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:14px;font-weight:700;color:var(--text1)">'+uiText(o.num)+(isMaster?'':(' · '+uiText(o.client||'—')))+(role==='manager'&&o.master?' <span style="font-size:11px;font-weight:700;color:var(--purple-ink);background:var(--purple-bg);padding:1px 7px;border-radius:6px">'+uiText(o.master)+'</span>':'')+'</div>'
+      +(toy?'<div style="font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-bg);display:inline-block;padding:2px 8px;border-radius:6px;margin:2px 0">'+uiText(toy)+'</div>':'')
+      +sdekWaybillMarkup(o.sdekNum)
+      +'<div style="font-size:12px;color:var(--gray-ink);margin-top:1px">'+wt+'</div>'
       +'<div style="font-size:12px;margin-top:6px">Коробка: '+sdekBoxSize(o)+'</div>'
       +'<div style="font-size:12px;white-space:pre-line">'+uiText(sdekItemWeights(o))+'</div>'
+      +((!isMaster&&o.phone)?'<div class="sdek-export-phone">Тел.: '+uiText(o.phone)+'</div>':'')
       +'</div></label>';
   }).join('');
   var content=list.length
