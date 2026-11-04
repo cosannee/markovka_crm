@@ -3270,20 +3270,27 @@ function cleanAiOrderComment(value){
     .replace(/оплата\s*при\s*получении/gi,'')
     .replace(/^[\s,.;:–—-]+|[\s,.;:–—-]+$/g,'').replace(/\s{2,}/g,' ');
 }
-function specificAiClothes(value,originalText){
-  if(typeof value!=='string'||!value.trim())return '';
-  var garments=/(?:комбинезон[а-яё]*|воротнич[а-яё]*|ромпер[а-яё]*|шорт[а-яё]*|плать[а-яё]*|одежд[а-яё]*)/gi;
-  var number=/(?:№|#|[НH])\s*\d+|\d+\b/i;
-  var color=/(?:цвет|оттен|бел|чёрн|черн|красн|розов|голуб|син|зел[её]н|ж[её]лт|беж|коричн|фисташ|пудров|лаванд|мятн|сер(?:ый|ая|ое|ые|ого|ым|ой|ую)|сирен|молоч|кремов|песоч|персик|бордов|хаки|фиолет|бирюз|шоколад|карамель|серебр|золот|[НH]\s*\d+)/i;
-  var matches=Array.from(value.matchAll(garments));
-  if(!matches.length||!color.test(value))return '';
-  for(var i=0;i<matches.length;i++){
-    var end=i+1<matches.length?matches[i+1].index:value.length;
-    if(!number.test(value.slice(matches[i].index,end)))return '';
+function selectedClothesFromText(text){
+  var source=String(text||''),found=[];
+  // Номер должен стоять непосредственно после названия вещи: числа веса и цены не подходят.
+  var re=/(?:^|[^а-яё])((?:комбинезон[а-яё]*|воротнич[а-яё]*|воротник[а-яё]*|костюм[а-яё]*|ромпер[а-яё]*|шорт[а-яё]*|плать[а-яё]*|сарафан[а-яё]*))[ \t]*(?:(?:№|#|[НH])[ \t]*)?(\d{1,3})(?=$|\D)(?![.,]\d)/gi,m;
+  var color=/^[ \t]+((?:бел|ч[её]рн|красн|розов|голуб|син|зел[её]н|ж[её]лт|беж|коричн|фисташ|пудров|лаванд|мятн|сер(?:ый|ая|ое|ые|ого|ым|ой|ую)|сирен|молоч|кремов|песоч|персик|бордов|хаки|фиолет|бирюз|шоколад|карамель|серебр|золот)[а-яё]*)/i;
+  while((m=re.exec(source))){
+    var garment=m[1],kind=/^ворот/i.test(garment)?'воротник':garment.toLowerCase().replace(/(чик|очка|очк|ный|ная|ное|ые|а|ы|и|е|ов|ом)$/,'');
+    var shade=source.slice(re.lastIndex).match(color);
+    var label=garment+' №'+m[2]+(shade?' '+shade[1]:'');
+    var key=kind+':'+Number(m[2]);
+    if(!found.some(function(x){return x.key===key;}))found.push({key:key,label:label});
   }
-  var source=String(originalText||''),sourceMatches=Array.from(source.matchAll(garments));
-  if(!sourceMatches.some(function(m){var nearby=source.slice(m.index,m.index+110);return number.test(nearby)&&color.test(nearby);} ))return '';
-  return value.trim();
+  return found;
+}
+function specificAiClothes(value,originalText,allowSourceFallback){
+  var source=selectedClothesFromText(originalText);
+  if(!source.length)return '';
+  if(allowSourceFallback)return source.map(function(x){return x.label;}).join(' / ');
+  var selected=selectedClothesFromText(value),result=[];
+  selected.forEach(function(x){var match=source.find(function(y){return y.key===x.key;});if(match)result.push(match.label);});
+  return result.join(' / ');
 }
 function normalizeAiOrderItems(items,originalText){
   var mentions=explicitToyMentions(originalText);
@@ -3293,7 +3300,7 @@ function normalizeAiOrderItems(items,originalText){
     if(distinct.length===1)it.toyType=distinct[0];
     else if(mentions.length===items.length)it.toyType=mentions[index];
     else it.toyType='';
-    it.clothes=specificAiClothes(it.clothes,originalText);
+    it.clothes=specificAiClothes(it.clothes,originalText,items.length===1);
     it.comment=cleanAiOrderComment(it.comment);
     return it;
   });
@@ -3326,7 +3333,7 @@ async function parseOrderWithAI(){
     +'    "embText": "что именно вышить (имя, дата) или пустая строка",\n'
     +'    "bandColor": "цвет повязки-бантика на голову, если она упомянута, иначе пустая строка",\n'
     +'    "capColor": "цвет праздничного колпачка, если он упомянут, иначе пустая строка",\n'
-    +'    "clothes": "только конкретно выбранная одежда с номерами образцов и цветом. Общая фраза «воротничок и комбинезон» без выбора — пустая строка",\n'
+    +'    "clothes": "конкретно выбранная одежда: костюм, комбинезон, воротник или воротничок и другие вещи с номерами. Номера сохраняй даже без названия цвета: «Костюм №10 / Воротник №16». Общая фраза без номеров — пустая строка",\n'
     +'    "gender": "boy, girl или пустая строка — определи по контексту (мальчик/сын/он/его = boy, девочка/дочь/она/её = girl)",\n'
     +'    "comment": "важные детали именно по этой игрушке (например: шкурка потемнее, особый оттенок); не пиши сюда отправку или доставку СДЭК"\n'
     +'  } ]\n'
