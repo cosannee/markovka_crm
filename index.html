@@ -5521,10 +5521,9 @@ function tplMyWeek(targetMaster){
     body+='<input type="text" data-oid="'+o.id+'" value="'+esc(o.masterNote)+'" placeholder="Заметка себе: жду ткань, обрезать нить..." '
       +'onclick="event.stopPropagation()" onchange="updateMasterNoteEl(this)" '
       +'style="width:100%;box-sizing:border-box;margin-top:8px;padding:7px 10px;border-radius:8px;font-size:12px;background:var(--bg);font-family:inherit;outline:none">';
-    // Александре и Даше карточка переходит в «Заказы» на этот же заказ, раскрытый —
-    // там видны контакты клиента. Остальным мастерам это не нужно: у них и так вся
-    // нужная им информация уже на доске.
-    var canOpenFull=(role==='director'||role==='manager');
+    // Из доски недели каждый участник открывает этот заказ в своём списке.
+    // Поля заметки и кнопки этапов останавливают всплытие клика.
+    var canOpenFull=true;
     html+='<div class="card '+(o.urgent?'urgent':'')+'" style="margin-bottom:10px'+(canOpenFull?';cursor:pointer':'')+'"'+(canOpenFull?' onclick="jumpTo(\''+o.id+'\')"':'')+'>'
       +'<div style="padding:12px 14px">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
