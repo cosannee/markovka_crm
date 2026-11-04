@@ -2353,12 +2353,10 @@ function orderPassportItems(o,showOrderComment){
     if(it.weightG)meta.push(it.weightG+' г');
     if(it.heightCm)meta.push(it.heightCm+' см');
     if(it.gender)meta.push(({boy:'Мальчик',girl:'Девочка'}[it.gender]||it.gender));
-    var rows=[
-      ['Одежда',it.clothes],
-      ['Вышивка',it.embCount?'×'+it.embCount+(it.embText?' «'+it.embText+'»':''):''],
-      ['Повязка',it.bandOn?(it.bandColor||'цвет не указан'):''],
-      ['Колпачок',it.capOn?(it.capColor||'цвет не указан'):'']
-    ];
+    var rows=[['Одежда',it.clothes]];
+    if(it.embCount)rows.push(['Вышивка','×'+it.embCount+(it.embText?' «'+it.embText+'»':'')]);
+    if(it.bandOn)rows.push(['Повязка',it.bandColor||'цвет не указан']);
+    if(it.capOn)rows.push(['Колпачок',it.capColor||'цвет не указан']);
     html+='<section class="order-passport-item"><div class="order-passport-title"><strong>'+uiText(it.toyType||'Игрушка')+'</strong><span>'+uiText(meta.join(' · '))+'</span></div><div class="order-passport-grid">';
     rows.forEach(function(row){html+='<span>'+row[0]+'</span><b'+(row[1]?'':' class="is-empty"')+'>'+uiText(row[1]||'—')+'</b>';});
     html+='</div>';
@@ -3340,7 +3338,7 @@ async function parseOrderWithAI(){
     +'}\nЕсли игрушка одна — в массиве items будет один элемент.\n'
     +'\nНЕ добавляй «отправка СДЭК» в comment: доставка уже хранится в адресе и накладной.\n'
     +'ИГНОРИРУЙ шаблонные фразы об оплате — это НЕ данные заказа:\n'
-    +'— реквизиты для оплаты (карта OZON или Сбер, СБП, «получатель Дарья Андреевна», номер +79776516579) — этот телефон НИКОГДА не бери в поле phone;\n'
+    +'— реквизиты для оплаты (OZON Банк, получатель Серафим Юрьевич С., номер +7 (950) 293-01-52) — этот телефон НИКОГДА не бери в поле phone;\n'
     +'— фразу про отправку чека в чат;\n'
     +'— фразу «оплата при получении» — не пиши её в comment и не влияй на prepaid.\n'
     +'\nСообщение:\n'+text;
@@ -3353,7 +3351,7 @@ async function parseOrderWithAI(){
     if(parsed.orderNum)document.getElementById('fnum').value=parsed.orderNum;
     if(parsed.client)document.getElementById('fc').value=parsed.client;
     // Реквизиты для оплаты — не заказчик: этот номер не фиксируем
-    if(parsed.phone&&/79776516579/.test(parsed.phone.replace(/\D/g,'')))parsed.phone='';
+    if(parsed.phone&&/(?:79776516579|79502930152)/.test(parsed.phone.replace(/\D/g,'')))parsed.phone='';
     parsed.comment=cleanAiOrderComment(parsed.comment);
     if(parsed.phone)document.getElementById('fp').value=parsed.phone;
     if(parsed.address)document.getElementById('fa').value=parsed.address;
@@ -4834,8 +4832,9 @@ function payMsgText(o){
   var qty=orderQty(o);
   var subject=qty>1?'Ваши малыши готовы':((getItems(o)[0]||{}).gender==='girl'?'Ваша малышка готова':'Ваш малыш готов');
   return 'Здравствуйте! '+subject+', к оплате '+rest.toLocaleString('ru')+'₽,\n\n'
-    +'Оплатить можно на карту OZON Банк по номеру телефона ниже, получатель Дарья Андреевна С. К СБП подключён.\n\n'
-    +'+79776516579';
+    +'Перевод на другую карту: OZON Банк, получатель Серафим Юрьевич С.\n\n'
+    +'Телефон для перевода: +7 (950) 293-01-52\n\n'
+    +'После оплаты, пожалуйста, пришлите чек.';
 }
 // Сообщение клиенту при статусе «Отправлен» — по гендеру/количеству + ссылка на отслеживание
 function shipMsgText(o){
