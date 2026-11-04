@@ -2369,7 +2369,7 @@ function orderPassportItems(o,showOrderComment,canEditClothes){
     if(it.comment)html+='<div class="order-passport-note">'+uiText(it.comment)+'</div>';
     html+='</section>';
   });
-  if(showOrderComment&&o.comment)html+='<div class="order-passport-note">'+uiText(o.comment)+'</div>';
+  if(showOrderComment&&o.comment&&role!=='master')html+='<div class="order-passport-note">'+uiText(o.comment)+'</div>';
   return html+'</div>';
 }
 
@@ -2487,7 +2487,7 @@ function orderCard(o){
     if(canFinance&&it.price)html+='<div style="font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Цена: </span>'+fmt((parseFloat(it.price)||0)*(parseInt(it.count)||1))+'</div>';
     if(it.comment)html+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-bottom:4px">'+it.comment+'</div>';
   });
-  if(o.comment)html+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
+  if(o.comment&&canFinance)html+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
   html+='</div>';
   // Мастеру показываем только состояние оплаты; у руководителя сводка видна в компактной карточке.
   if(!canFinance){
@@ -5567,7 +5567,7 @@ function tplMyWeek(targetMaster){
       if(it.clothes)body+='<div style="font-size:12px;color:var(--text3)">Одежда: '+it.clothes+'</div>';
       if(it.comment)body+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-top:2px">'+it.comment+'</div>';
     });
-    if(o.comment)body+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
+    if(o.comment&&role!=='master')body+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px">'+o.comment+'</div>';
     // Заметка мастера себе — почему заказ застрял, что докупить и т.п. Видна только мастеру.
     body+='<input type="text" data-oid="'+o.id+'" value="'+esc(o.masterNote)+'" placeholder="Заметка себе: жду ткань, обрезать нить..." '
       +'onclick="event.stopPropagation()" onchange="updateMasterNoteEl(this)" '
