@@ -531,6 +531,8 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .order-passport-grid span{color:var(--text3)}
 .order-passport-grid b{font-weight:500;color:var(--text1);overflow-wrap:anywhere}
 .order-passport-grid b.is-empty{color:var(--text3)}
+.order-clothes-value{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.order-clothes-edit{flex:0 0 auto;border:0;border-radius:7px;background:var(--bg2);color:var(--accent);font:inherit;font-size:12px;font-weight:700;line-height:1;min-width:30px;min-height:28px;padding:5px 8px;cursor:pointer}
 .order-passport-note{font-size:11px;color:var(--orange-ink);padding:5px 0;overflow-wrap:anywhere}
 .order-master-sdek{display:inline-flex;align-items:center;border:0;background:none;color:var(--accent);font:inherit;font-size:11px;font-weight:700;cursor:pointer;padding:4px 0;min-height:26px}
 .master-passport-wrap{padding:0 12px 8px;border-top:1px solid var(--border)}
@@ -2345,7 +2347,7 @@ function toggleCard(id){
   if(isOpen)expandedCards.delete(id);else expandedCards.add(id);
 }
 
-function orderPassportItems(o,showOrderComment){
+function orderPassportItems(o,showOrderComment,canEditClothes){
   var items=getItems(o),html='<div class="order-passport" aria-label="Состав заказа">';
   items.forEach(function(it){
     var count=Math.max(1,parseInt(it.count)||1),meta=[];
@@ -2358,7 +2360,11 @@ function orderPassportItems(o,showOrderComment){
     if(it.bandOn)rows.push(['Повязка',it.bandColor||'цвет не указан']);
     if(it.capOn)rows.push(['Колпачок',it.capColor||'цвет не указан']);
     html+='<section class="order-passport-item"><div class="order-passport-title"><strong>'+uiText(it.toyType||'Игрушка')+'</strong><span>'+uiText(meta.join(' · '))+'</span></div><div class="order-passport-grid">';
-    rows.forEach(function(row){html+='<span>'+row[0]+'</span><b'+(row[1]?'':' class="is-empty"')+'>'+uiText(row[1]||'—')+'</b>';});
+    rows.forEach(function(row){
+      html+='<span>'+row[0]+'</span><b class="'+(row[1]?'':'is-empty')+(row[0]==='Одежда'&&canEditClothes?' order-clothes-value':'')+'">'+uiText(row[1]||'—');
+      if(row[0]==='Одежда'&&canEditClothes)html+='<button type="button" class="order-clothes-edit" aria-label="Изменить одежду" title="Изменить одежду" data-oid="'+uiText(o.id)+'" data-index="'+items.indexOf(it)+'" onclick="event.stopPropagation();openQuickClothesEdit(this.dataset.oid,Number(this.dataset.index))">✎</button>';
+      html+='</b>';
+    });
     html+='</div>';
     if(it.comment)html+='<div class="order-passport-note">'+uiText(it.comment)+'</div>';
     html+='</section>';
@@ -2419,7 +2425,7 @@ function orderCard(o){
   html+='<div class="order-card-body'+(canFinance?' has-finance':'')+'"><div class="order-card-content">';
   // Бейджи
   html+='<div class="order-badges" data-toggle-id="'+o.id+'" onclick="toggleCard(this.dataset.toggleId)" style="cursor:pointer;display:flex;flex-wrap:wrap;gap:4px">'+badges+'</div>';
-  html+=orderPassportItems(o,canFinance);
+  html+=orderPassportItems(o,canFinance,canEdit);
 
   var quickActions='';
   if((canFinance&&o.status==='ready')||(canEdit&&!closed)||(canEdit&&o.status!=='archived')){
@@ -2623,6 +2629,44 @@ async function unarchiveOrder(id){
 async function markSdek(id){
   const o=orders.find(function(x){return x.id===id;});
   if(o){o.sdek=true;await saveOrders(orders);renderTab(tab);toast('СДЭК отмечен');}
+}
+function openQuickClothesEdit(id,index){
+  if(!canManageOrders()){toast('Изменять данные заказа может только руководство');return;}
+  var o=orders.find(function(x){return x.id===id;});
+  var item=o&&getItems(o)[index];
+  if(!o||!item)return;
+  closeModal();
+  var el=document.createElement('div');
+  el.className='modal-bg';el.id='quick-clothes-modal';
+  var label=(item.toyType||'Игрушка')+((parseInt(item.count)||1)>1?' ×'+item.count:'');
+  el.innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-labelledby="quick-clothes-title">'
+    +'<div id="quick-clothes-title" class="modal-title">Одежда · '+esc(label)+'</div>'
+    +'<div class="fg"><label for="quick-clothes-value">Номера и выбранные вещи</label>'
+    +'<input id="quick-clothes-value" type="text" maxlength="240" value="'+esc(item.clothes||'')+'" placeholder="Например: Костюм №10 / Воротник №16" autocomplete="off"></div>'
+    +'<div class="modal-actions"><button type="button" class="btn btn-ghost" onclick="closeModal()">Отмена</button>'
+    +'<button type="button" class="btn btn-primary" data-oid="'+uiText(id)+'" data-index="'+index+'" onclick="saveQuickClothes(this.dataset.oid,Number(this.dataset.index),this)">Сохранить</button></div>'
+    +'</div>';
+  document.body.appendChild(el);
+  el.addEventListener('click',function(e){if(e.target===el)closeModal();});
+  var input=document.getElementById('quick-clothes-value');
+  input.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();el.querySelector('.btn-primary').click();}});
+  setTimeout(function(){input.focus();input.select();},80);
+}
+async function saveQuickClothes(id,index,button){
+  if(!canManageOrders()){toast('Изменять данные заказа может только руководство');return;}
+  var o=orders.find(function(x){return x.id===id;}),input=document.getElementById('quick-clothes-value');
+  if(!o||!input)return;
+  var value=input.value.trim();
+  var items=getItems(o);
+  if(!items[index])return;
+  if(Array.isArray(o.items)&&o.items.length)o.items[index].clothes=value;
+  else o.clothes=value; // совместимость со старыми заказами без массива items
+  o.clothes=(Array.isArray(o.items)&&o.items.length?(o.items[0].clothes||''):(o.clothes||''));
+  if(button)button.disabled=true;
+  var saved=await saveOrders(orders);
+  closeModal();
+  renderTab(tab);
+  toast(saved?'Одежда сохранена':'Изменение сохранено на устройстве · ждёт синхронизации');
 }
 async function saveSdekNum(id,val){
   if(!canManageOrders())return;
@@ -3688,6 +3732,7 @@ async function saveEdit(id){
 
 function closeModal(){
   const m=document.getElementById('edit-modal');if(m)m.remove();
+  const q=document.getElementById('quick-clothes-modal');if(q)q.remove();
 }
 
 
