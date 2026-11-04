@@ -496,6 +496,7 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .order-card-content{min-width:0}
 .order-card-content .order-badges{padding:8px 0 0}
 .order-card-content .order-delivery{margin:8px 0 0}
+.order-card-body>.order-delivery{margin:0}
 .order-quick-actions{display:flex;flex-wrap:wrap;gap:6px;padding:0}
 .order-quick-actions .btn{font-size:11px;line-height:1.25;padding:7px 9px;white-space:normal;text-align:center}
 .order-card-finance{background:var(--bg);border:1px solid var(--border);border-radius:11px;padding:10px 12px;min-width:0}
@@ -519,6 +520,23 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .order-cost-breakdown-body{display:grid;gap:5px;margin-top:9px}
 .order-cost-breakdown-body div{display:flex;justify-content:space-between;gap:10px}
 .order-cost-breakdown-body b{color:var(--text2)}
+.order-passport{margin:8px 0 0;border-top:1px solid var(--border)}
+.order-passport-item{padding:9px 0 3px}
+.order-passport-item+.order-passport-item{border-top:1px solid var(--border)}
+.order-passport-title{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px}
+.order-passport-title strong{font-size:14px;color:var(--text1)}
+.order-passport-title span{font-size:11px;color:var(--text3);text-align:right}
+.order-passport-grid{display:grid;grid-template-columns:86px minmax(0,1fr);font-size:12px;min-width:0}
+.order-passport-grid>*{padding:5px 0;border-top:1px solid var(--border);min-width:0}
+.order-passport-grid span{color:var(--text3)}
+.order-passport-grid b{font-weight:500;color:var(--text1);overflow-wrap:anywhere}
+.order-passport-grid b.is-empty{color:var(--text3)}
+.order-passport-note{font-size:11px;color:var(--orange-ink);padding:5px 0;overflow-wrap:anywhere}
+.order-master-sdek{display:inline-flex;align-items:center;border:0;background:none;color:var(--accent);font:inherit;font-size:11px;font-weight:700;cursor:pointer;padding:4px 0;min-height:26px}
+.master-passport-wrap{padding:0 12px 8px;border-top:1px solid var(--border)}
+.master-passport-wrap .order-passport{margin-top:0;border-top:0}
+.order-reference{border:0;background:none;color:var(--accent);font:inherit;font-weight:700;cursor:pointer;padding:0;text-align:left}
+@media(max-width:480px){.order-passport-grid{grid-template-columns:74px minmax(0,1fr)}.order-passport-title{flex-wrap:wrap}.order-passport-title span{text-align:left}}
 
 </style>
 </head>
@@ -2147,7 +2165,8 @@ function tplList(){
   // В архиве путь назад должен быть виден сразу, а не после всего списка
   if(showArchive)html+='<button class="archive-back" onclick="showArchive=false;listShown=LIST_PAGE_SIZE;renderTab(\'list\')">← Вернуться к заказам</button>';
   html+='<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">'
-    +'<input class="search-inp" id="search-field" style="flex:1;min-width:0" placeholder="Поиск по номеру, клиенту..." oninput="updateSearch(this.value)" value="'+search+'">'
+    +'<input class="search-inp" id="search-field" style="flex:1;min-width:0" placeholder="Поиск по номеру, клиенту..." oninput="updateSearch(this.value)" value="'+uiText(search)+'">'
+    +(search?'<button type="button" class="btn btn-sm btn-ghost" aria-label="Показать все заказы" onclick="search=\'\';listShown=LIST_PAGE_SIZE;renderTab(\'list\')">Показать все</button>':'')
     +'</div>';
   // Кнопки действий для менеджера/директора
   if(canFinance){
@@ -2237,7 +2256,7 @@ function trackBanner(){
     var msg=shipMsgText(o);
     var ig=igInfo(o.instagram);
     html+='<div class="track-reminder">'
-      +'<div class="track-reminder-head"><span class="card-num">'+uiText(o.num)+'</span>'
+      +'<div class="track-reminder-head"><button type="button" class="order-reference" data-oid="'+uiText(o.id)+'" onclick="jumpTo(this.dataset.oid)">'+uiText(o.num)+'</button>'
       +'<span class="track-reminder-client" title="'+uiText(o.client||'—')+'">'+uiText(o.client||'—')+'</span>'
       +'<span class="track-reminder-number" title="'+uiText(o.sdekNum||'Нет накладной')+'">'+uiText(o.sdekNum||'нет накладной')+'</span></div>'
       +'<div class="track-reminder-actions"><div class="track-reminder-contact">'
@@ -2326,6 +2345,30 @@ function toggleCard(id){
   if(isOpen)expandedCards.delete(id);else expandedCards.add(id);
 }
 
+function orderPassportItems(o,showOrderComment){
+  var items=getItems(o),html='<div class="order-passport" aria-label="Состав заказа">';
+  items.forEach(function(it){
+    var count=Math.max(1,parseInt(it.count)||1),meta=[];
+    if(count>1)meta.push(count+' шт.');
+    if(it.weightG)meta.push(it.weightG+' г');
+    if(it.heightCm)meta.push(it.heightCm+' см');
+    if(it.gender)meta.push(({boy:'Мальчик',girl:'Девочка'}[it.gender]||it.gender));
+    var rows=[
+      ['Одежда',it.clothes],
+      ['Вышивка',it.embCount?'×'+it.embCount+(it.embText?' «'+it.embText+'»':''):''],
+      ['Повязка',it.bandOn?(it.bandColor||'цвет не указан'):''],
+      ['Колпачок',it.capOn?(it.capColor||'цвет не указан'):'']
+    ];
+    html+='<section class="order-passport-item"><div class="order-passport-title"><strong>'+uiText(it.toyType||'Игрушка')+'</strong><span>'+uiText(meta.join(' · '))+'</span></div><div class="order-passport-grid">';
+    rows.forEach(function(row){html+='<span>'+row[0]+'</span><b'+(row[1]?'':' class="is-empty"')+'>'+uiText(row[1]||'—')+'</b>';});
+    html+='</div>';
+    if(it.comment)html+='<div class="order-passport-note">'+uiText(it.comment)+'</div>';
+    html+='</section>';
+  });
+  if(showOrderComment&&o.comment)html+='<div class="order-passport-note">'+uiText(o.comment)+'</div>';
+  return html+'</div>';
+}
+
 function orderCard(o){
   var st=STATUSES[o.status]||STATUSES.new;
   var oTotal=orderTotal(o);
@@ -2337,8 +2380,6 @@ function orderCard(o){
   var margin=canFinance?calcMargin(o):null;
   var isExpanded=expandedCards.has(o.id);
   var oItems=getItems(o);
-  var wt=orderWeight(o);
-  var ht=oItems.length===1?(parseFloat(oItems[0].heightCm)||0):0;
   var oPrice=orderTotal(o);
 
   // Badges
@@ -2361,17 +2402,11 @@ function orderCard(o){
   html+='<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">';
   html+='<span style="font-weight:700;letter-spacing:-.4px;font-size:16px;color:var(--accent);white-space:nowrap">'+o.num+'</span>';
   if(canFinance&&o.client)html+='<span style="font-size:13px;font-weight:600;color:var(--text1)">'+o.client+'</span>';
-  var toyLbl=orderToyLabel(o);
   var ig=canFinance?igInfo(o.instagram):null;
   if(ig)html+='<a href="'+ig.url+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:12px;font-weight:600;color:var(--pink-ink);text-decoration:none;white-space:nowrap;display:inline-flex;align-items:center;gap:3px">'+ig.handle+'</a>';
   html+='</div>';
-  // Инфо строка — игрушка первой, потом вес/рост/мастер/месяц
+  // Постоянная строка контекста; состав заказа всегда расположен ниже в паспорте.
   var info=[];
-  if(toyLbl)info.push('<span style="font-size:11px;font-weight:700;color:var(--accent2);background:var(--accent-bg);padding:1px 7px;border-radius:7px">'+toyLbl+'</span>');
-  var clInfo=orderClothesInfo(o);
-  if(clInfo)info.push('<span title="'+esc(clInfo.full)+'" style="font-size:11px;font-weight:700;color:'+clInfo.ink+';background:'+clInfo.bg+';padding:1px 7px;border-radius:7px">'+clInfo.short+'</span>');
-  if(wt)info.push(wt+'г');
-  if(ht)info.push(ht+' см');
   if(o.master)info.push(o.master);
   info.push(moStr);
   if(o.deliveryDay)info.push('до '+o.deliveryDay+'-го');
@@ -2386,21 +2421,7 @@ function orderCard(o){
   html+='<div class="order-card-body'+(canFinance?' has-finance':'')+'"><div class="order-card-content">';
   // Бейджи
   html+='<div class="order-badges" data-toggle-id="'+o.id+'" onclick="toggleCard(this.dataset.toggleId)" style="cursor:pointer;display:flex;flex-wrap:wrap;gap:4px">'+badges+'</div>';
-  if(canFinance&&(hasSdekNumber(o)||o.status==='sent')){
-    html+='<div class="order-waybill"><span>СДЭК · накладная</span>';
-    if(hasSdekNumber(o))html+='<b>'+uiText(o.sdekNum)+'</b><button type="button" class="btn btn-sm btn-ghost" data-val="'+uiText(o.sdekNum)+'" onclick="copyField(this.dataset.val,this)">Копировать</button>';
-    else html+='<span>номер не указан</span>';
-    html+='</div>';
-  }
-
-  // Доставка остаётся доступной из списка, без открытия всей карточки.
-  if(canFinance){
-    var deliveryAddress=String(o.address||'').trim();
-    if(deliveryAddress){
-      html+='<details class="order-delivery"><summary><span class="order-delivery-label">Доставка:</span><span class="order-delivery-preview" title="'+uiText(deliveryAddress)+'">'+uiText(deliveryAddress)+'</span><span class="order-delivery-chevron" aria-hidden="true">⌄</span></summary>'
-        +'<div class="order-delivery-full"><span>'+uiText(deliveryAddress)+'</span><button type="button" class="btn btn-sm btn-ghost" data-val="'+uiText(deliveryAddress)+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div></details>';
-    }else html+='<div class="order-delivery order-delivery-missing">Доставка: адрес не указан</div>';
-  }
+  html+=orderPassportItems(o,canFinance);
 
   var quickActions='';
   if((canFinance&&o.status==='ready')||(canEdit&&!closed)||(canEdit&&o.status!=='archived')){
@@ -2423,6 +2444,18 @@ function orderCard(o){
       +'<div class="order-pay-meta"><span>Оплачено <b>'+fmt(paidAmount)+'</b></span><span class="'+(rest?'is-due':'')+'">Осталось <b>'+fmt(rest)+'</b></span></div>';
     if(margin!==null)html+='<div class="order-margin-inline'+(margin<0?' is-negative':'')+'"><span>Маржа</span><b>'+fmt(margin)+'</b><small>· '+marginPct+'% от стоимости</small></div>';
     html+='</section>';
+    if(hasSdekNumber(o)||o.status==='sent'){
+      html+='<div class="order-waybill"><span>СДЭК · накладная</span>';
+      if(hasSdekNumber(o))html+='<b>'+uiText(o.sdekNum)+'</b><button type="button" class="btn btn-sm btn-ghost" data-val="'+uiText(o.sdekNum)+'" onclick="copyField(this.dataset.val,this)">Копировать</button>';
+      else html+='<span>номер не указан</span>';
+      html+='</div>';
+    }
+    // Адрес остаётся доступным из списка, но не вмешивается в паспорт игрушки.
+    var deliveryAddress=String(o.address||'').trim();
+    if(deliveryAddress){
+      html+='<details class="order-delivery"><summary><span class="order-delivery-label">Доставка:</span><span class="order-delivery-preview" title="'+uiText(deliveryAddress)+'">'+uiText(deliveryAddress)+'</span><span class="order-delivery-chevron" aria-hidden="true">⌄</span></summary>'
+        +'<div class="order-delivery-full"><span>'+uiText(deliveryAddress)+'</span><button type="button" class="btn btn-sm btn-ghost" data-val="'+uiText(deliveryAddress)+'" onclick="copyField(this.dataset.val,this)">Копировать</button></div></details>';
+    }else html+='<div class="order-delivery order-delivery-missing">Доставка: адрес не указан</div>';
   }
   html+=quickActions;
   html+='</div>';
@@ -2620,9 +2653,10 @@ async function delOrder(id){
   await saveOrders(orders);renderTab(tab);toast('Заказ удалён');
 }
 function jumpTo(id){
+  var ord=orders.find(function(x){return x.id===id;});
+  if(!ord){toast('Заказ не найден');return;}
   if(role==='master'){
-    // Света: переходим в её вкладку и показываем именно нужный заказ
-    var ord=orders.find(function(x){return x.id===id;});
+    if(ord.master!==masterName){toast('Этот заказ недоступен');return;}
     fStatus='all';fMonth='all';
     // если заказ уже завершён — открываем архив, иначе обычный список
     showArchive=!!(ord&&(ord.status==='sent'||ord.status==='done'||ord.status==='archived'));
@@ -2634,7 +2668,11 @@ function jumpTo(id){
     },80);
     return;
   }
-  fStatus='all';fMonth='all';search='';showArchive=!!(orders.find(function(o){return o.id===id&&o.status==='archived';}));
+  // Поиск по номеру обходит старые фильтры и пагинацию: нужная карточка
+  // открывается даже из сводки, СДЭК, финансов или далёкой страницы архива.
+  fStatus='all';fMonth='all';fMaster='all';fUrgent=false;fOpenOnly=false;
+  search=ord.num||'';listShown=ord.num?LIST_PAGE_SIZE:orders.length;
+  showArchive=ord.status==='archived';
   expandedCards.add(id);
   renderTab('list');
   setTimeout(function(){
@@ -2663,8 +2701,8 @@ function tplSdek(){
   html+='</div>';
   if(!list.length)return html+'<div class="card" style="padding:20px;color:var(--text3)">Пока нет заказов для СДЭК</div>';
   list.forEach(function(o){
-    html+='<div class="card" style="padding:14px 16px;margin-bottom:8px">'
-      +'<div style="font-weight:700">'+uiText(o.num)+(role==='master'?'':' · '+uiText(o.client||'—'))+'</div>'
+    html+='<div class="card" id="sdek-card-'+uiText(o.id)+'" style="padding:14px 16px;margin-bottom:8px">'
+      +'<div style="font-weight:700"><button type="button" class="order-reference" data-oid="'+uiText(o.id)+'" onclick="jumpTo(this.dataset.oid)">'+uiText(o.num)+'</button> · '+uiText(o.client||'Клиент не указан')+'</div>'
       +(role==='manager'?'<div style="font-size:12px;color:var(--text3)">'+uiText(o.master||'—')+'</div>':'')
       +'<div style="font-size:13px;color:var(--text2);margin-top:5px">'+uiText(orderToyLabel(o)||'')+' · '+(orderWeight(o)||'—')+' г</div>'
       +'<div style="font-size:12px;color:var(--text3);margin-top:4px">'+(o.sdekNum?'Накладная '+uiText(o.sdekNum):'Накладная ещё не указана')+'</div>'
@@ -2763,7 +2801,7 @@ function tplSdekQueue(){
   list.forEach(function(o){
     var oid=uiText(o.id),canEdit=!isPreviewMode;
     html+='<div class="card" style="padding:16px;margin-bottom:12px;overflow-wrap:anywhere">'
-      +'<div style="font-weight:700;margin-bottom:8px">'+uiText(o.num)+' · '+uiText(o.client||'Клиент не указан')+'</div>'
+      +'<div style="font-weight:700;margin-bottom:8px"><button type="button" class="order-reference" data-oid="'+oid+'" onclick="jumpTo(this.dataset.oid)">'+uiText(o.num)+'</button> · '+uiText(o.client||'Клиент не указан')+'</div>'
       +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><span class="badge '+STATUSES[o.status].cls+'">'+STATUSES[o.status].label+'</span>'
       +'<span class="badge '+(isClosed(o)?'b-paid':'b-part')+'">'+(isClosed(o)?'Заказ закрыт · оплачен':'Заказ не закрыт')+'</span></div>'
       +'<div style="color:var(--text3);font-size:13px;margin-bottom:10px">'+uiText(o.master||'Мастер не назначен')+' · '+uiText(orderToyLabel(o))+' · '+(orderWeight(o)||'—')+' г</div>';
@@ -2845,12 +2883,20 @@ function setOverviewFilter(key,value){
   if(key==='week')overviewWeekOffset=Math.min(0,overviewWeekOffset+Number(value));
   overviewLimit=25;renderTab('overview');
 }
-function openOverviewSdek(id){
-  if(!canSeeOverview())return;
+function openSdekOrder(id){
   var o=orders.find(function(x){return x.id===id;});if(!o)return;
+  if(role==='master'){
+    if(o.master!==masterName||!sdekExportList().some(function(x){return x.id===id;})){toast('Заказ пока не в разделе СДЭК');return;}
+    renderTab('sdek');
+    setTimeout(function(){document.getElementById('sdek-card-'+id)?.scrollIntoView({behavior:'smooth',block:'center'});},80);
+    return;
+  }
+  if(!canSeeOverview())return;
+  if(!sdekQueueOrders().some(function(x){return x.id===id;})){jumpTo(id);return;}
   sdekQueueTab=hasSdekNumber(o)?'issued':'waiting';sdekClosedFilter='all';sdekMasterFilter='all';sdekSearch='';sdekFocusId=o.id;
   renderTab('sdek');window.scrollTo({top:0,behavior:'auto'});
 }
+function openOverviewSdek(id){openSdekOrder(id);}
 function showOverviewPayMessage(id){
   if(!canSeeOverview())return;
   var o=orders.find(function(x){return x.id===id;});if(!o||overviewBucket(o)!=='unpaid')return;
@@ -2929,7 +2975,7 @@ function tplWeekOverview(){
   if(!attention.length)html+='<div class="empty">Нет заказов, требующих действий</div>';
   attention.slice(0,overviewLimit).forEach(function(o){
     var key=overviewBucket(o),id=uiText(o.id),days=o.readyAt?Math.max(0,Math.floor((Date.now()-o.readyAt)/86400000)):null;
-    html+='<article class="card overview-order"><div style="font-weight:700">'+uiText(o.num)+' · '+uiText(o.client||'Клиент не указан')+'</div>'
+    html+='<article class="card overview-order"><div style="font-weight:700"><button type="button" class="order-reference" data-oid="'+id+'" onclick="jumpTo(this.dataset.oid)">'+uiText(o.num)+'</button> · '+uiText(o.client||'Клиент не указан')+'</div>'
       +'<p class="overview-note">'+uiText(o.master||'Мастер не назначен')+' · '+uiText(orderToyLabel(o))+'</p>'
       +'<div style="margin:8px 0">'+(key==='check'?uiText(overviewIssue(o)):OVERVIEW_GROUPS[key].title)+'</div>';
     if(key==='unpaid'){
@@ -2963,7 +3009,7 @@ function sdekExportText(){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
     var nak=o.sdekNum?('НАКЛАДНАЯ № '+o.sdekNum):'НАКЛАДНАЯ — нет!';
     var toy=orderToyLabel(o);
-    lines.push(o.num+(isMasterCopy?'':(' · '+(o.client||'—')))+(role==='manager'&&o.master?' ['+o.master+']':''));
+    lines.push(o.num+' · '+(o.client||'Клиент не указан')+(role==='manager'&&o.master?' ['+o.master+']':''));
     lines.push(nak);
     if(role==='manager')lines.push('Откуда отправляем: '+sdekOriginText(o));
     lines.push('Коробка: '+sdekBoxSize(o));
@@ -3004,14 +3050,13 @@ function pluralIgrushka(n){
 function openSdekExport(){
   var list=sdekExportList();
   var now=new Date().toLocaleDateString('ru',{day:'numeric',month:'long'});
-  var isMaster=role==='master';
   var rows=list.map(function(o){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
     var toy=orderToyLabel(o);
     return '<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">'
       +'<input type="checkbox" class="sdek-chk" data-oid="'+uiText(o.id)+'" checked style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0">'
       +'<div style="flex:1;min-width:0">'
-      +'<div style="font-size:14px;font-weight:700;color:var(--text1)">'+uiText(o.num)+(isMaster?'':(' · '+uiText(o.client||'—')))+(role==='manager'&&o.master?' <span style="font-size:11px;font-weight:700;color:var(--purple-ink);background:var(--purple-bg);padding:1px 7px;border-radius:6px">'+uiText(o.master)+'</span>':'')+'</div>'
+      +'<div style="font-size:14px;font-weight:700;color:var(--text1)">'+uiText(o.num)+' · '+uiText(o.client||'Клиент не указан')+(role==='manager'&&o.master?' <span style="font-size:11px;font-weight:700;color:var(--purple-ink);background:var(--purple-bg);padding:1px 7px;border-radius:6px">'+uiText(o.master)+'</span>':'')+'</div>'
       +(toy?'<div style="font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-bg);display:inline-block;padding:2px 8px;border-radius:6px;margin:2px 0">'+uiText(toy)+'</div>':'')
       +sdekWaybillMarkup(o.sdekNum)
       +'<div style="font-size:12px;color:var(--gray-ink);margin-top:1px">'+wt+'</div>'
@@ -5574,32 +5619,13 @@ function tplMaster(){
       .sort(function(a,b){return (b.month||'').localeCompare(a.month||'')||((b.created||0)-(a.created||0));});
     if(!arch.length){html+='<div class="empty">Архив пуст</div>';return html;}
     arch.forEach(function(o){
-      var aItems=getItems(o);
-      var params='';
-      aItems.forEach(function(it,idx){
-        var gl=it.gender?({boy:'Мальчик',girl:'Девочка'}[it.gender]||it.gender):'';
-        params+='<div style="'+(idx?'margin-top:6px;':'')+'font-size:12px;font-weight:700;color:var(--accent)">'+(it.toyType||'Игрушка')+(((parseInt(it.count)||1)>1)?' ×'+it.count:'')+'</div>';
-        var line=[];
-        if(it.weightG)line.push(it.weightG+'г');
-        if(it.heightCm)line.push(it.heightCm+' см');
-        if(it.embCount)line.push('вышивка ×'+it.embCount+(it.embText?' «'+it.embText+'»':''));
-        if(it.bandOn)line.push('повязка-бантик'+(it.bandColor?' ('+it.bandColor+')':''));
-        if(it.capOn)line.push('колпачок'+(it.capColor?' ('+it.capColor+')':''));
-        if(line.length)params+='<div style="font-size:12px;color:var(--text3)">'+line.join(' · ')+'</div>';
-        if(gl)params+='<div style="font-size:12px;color:var(--text3)">Пол: '+gl+'</div>';
-        if(it.clothes)params+='<div style="font-size:12px;color:var(--text3)">Одежда: '+it.clothes+'</div>';
-        if(it.comment)params+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic">'+it.comment+'</div>';
-      });
-      if(o.comment)params+='<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:4px">'+o.comment+'</div>';
       html+='<div class="card" id="c-'+o.id+'" style="margin-bottom:8px;opacity:.85">'
         +'<div style="padding:12px 14px">'
         +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">'
-        +'<span class="card-num">'+o.num+'</span>'
+        +'<span class="card-num">'+uiText(o.num)+'</span>'
         +'<span class="badge b-done">✓ Выполнен</span></div>'
-        +'<div style="font-size:14px;font-weight:700">'+orderToyLabel(o)+'</div>'
         +'<div style="font-size:12px;color:var(--text3);margin-top:2px">'+orderQty(o)+' шт. · '+moLbl(o.month)+'</div>'
-        +'<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">'+params+'</div>'
-        +'</div></div>';
+        +'</div><div class="master-passport-wrap">'+orderPassportItems(o,true)+'</div></div>';
     });
     return html;
   }
@@ -5619,33 +5645,16 @@ function tplMaster(){
     }
     var advWarn=(masterCfg(o.master).advancePct>0&&o.status==='new'&&!o.advancePaid)
       ?'<span class="badge advance-pending">Аванс ожидается</span>':'';
-    // Блок параметров для мастера по каждой игрушке (без ФИО/телефона/адреса/сумм)
-    var mItems=getItems(o);
-    var paramsM='<div style="padding:8px 12px;border-top:1px solid var(--border)">'
-      +'<div style="font-size:10px;color:var(--text3);font-weight:700;letter-spacing:0;margin-bottom:6px">Параметры</div>';
-    mItems.forEach(function(it,idx){
-      var gl=it.gender?({boy:'Мальчик',girl:'Девочка'}[it.gender]||it.gender):'';
-      paramsM+='<div style="'+(idx?'margin-top:8px;':'')+'font-size:12px;font-weight:700;color:var(--accent);margin-bottom:2px">'+(it.toyType||'Игрушка')+(((parseInt(it.count)||1)>1)?' ×'+it.count:'')+'</div>';
-      var line=[];
-      if(it.weightG)line.push(it.weightG+'г');
-      if(it.heightCm)line.push(it.heightCm+' см');
-      if(it.embCount)line.push('вышивка ×'+it.embCount+(it.embText?' «'+it.embText+'»':''));
-      if(it.bandOn)line.push('повязка-бантик'+(it.bandColor?' ('+it.bandColor+')':''));
-      if(it.capOn)line.push('колпачок'+(it.capColor?' ('+it.capColor+')':''));
-      if(line.length)paramsM+='<div style="font-size:12px;color:var(--text3);margin-bottom:2px">'+line.join(' · ')+'</div>';
-      if(gl)paramsM+='<div style="font-size:12px;margin-bottom:2px"><span style="color:var(--text3)">Пол: </span>'+gl+'</div>';
-      if(it.clothes)paramsM+='<div style="font-size:12px;margin-bottom:2px"><span style="color:var(--text3)">Одежда: </span>'+it.clothes+'</div>';
-      if(it.comment)paramsM+='<div style="font-size:12px;color:var(--orange-ink);font-style:italic;margin-bottom:2px">'+it.comment+'</div>';
-    });
-    paramsM+='</div>';
+    // Одинаковое расположение игрушки, одежды и всех дополнений в каждом заказе.
+    var paramsM='<div class="master-passport-wrap">'+orderPassportItems(o,false)+'</div>';
     html+='<div class="card '+(o.urgent?'urgent':'')+'" id="c-'+o.id+'" style="margin-bottom:8px">'
       +'<div style="padding:10px 12px">'
       +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-      +'<span class="card-num">'+o.num+'</span><span class="badge '+st.cls+'">'+st.label+'</span>'+advWarn
+      +'<span class="card-num">'+uiText(o.num)+'</span><span class="badge '+st.cls+'">'+(o.status==='planned'?'Отправка планируется':st.label)+'</span>'+advWarn
       +(o.urgent?'<span class="badge b-urgent">Срочно</span>':'')
       +'</div>'
-      +'<div style="font-size:12px;color:var(--text3);margin-top:3px">'
-      +(orderToyLabel(o)?orderToyLabel(o)+' · ':'')+orderQty(o)+' шт. · '+moLbl(o.month)+'</div>'
+      +'<div style="font-size:12px;color:var(--text3);margin-top:3px">'+orderQty(o)+' шт. · '+moLbl(o.month)+'</div>'
+      +(o.status==='planned'?'<button type="button" class="order-master-sdek" data-oid="'+uiText(o.id)+'" onclick="openSdekOrder(this.dataset.oid)">Раздел СДЭК →</button>':'')
       +'</div>'
       +paramsM
       +'<div class="card-foot">'
