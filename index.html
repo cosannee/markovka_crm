@@ -7154,8 +7154,37 @@ function finPayout(person,entries){
  body+='</div>'+(legacy.length?'<label class="checkbox-row"><input id="fin-legacy-confirm" type="checkbox"> Проверила суммы старых авансов по переводам</label>':'')+'<div class="fg"><label>Счёт списания</label>'+finAccountSelect('fin-account')+'</div><div class="fg"><label>Дата перевода</label><input id="fin-date" type="date" value="'+todayISO()+'"></div>';
  var credit=finCreditBalance(person);
  if(credit>0)body+='<label class="checkbox-row"><input id="fin-use-credit" type="checkbox" onchange="finPayoutTotal()"> Использовать зачёт до '+fmt(credit)+'</label>';
- body+='<div id="fin-payout-total" class="fin-total"></div><p class="fin-note">Нажимайте «Провести», когда перевод действительно выполнен. CRM фиксирует движение денег, банковский перевод здесь не выполняется.</p>';
- finOpen('Подтвердить выплату',body,'Провести','finConfirmPayout()');finModalCtx={person:person,entries:entries.map(function(e){return {o:finClone(e.o),kind:e.kind};}),legacy:legacy.length,credit:credit};finPayoutTotal();
+ body+='<div id="fin-payout-total" class="fin-total"></div><button type="button" id="fin-refresh-payout" class="btn btn-secondary btn-sm" onclick="finRefreshPayout()">Обновить расчёт</button><p class="fin-note">Нажимайте «Провести», когда перевод действительно выполнен. CRM фиксирует движение денег, банковский перевод здесь не выполняется.</p>';
+ finOpen('Подтвердить выплату',body,'Провести','finConfirmPayout()');finModalCtx={type:'payout',person:person,entries:entries.map(function(e){return {o:finClone(e.o),kind:e.kind};}),legacy:legacy.length,credit:credit};finPayoutTotal();
+}
+async function finRefreshPayout(){
+ var x=finModalCtx;if(!x||x.type!=='payout'||finBusy)return;
+ var button=document.getElementById('fin-refresh-payout'),err=document.getElementById('fin-error');
+ if(saveState.pending||saveInFlight||syncInProgress){if(err)err.textContent='Дождитесь завершения сохранения и повторите обновление расчёта.';return;}
+ var keep={account:v('fin-account'),date:v('fin-date'),useCredit:!!(document.getElementById('fin-use-credit')&&document.getElementById('fin-use-credit').checked),legacyConfirmed:!!(document.getElementById('fin-legacy-confirm')&&document.getElementById('fin-legacy-confirm').checked),legacy:{}};
+ x.entries.forEach(function(e,i){var n=document.getElementById('fin-old-'+i);if(n)keep.legacy[e.o.id]=Number(n.value);});
+ if(button){button.disabled=true;button.textContent='Обновляю…';}
+ if(err)err.textContent='';
+ try{
+  var data=await loadData(true);
+  if(!lastLoadOk||!data)throw Error('Не удалось получить свежие данные из облака. Повторите попытку позже.');
+  applyRemote('orders',data.orders||[]);applyRemote('tasks',data.tasks||[]);if(financeTableOk)applyRemote('finance',data.finance||[]);
+  var pend=pendingIds('orders'),fresh=[];
+  x.entries.forEach(function(e){
+   var o=orders.find(function(y){return y.id===e.o.id;});if(!o)return;
+   if(isLocalDirty('orders',o,pend))throw Error('Заказ '+(o.num||'')+' имеет локальные несохранённые изменения. Дождитесь синхронизации.');
+   var eligible=e.kind==='advance'?o.master==='Света'&&PAY_ADV_STATUSES.includes(o.status)&&!o.postpayPaid&&!o.advancePaid:e.kind==='postpay'?postNeedFor(o.master).some(function(y){return y.id===o.id;}):officeEligible(o)&&!o[finFlag(e.kind)];
+   if(eligible&&finOutstanding(e.kind,o)>0)fresh.push({o:o,kind:e.kind});
+  });
+  if(!fresh.length)throw Error('После обновления начислений к этой выплате не осталось. Проверьте раздел выплат.');
+  finPayout(x.person,fresh);
+  if(keep.account&&finAccounts().some(function(a){return a.id===keep.account;}))document.getElementById('fin-account').value=keep.account;
+  if(keep.date)document.getElementById('fin-date').value=keep.date;
+  var credit=document.getElementById('fin-use-credit');if(credit)credit.checked=keep.useCredit;
+  var legacyConfirm=document.getElementById('fin-legacy-confirm');if(legacyConfirm)legacyConfirm.checked=keep.legacyConfirmed;
+  finModalCtx.entries.forEach(function(e,i){var n=document.getElementById('fin-old-'+i);if(n&&keep.legacy[e.o.id]!=null)n.value=keep.legacy[e.o.id];});
+  finPayoutTotal();toast('Расчёт обновлён по актуальным данным');
+ }catch(e){var currentError=document.getElementById('fin-error');if(currentError)currentError.textContent=e.message;else toast(e.message);var currentButton=document.getElementById('fin-refresh-payout');if(currentButton){currentButton.disabled=false;currentButton.textContent='Обновить расчёт';}}
 }
 function finPayoutPayload(){var x=finModalCtx;return {recipient:x.person,accountId:v('fin-account'),date:v('fin-date'),useCredit:!!(document.getElementById('fin-use-credit')&&document.getElementById('fin-use-credit').checked),entries:x.entries.map(function(e,i){var n=document.getElementById('fin-old-'+i),old=n?Number(n.value):null;var out={orderId:e.o.id,kind:e.kind,expected:finFP(e.o),amount:n?Math.max(0,calcMasterPay(e.o)-old):finOutstanding(e.kind,e.o)};if(n)out.legacyAdvance=old;return out;})};}
 function finPayoutTotal(){if(!finModalCtx)return;var p=finPayoutPayload(),sum=finSum(p.entries,function(e){return e.amount;}),credit=p.useCredit?Math.min(sum,finModalCtx.credit):0;p.entries.forEach(function(e,i){var el=document.getElementById('fin-line-'+i);if(el)el.textContent=fmt(e.amount);});document.getElementById('fin-payout-total').textContent='Начислено '+fmt(sum)+(credit?' · зачёт '+fmt(credit):'')+' · перевод '+fmt(sum-credit);}
