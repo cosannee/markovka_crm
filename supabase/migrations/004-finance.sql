@@ -123,7 +123,7 @@ begin
    c:=crm_private.fin_calc(j);who:=case k when 'sasha' then 'Александра — комиссия' when 'dividend' then 'Дарья — дивиденды' else j->>'master' end;
    if who is distinct from recipient then raise exception 'Получатель изменился';end if;
    if j->>kindflag='true' then raise exception 'Эта часть уже выплачена';end if;
-   if k='advance' and (j->>'status' not in ('new','nextweek','work') or crm_private.fin_num(c,'advance')<=0) then raise exception 'Аванс сейчас недоступен';end if;
+   if k='advance' and (j->>'master'<>'Света' or j->>'status' not in ('new','nextweek','work') or crm_private.fin_num(c,'advance')<=0) then raise exception 'Аванс сейчас недоступен';end if;
    if k='postpay' and j->>'status' not in ('ready','planned','sent','done','archived') then raise exception 'Заказ ещё не готов';end if;
    if k='postpay' and j->>'master'='Даша' and coalesce(nullif(j->>'readyAt','')::numeric,nullif(j->>'closedAt','')::numeric,case when j->>'status' in ('ready','planned') then 1789912800000 else crm_private.fin_num(j,'created') end)<1789912800000 then raise exception 'Исторический заказ вне периода выплат';end if;
    if k in ('sasha','dividend') and (c->>'closed'<>'true' or crm_private.fin_num(c,'closedAt')<1786888800000) then raise exception 'Заказ ещё не закрыт для начисления';end if;
