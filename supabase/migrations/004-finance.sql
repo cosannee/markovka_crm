@@ -119,7 +119,10 @@ begin
    if kindflag is null or oid||':'||k=any(seen) then raise exception 'Неверный состав выплаты';end if;seen:=array_append(seen,oid||':'||k);
    select data into j from public.orders where id=oid for update;
    if j is null then raise exception 'Заказ не найден';end if;
-   if e->'expected' is distinct from crm_private.pick(j,array['master','status','items','price','weightG','weight','count','embCount','bandOn','capOn','urgent','closed','closedAt','readyAt','advancePaid','postpayPaid','sashaPaid','dividendPaid','financePayments','varRate']) then raise exception 'Заказ изменился. Обновите расчёт';end if;
+   if e->'expected' is distinct from crm_private.pick(j,array['master','status','items','price','weightG','weight','count','embCount','bandOn','capOn','urgent','closed','closedAt','readyAt','advancePaid','postpayPaid','sashaPaid','dividendPaid','financePayments','varRate']) then
+    raise exception 'Заказ % изменился. Обновите расчёт',coalesce(j->>'num',oid)
+      using detail='Не совпали поля: '||coalesce((select string_agg(f,', ') from unnest(array['master','status','items','price','weightG','weight','count','embCount','bandOn','capOn','urgent','closed','closedAt','readyAt','advancePaid','postpayPaid','sashaPaid','dividendPaid','financePayments','varRate']) as x(f) where (e->'expected')->f is distinct from j->f),'структура записи');
+   end if;
    c:=crm_private.fin_calc(j);who:=case k when 'sasha' then 'Александра — комиссия' when 'dividend' then 'Дарья — дивиденды' else j->>'master' end;
    if who is distinct from recipient then raise exception 'Получатель изменился';end if;
    if j->>kindflag='true' then raise exception 'Эта часть уже выплачена';end if;

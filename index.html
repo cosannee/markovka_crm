@@ -7000,7 +7000,7 @@ async function finSend(command){
   crmStorage.setItem('finance_command_v2',JSON.stringify(command));
   var r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_finance_action',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_id:command.id,p_action:command.action,p_payload:command.payload})});
   var data=await r.json();
-  if(!r.ok){if(r.status>=400&&r.status<500)crmStorage.removeItem('finance_command_v2');throw Error(data.message||'Операция не проведена ('+r.status+')');}
+  if(!r.ok){if(r.status>=400&&r.status<500)crmStorage.removeItem('finance_command_v2');throw Error([data.message,data.details].filter(Boolean).join(' · ')||'Операция не проведена ('+r.status+')');}
   finApply(data);crmStorage.removeItem('finance_command_v2');return data;
  }finally{finBusy=false;saveInFlight--;saveSeq++;}
 }
