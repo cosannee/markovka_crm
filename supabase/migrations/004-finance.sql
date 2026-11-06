@@ -53,7 +53,7 @@ declare p public.crm_profiles; old_cmd crm_private.finance_commands; req jsonb; 
  oid text; k text; who text; txid text; sid text; lineid text; mode text; acc text; action_date text; reason text; kindflag text;
  amount numeric; total numeric:=0; cash numeric:=0; used numeric:=0; line_cash numeric; take numeric; available numeric; before_paid numeric; paid_adv numeric;
  ms bigint:=floor(extract(epoch from clock_timestamp())*1000)::bigint;
- changed_orders jsonb:='[]'; changed_finance jsonb:='[]'; lines jsonb:='[]'; credits jsonb:='[]'; seen text[]:='{}'; existing jsonb; recipient text; old_payment jsonb;
+ changed_orders jsonb:='[]'; changed_finance jsonb:='[]'; lines jsonb:='[]'; credits jsonb:='[]'; seen text[]:='{}'; existing jsonb; recipient text; old_payment jsonb; snapshots jsonb:='{}';
 begin
  p:=crm_private.profile();if p.user_id is null or p.role not in ('manager','director') then raise exception 'Нет доступа' using errcode='42501';end if;
  if p_id is null or length(p_id)<16 or length(p_id)>100 or jsonb_typeof(p_payload) is distinct from 'object' then raise exception 'Неверный запрос';end if;
@@ -119,9 +119,14 @@ begin
    if kindflag is null or oid||':'||k=any(seen) then raise exception 'Неверный состав выплаты';end if;seen:=array_append(seen,oid||':'||k);
    select data into j from public.orders where id=oid for update;
    if j is null then raise exception 'Заказ не найден';end if;
-   if e->'expected' is distinct from crm_private.pick(j,array['master','status','items','price','weightG','weight','count','embCount','bandOn','capOn','urgent','closed','closedAt','readyAt','advancePaid','postpayPaid','sashaPaid','dividendPaid','financePayments','varRate']) then
-    raise exception 'Заказ % изменился. Обновите расчёт',coalesce(j->>'num',oid)
-      using detail='Не совпали поля: '||coalesce((select string_agg(f,', ') from unnest(array['master','status','items','price','weightG','weight','count','embCount','bandOn','capOn','urgent','closed','closedAt','readyAt','advancePaid','postpayPaid','sashaPaid','dividendPaid','financePayments','varRate']) as x(f) where (e->'expected')->f is distinct from j->f),'структура записи');
+   if snapshots ? oid then
+    if e->'expected' is distinct from snapshots->oid then raise exception 'В заказе % разные исходные расчёты',coalesce(j->>'num',oid);end if;
+   else
+    if e->'expected' is distinct from crm_private.pick(j,array['master','status','items','price','weightG','weight','count','embCount','bandOn','capOn','urgent','closed','closedAt','readyAt','advancePaid','postpayPaid','sashaPaid','dividendPaid','financePayments','varRate']) then
+     raise exception 'Заказ % изменился. Обновите расчёт',coalesce(j->>'num',oid)
+       using detail='Не совпали поля: '||coalesce((select string_agg(f,', ') from unnest(array['master','status','items','price','weightG','weight','count','embCount','bandOn','capOn','urgent','closed','closedAt','readyAt','advancePaid','postpayPaid','sashaPaid','dividendPaid','financePayments','varRate']) as x(f) where (e->'expected')->f is distinct from j->f),'структура записи');
+    end if;
+    snapshots:=snapshots||jsonb_build_object(oid,crm_private.pick(j,array['master','status','items','price','weightG','weight','count','embCount','bandOn','capOn','urgent','closed','closedAt','readyAt','advancePaid','postpayPaid','sashaPaid','dividendPaid','financePayments','varRate']));
    end if;
    c:=crm_private.fin_calc(j);who:=case k when 'sasha' then 'Александра — комиссия' when 'dividend' then 'Дарья — дивиденды' else j->>'master' end;
    if who is distinct from recipient then raise exception 'Получатель изменился';end if;
