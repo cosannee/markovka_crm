@@ -3321,14 +3321,19 @@ function tplCalendar(isMasterView){
 function calNav(d,tabId){calDate=new Date(calDate.getFullYear(),calDate.getMonth()+d,1);renderTab(tabId||'calendar');}
 
 
-function explicitToyMentions(text){
-  var found=[],re=/(?:^|[^а-яё])((?:мишк|медвежонк|медвед|мышк|мышонк|зайк|зайч|зайц|котик|котёнк|котенк)[а-яё]*)(?=$|[^а-яё])/gi,m;
+function toyTypeFromMention(word){
+  word=String(word||'').toLowerCase();
+  return /^мыш|^мышон/.test(word)?'Мышка':/^миш|^медв/.test(word)?'Мишка':/^зай|^зая|^зайц/.test(word)?'Зайка':'Котик';
+}
+function explicitToyMentionRanges(text){
+  var found=[],re=/(^|[^а-яё])((?:мишк|медвежонк|медвед|мышк|мышонк|зайк|зайч|зайц|котик|котёнк|котенк)[а-яё]*)(?=$|[^а-яё])/gi,m;
   while((m=re.exec(String(text||'')))){
-    var word=m[1].toLowerCase();
-    found.push(/^мыш|^мышон/.test(word)?'Мышка':/^миш|^медв/.test(word)?'Мишка':/^зай|^зая|^зайц/.test(word)?'Зайка':'Котик');
+    var start=m.index+m[1].length;
+    found.push({type:toyTypeFromMention(m[2]),start:start,end:start+m[2].length});
   }
   return found;
 }
+function explicitToyMentions(text){return explicitToyMentionRanges(text).map(function(x){return x.type;});}
 function cleanAiOrderComment(value){
   if(typeof value!=='string')return '';
   return value.replace(/(?:^|[\s,.;:–—-])(?:отправка|доставка)\s*(?:через\s*)?(?:сдэк|cdek)(?:ом)?(?=$|[\s,.;:–—-])/gi,' ')
@@ -3339,10 +3344,10 @@ function cleanAiOrderComment(value){
 function selectedClothesFromText(text){
   var source=String(text||''),found=[];
   // Номер должен стоять непосредственно после названия вещи: числа веса и цены не подходят.
-  var re=/(?:^|[^а-яё])((?:комбинезон[а-яё]*|воротнич[а-яё]*|воротник[а-яё]*|костюм[а-яё]*|ромпер[а-яё]*|шорт[а-яё]*|плать[а-яё]*|сарафан[а-яё]*))[ \t]*(?:(?:№|#|[НH])[ \t]*)?(\d{1,3})(?=$|\D)(?![.,]\d)/gi,m;
+  var re=/(?:^|[^а-яё])((?:одежд[аы]?|комбинезон[а-яё]*|воротнич[а-яё]*|воротник[а-яё]*|костюм[а-яё]*|ромпер[а-яё]*|шорт[а-яё]*|плать[а-яё]*|сарафан[а-яё]*))[ \t]*(?:(?:№|#|[НH])[ \t]*)?(\d{1,3})(?=$|\D)(?![.,]\d)/gi,m;
   var color=/^[ \t]+((?:бел|ч[её]рн|красн|розов|голуб|син|зел[её]н|ж[её]лт|беж|коричн|фисташ|пудров|лаванд|мятн|сер(?:ый|ая|ое|ые|ого|ым|ой|ую)|сирен|молоч|кремов|песоч|персик|бордов|хаки|фиолет|бирюз|шоколад|карамель|серебр|золот)[а-яё]*)/i;
   while((m=re.exec(source))){
-    var garment=m[1],kind=/^ворот/i.test(garment)?'воротник':garment.toLowerCase().replace(/(чик|очка|очк|ный|ная|ное|ые|а|ы|и|е|ов|ом)$/,'');
+    var garment=m[1],kind=/^ворот/i.test(garment)?'воротник':/^одежд/i.test(garment)?'одежда':garment.toLowerCase().replace(/(чик|очка|очк|ный|ная|ное|ые|а|ы|и|е|ов|ом)$/,'');
     var shade=source.slice(re.lastIndex).match(color);
     var label=garment+' №'+m[2]+(shade?' '+shade[1]:'');
     var key=kind+':'+Number(m[2]);
@@ -3359,17 +3364,58 @@ function specificAiClothes(value,originalText,allowSourceFallback){
   return result.join(' / ');
 }
 function normalizeAiOrderItems(items,originalText){
-  var mentions=explicitToyMentions(originalText);
+  var source=String(originalText||''),ranges=explicitToyMentionRanges(source),mentions=ranges.map(function(x){return x.type;}),aligned=ranges.length===items.length;
   var distinct=Array.from(new Set(mentions));
   return items.map(function(item,index){
     var it=Object.assign({},item||{});
     if(distinct.length===1)it.toyType=distinct[0];
     else if(mentions.length===items.length)it.toyType=mentions[index];
     else it.toyType='';
-    it.clothes=specificAiClothes(it.clothes,originalText,items.length===1);
+    var itemSource=aligned?source.slice(ranges[index].start,index+1<ranges.length?ranges[index+1].start:source.length):(items.length===1?source:'');
+    it.clothes=itemSource?specificAiClothes('',itemSource,true):specificAiClothes(it.clothes,source,items.length===1);
+    if(itemSource){
+      var embroidery=extractEmbroidery(itemSource,it.embText);
+      it.embCount=embroidery.count;it.embText=embroidery.text;
+      it.bandOn=hasRequestedAccessory(itemSource,/(?:повяз[а-яё]*|бантик[а-яё]*|ободок[а-яё]*)/i);
+      it.capOn=hasRequestedAccessory(itemSource,/(?:колпач[а-яё]*|колпоч[а-яё]*|колпак[а-яё]*|праздничн[а-яё]*\s+шапочк[а-яё]*)/i);
+      if(!it.bandOn)it.bandColor='';
+      if(!it.capOn)it.capColor='';
+    }else{
+      it.embCount=Math.max(0,parseInt(it.embCount)||0);it.embText=it.embCount?String(it.embText||'').trim():'';
+      it.bandOn=!!it.bandOn||!!it.bandColor;it.capOn=!!it.capOn||!!it.capColor;
+    }
     it.comment=cleanAiOrderComment(it.comment);
     return it;
   });
+}
+function hasRequestedAccessory(text,pattern){
+  var source=String(text||''),re=new RegExp(pattern.source,'gi'),m;
+  while((m=re.exec(source))){
+    var before=source.slice(Math.max(0,m.index-28),m.index),after=source.slice(m.index+m[0].length,m.index+m[0].length+36);
+    if(/(?:без|убрать|не\s+(?:нужна|нужно|надо|требуется))\s*$/i.test(before))continue;
+    if(/(?:^|[\s,.;:—-])не\s+(?:нужна|нужно|надо|требуется|делать|добавлять|нужен)(?:[\s,.;:!?—-]|$)/i.test(after.slice(0,32)))continue;
+    return true;
+  }
+  return false;
+}
+function extractEmbroidery(text,aiValue){
+  var source=String(text||'');
+  if(!/(?:вышив[а-яё]*|вышить|вышиваем|вышито)/i.test(source))return {count:0,text:''};
+  var countMatch=source.match(/(\d+)[ \t]*(?:шт\.?[ \t]*)?вышив[а-яё]*/i)||source.match(/вышив[а-яё]*[ \t]*(?:имени[ \t]*)?(?:×|x|:)?[ \t]*(\d+)/i);
+  var count=Math.max(1,parseInt(countMatch&&(countMatch[1]||countMatch[2]))||1),name='';
+  var patterns=[
+    /\(\s*(?:девочк[а-яё]*|мальчик[а-яё]*)\s+([А-ЯЁ][а-яё-]+)/i,
+    /(?:девочк[а-яё]*|мальчик[а-яё]*)\s+([А-ЯЁ][а-яё-]+)/i,
+    /(?:^|[^а-яё])(?:имя|имени)(?:\s+для\s+вышивки)?\s*[:=]\s*([А-ЯЁ][а-яё-]+)/i,
+    /(?:^|[^а-яё])вышивк[а-яё]*\s*[:=]\s*([А-ЯЁ][а-яё-]+)/i,
+    /(?:^|[^а-яё])вышить\s+(?:имя\s+)?([А-ЯЁ][а-яё-]+)/i
+  ];
+  for(var i=0;i<patterns.length&&!name;i++){var found=source.match(patterns[i]);if(found)name=found[1];}
+  if(!name){
+    var ai=String(aiValue||'').trim().replace(/^(?:в\s+имени|имя|имени)\s+/i,'');
+    if(ai&&!/^(?:в\s+имени|имя|имени|в\s+подарок|подарок)$/i.test(ai))name=ai;
+  }
+  return {count:count,text:name};
 }
 async function parseOrderWithAI(){
   var text=document.getElementById('ai-input').value.trim();
@@ -3397,9 +3443,11 @@ async function parseOrderWithAI(){
     +'    "price": число или null,\n'
     +'    "embCount": число вышивок или 0,\n'
     +'    "embText": "что именно вышить (имя, дата) или пустая строка",\n'
+    +'    "bandOn": true если повязка/бантик упомянуты, даже если они в подарок или цвет не указан; false только если не упомянуты,\n'
     +'    "bandColor": "цвет повязки-бантика на голову, если она упомянута, иначе пустая строка",\n'
+    +'    "capOn": true если колпачок упомянут, даже если он в подарок или цвет не указан; false только если не упомянут,\n'
     +'    "capColor": "цвет праздничного колпачка, если он упомянут, иначе пустая строка",\n'
-    +'    "clothes": "конкретно выбранная одежда: костюм, комбинезон, воротник или воротничок и другие вещи с номерами. Номера сохраняй даже без названия цвета: «Костюм №10 / Воротник №16». Общая фраза без номеров — пустая строка",\n'
+    +'    "clothes": "конкретно выбранная одежда: также сохраняй формат «Одежда №11 / Воротничок №16». Распознавай №, #, Н и H перед номером; сохраняй номера даже без цвета. Общая фраза без номеров — пустая строка",\n'
     +'    "gender": "boy, girl или пустая строка — определи по контексту (мальчик/сын/он/его = boy, девочка/дочь/она/её = girl)",\n'
     +'    "comment": "важные детали именно по этой игрушке (например: шкурка потемнее, особый оттенок); не пиши сюда отправку или доставку СДЭК"\n'
     +'  } ]\n'
@@ -3442,7 +3490,7 @@ async function parseOrderWithAI(){
       cont.innerHTML=aiItems.map(function(it){return itemBlockHtml({
         toyType:it.toyType||'',weightG:it.weightG||'',heightCm:it.heightCm||'',count:it.count||1,
         price:it.price||'',embCount:it.embCount||0,embText:it.embText||'',
-        bandOn:!!it.bandColor,bandColor:it.bandColor||'',capOn:!!it.capColor,capColor:it.capColor||'',
+        bandOn:!!it.bandOn||!!it.bandColor,bandColor:it.bandColor||'',capOn:!!it.capOn||!!it.capColor,capColor:it.capColor||'',
         clothes:it.clothes||'',gender:it.gender||'',comment:it.comment||''
       });}).join('');
       renumberItems('items-container');
