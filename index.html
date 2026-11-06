@@ -5600,6 +5600,7 @@ function masterStatusControl(o){
 
 function tplMaster(){
   var myBase=masterName?orders.filter(function(o){return o.master===masterName;}):orders;
+  var sdekReadyOrders=sdekExportList();
   var months=[...new Set(myBase.map(function(o){return o.month;}))].sort();
   var filtered=myBase.filter(function(o){
     if(showArchive){if(o.status!=='sent'&&o.status!=='done'&&o.status!=='archived')return false;}
@@ -5617,6 +5618,23 @@ function tplMaster(){
     return (a.created||0)-(b.created||0);
   });
   var html='';
+  var masterEncouragements=[
+    'Спасибо за внимание к каждой детали 🤍',
+    'Ваше мастерство видно в каждой игрушке.',
+    'Шаг за шагом — и всё складывается.',
+    'Пусть работа сегодня идёт спокойно и в своём ритме.',
+    'Ваша забота становится частью чьей-то семейной истории.'
+  ];
+  var encouragementDay=new Date(),encouragementIndex=(encouragementDay.getDate()+encouragementDay.getMonth()+encouragementDay.getFullYear())%masterEncouragements.length;
+  html+='<section class="card" style="padding:13px 15px;margin-bottom:6px;border-color:var(--border2)">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'
+    +'<div style="min-width:0"><div style="display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);flex:0 0 auto"></span><strong style="font-size:13px;color:var(--text1)">СДЭК · готово к отправке</strong></div>'
+    +'<div style="font-size:11px;color:var(--text3);margin-top:4px">Оплачены · готовы · накладные оформлены</div></div>'
+    +'<strong style="font-size:15px;color:var(--accent);white-space:nowrap">'+sdekReadyOrders.length+' '+pluralZakaz(sdekReadyOrders.length)+'</strong>'
+    +'</div>'
+    +(sdekReadyOrders.length?'<button type="button" class="btn btn-sm btn-secondary" style="margin-top:10px" onclick="navigateApp(\'sdek\')">Открыть СДЭК →</button>':'')
+    +'</section>'
+    +'<div style="font-size:11px;color:var(--text3);margin:0 2px 10px">'+masterEncouragements[encouragementIndex]+'</div>';
   // Инструкция по статусам (раскрывающаяся)
   var hOpen=window.svetaHelpOpen;
   html+='<div style="background:var(--card);border-radius:12px;margin-bottom:10px;box-shadow:var(--sh)">'
