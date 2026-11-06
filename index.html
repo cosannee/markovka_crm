@@ -512,6 +512,10 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .order-margin-inline b{font-size:12px;color:var(--green-ink)}
 .order-margin-inline.is-negative b{color:var(--red-ink)}
 .order-margin-inline small{font-size:10px;color:var(--text3)}
+.order-recipient-pay{display:flex;align-items:center;flex-wrap:wrap;gap:5px 8px;border-top:1px solid var(--border);margin-top:8px;padding-top:7px;font-size:10px;color:var(--text3)}
+.order-recipient-pay-label{font-weight:600}
+.order-recipient-pay-item{display:inline-flex;gap:4px;align-items:baseline;white-space:nowrap}
+.order-recipient-pay-item b{font-size:11px;color:var(--text2)}
 .order-waybill{display:flex;align-items:center;flex-wrap:wrap;gap:5px 8px;margin-top:8px;font-size:11px;color:var(--text3)}
 .order-waybill b{font-size:12px;color:var(--accent);overflow-wrap:anywhere}
 .order-waybill .btn{padding:3px 7px;font-size:10px}
@@ -2166,6 +2170,17 @@ function tplList(){
   var html='';
   // В архиве путь назад должен быть виден сразу, а не после всего списка
   if(showArchive)html+='<button class="archive-back" onclick="showArchive=false;listShown=LIST_PAGE_SIZE;renderTab(\'list\')">← Вернуться к заказам</button>';
+  if(role==='director'&&!showArchive){
+    var dashaSdekOrders=sdekExportList();
+    html+='<section class="card" style="padding:13px 15px;margin-bottom:10px;border-color:var(--border2)" aria-label="Заказы Даши, готовые к отправке">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'
+      +'<div style="min-width:0"><div style="display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);flex:0 0 auto"></span><strong style="font-size:13px;color:var(--text1)">СДЭК · заказы Даши</strong></div>'
+      +'<div style="font-size:11px;color:var(--text3);margin-top:4px">Оплачены · готовы · накладные оформлены</div></div>'
+      +'<strong style="font-size:15px;color:var(--accent);white-space:nowrap">'+dashaSdekOrders.length+' '+pluralZakaz(dashaSdekOrders.length)+'</strong>'
+      +'</div>'
+      +(dashaSdekOrders.length?'<button type="button" class="btn btn-sm btn-secondary" style="margin-top:10px" onclick="navigateApp(\'sdek\')">Открыть СДЭК →</button>':'')
+      +'</section>';
+  }
   html+='<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">'
     +'<input class="search-inp" id="search-field" style="flex:1;min-width:0" placeholder="Поиск по номеру, клиенту..." oninput="updateSearch(this.value)" value="'+uiText(search)+'">'
     +(search?'<button type="button" class="btn btn-sm btn-ghost" aria-label="Показать все заказы" onclick="search=\'\';listShown=LIST_PAGE_SIZE;renderTab(\'list\')">Показать все</button>':'')
@@ -2447,6 +2462,15 @@ function orderCard(o){
       +'<div class="order-pay-bar" role="progressbar" aria-label="Оплачено '+fmt(paidAmount)+' из '+fmt(oPrice)+'" aria-valuemin="0" aria-valuemax="'+Math.max(1,oPrice)+'" aria-valuenow="'+Math.min(paidAmount,Math.max(1,oPrice))+'"><i style="width:'+paymentPct+'%"></i></div>'
       +'<div class="order-pay-meta"><span>Оплачено <b>'+fmt(paidAmount)+'</b></span><span class="'+(rest?'is-due':'')+'">Осталось <b>'+fmt(rest)+'</b></span></div>';
     if(margin!==null)html+='<div class="order-margin-inline'+(margin<0?' is-negative':'')+'"><span>Маржа</span><b>'+fmt(margin)+'</b><small>· '+marginPct+'% от стоимости</small></div>';
+    if(role==='director'){
+      var orderCosts=calcCosts(o),orderDividend=officeEligible(o)?calcDividend(o):0;
+      html+='<div class="order-recipient-pay" aria-label="План выплат по заказу"><span class="order-recipient-pay-label">По плану получат:</span>'
+        +'<span class="order-recipient-pay-item">'+uiText(o.master||'Мастер')+' <b>'+fmt(calcMasterPay(o))+'</b></span>'
+        +(orderCosts.sasha>0?'<span class="order-recipient-pay-item">COO · Александра <b>'+fmt(orderCosts.sasha)+'</b></span>':'')
+        +(orderCosts.nastya>0?'<span class="order-recipient-pay-item">Пошив · Настя <b>'+fmt(orderCosts.nastya)+'</b></span>':'')
+        +(orderDividend>0?'<span class="order-recipient-pay-item">Дивиденды · Дарья <b>'+fmt(orderDividend)+'</b></span>':'')
+        +'</div>';
+    }
     html+='</section>';
     if(hasSdekNumber(o)||o.status==='sent'){
       html+='<div class="order-waybill"><span>СДЭК · накладная</span>';
@@ -2499,7 +2523,7 @@ function orderCard(o){
   }
   html+='</div>';
 
-  if(canFinance){
+  if(role==='manager'){
     html+='<details class="order-cost-breakdown"><summary>Расчёт зарплат по заказу</summary><div class="order-cost-breakdown-body">'
       +'<div><span>ЗП '+uiText(o.master||'мастера')+'</span><b>'+fmt(calcMasterPay(o))+'</b></div>';
     if(role==='manager')html+='<div><span>ЗП Саши</span><b>'+fmt(calcCosts(o).sasha)+'</b></div>';
