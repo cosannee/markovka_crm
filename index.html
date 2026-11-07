@@ -7039,6 +7039,7 @@ async function crmBegin(){
  crmProfile=profile;
  const {data}=await crmClient().auth.getSession();crmSession=data.session;
  if(!crmSession)throw Error('Войдите заново');
+ try{await finReadPending();}catch(e){console.warn("Payment journal unavailable");}
  await login(profile.role,profile.name,profile.label,profile.masterName);
 }
 async function doLogin(){
@@ -7104,24 +7105,48 @@ function finPaid(o,k){
 }
 function remainingPay(o){return o.postpayPaid?0:Math.max(0,calcMasterPay(o)-finPaid(o,'advance')-finPaid(o,'postpay'));}
 function finOutstanding(k,o){return o[finFlag(k)]?0:k==='postpay'?remainingPay(o):k==='advance'?calcAdvance(o):k==='sasha'?calcCosts(o).sasha:calcDividend(o);}
-function finPending(){try{return JSON.parse(crmStorage.getItem('finance_command_v2')||'null');}catch(e){return null;}}
-function finStorePending(command){
- var key='finance_command_v2',serialized=JSON.stringify(command);
- try{crmStorage.setItem(key,serialized);return;}catch(e){}
- // Keep the newest local safety snapshot, but discard older duplicate snapshots
- // if Safari's localStorage quota is full. Never send a payment without a durable
- // idempotency record in localStorage.
- try{
-  var backups=JSON.parse(crmStorage.getItem('markovka_backups')||'[]');
-  if(Array.isArray(backups)&&backups.length>1){
-   var latest=backups[backups.length-1];
-   crmStorage.setItem('markovka_backups',JSON.stringify([latest]));
-   crmStorage.setItem(key,serialized);return;
-  }
- }catch(e){}
- throw Error('Память браузера заполнена. Выплата не отправлена. Освободите место в хранилище или обратитесь за помощью.');
+// Durable payment journal uses IndexedDB, independent of localStorage's small quota.
+var finJournalCache={};
+function finJournalKey(){return crmStorage.key('finance_command_v2');}
+function finJournalAccess(mode,command){
+ var key=finJournalKey();
+ return new Promise(function(resolve,reject){
+  var open=indexedDB.open('markovka-payment-journal',1);
+  open.onupgradeneeded=function(){open.result.createObjectStore('commands');};
+  open.onerror=function(){reject(Error('Не удалось открыть защитное хранилище выплат. Операция не отправлена.'));};
+  open.onblocked=function(){reject(Error('Закройте другие вкладки CRM и повторите открытие раздела выплат.'));};
+  open.onsuccess=function(){
+   var db=open.result,tx=db.transaction('commands',mode==='get'?'readonly':'readwrite'),st=tx.objectStore('commands'),value=null;
+   var req=st.get(key);
+   req.onsuccess=function(){
+    value=req.result||null;
+    if(mode==='put'){
+     if(value&&value.id!==command.id){tx.abort();return;}
+     st.put(command,key);value=command;
+    }else if(mode==='delete'){st.delete(key);value=null;}
+   };
+   tx.oncomplete=function(){db.close();finJournalCache[key]=value;resolve(value);};
+   tx.onabort=tx.onerror=function(){db.close();reject(Error('Не удалось сохранить защитную запись выплаты. Проверьте незавершённую операцию; новая выплата не отправлена.'));};
+  };
+ });
 }
-function finClearPending(){try{crmStorage.removeItem('finance_command_v2');}catch(e){}}
+function finPending(){
+ var legacy=null;try{legacy=JSON.parse(crmStorage.getItem('finance_command_v2')||'null');}catch(e){}
+ return legacy||finJournalCache[finJournalKey()]||null;
+}
+async function finReadPending(){
+ await finJournalAccess('get');return finPending();
+}
+async function finStorePending(command){
+ var old=await finReadPending();
+ if(old&&old.id!==command.id)throw Error('Сначала проверьте предыдущую выплату кнопкой «Повторить проверку».');
+ await finJournalAccess('put',command);
+}
+async function finClearPending(){
+ // Clear legacy journal first; if either removal fails, retry keeps the same ID.
+ crmStorage.removeItem('finance_command_v2');
+ await finJournalAccess('delete');
+}
 function finApply(r){
  [['orders',orders,r.orders],['finance',finance,r.finance]].forEach(function(a){
   (a[2]||[]).forEach(function(row){var old=a[1].find(function(x){return x.id===row.id;});if(old)replaceInPlace(old,row);else a[1].push(row);_sbSnap[a[0]][row.id]=JSON.stringify(row);});
@@ -7135,19 +7160,19 @@ async function finSend(command){
  if(saveState.pending||saveInFlight)throw Error('Сначала дождитесь сохранения текущих изменений');
  finBusy=true;saveInFlight++;saveSeq++;
  try{
-  finStorePending(command);
+  await finStorePending(command);
   var extraAction=command.action==='extra_work_payout';
   var r=await sbFetch(SB_URL+'/rest/v1/rpc/'+(extraAction?'crm_extra_work_payout':'crm_finance_action'),{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify(extraAction?{p_id:command.id,p_payload:command.payload}:{p_id:command.id,p_action:command.action,p_payload:command.payload})});
   var data=await r.json();
-  if(!r.ok){if(r.status>=400&&r.status<500)finClearPending();throw Error([data.message,data.details].filter(Boolean).join(' · ')||'Операция не проведена ('+r.status+')');}
-  finApply(data);finClearPending();return data;
+  if(!r.ok){if(r.status>=400&&r.status<500)await finClearPending();throw Error([data.message,data.details].filter(Boolean).join(' · ')||'Операция не проведена ('+r.status+')');}
+  finApply(data);await finClearPending();return data;
  }finally{finBusy=false;saveInFlight--;saveSeq++;}
 }
 async function finCommand(action,payload){
- if(finPending())throw Error('Сначала проверьте предыдущую операцию кнопкой «Повторить проверку»');
+ if(await finReadPending())throw Error('Сначала проверьте предыдущую операцию кнопкой «Повторить проверку»');
  return finSend({id:(typeof crypto!=='undefined'&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+'-'+uid()+'-'+uid(),action:action,payload:payload});
 }
-async function finRetry(){try{var p=finPending();if(!p)return;await finSend(p);if(p.action==='bank_import')bankAiDraft=null;finClose();renderTab(tab);toast('Операция подтверждена. Повторного списания нет.');}catch(e){toast(e.message);}}
+async function finRetry(){try{var p=await finReadPending();if(!p)return;await finSend(p);if(p.action==='bank_import')bankAiDraft=null;finClose();renderTab(tab);toast('Операция подтверждена. Повторного списания нет.');}catch(e){toast(e.message);}}
 function finBanner(){var html=finPending()?'<div class="fin-alert">Не получено подтверждение последней операции. Проверка использует тот же номер и не создаст дубль.<button class="btn btn-sm btn-secondary" onclick="finRetry()">Повторить проверку</button></div>':'';var xw=null;try{xw=JSON.parse(crmStorage.getItem('extra_work_pending')||'null');}catch(e){}if(xw)html+='<div class="fin-alert">Выплата за доп. работу ожидает подтверждения.<button class="btn btn-sm btn-secondary" onclick="retryExtraWorkPayout()">Повторить проверку</button></div>';return html;}
 async function retryExtraWorkPayout(){var pending;try{pending=JSON.parse(crmStorage.getItem('extra_work_pending')||'null');}catch(e){}if(!pending)return;try{var r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_extra_work_payout',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_id:pending.id,p_payload:pending.payload})});var data=await r.json();if(!r.ok)throw Error(data.message||'Не удалось подтвердить выплату');extraWorkRpcApply(data);crmStorage.removeItem('extra_work_pending');window.lastPayout={format:'finance',person:pending.payload.recipient,date:pending.payload.date.split('-').reverse().join('.'),lines:[{sum:Number(data.total)||0,label:'доп. работа'}],total:Number(data.total)||0};renderTab('payments');toast('Выплата подтверждена');}catch(e){toast(e.message);}}
 function finAccounts(){return bankAccounts().filter(function(a){return a.type!=='debt'&&a.type!=='savings';});}
@@ -7295,14 +7320,11 @@ async function payExtraWork(id){
 }
 async function confirmExtraWorkPayout(){
  var ctx=window.extraWorkPayContext;if(!ctx)return;
- var old=crmStorage.getItem('extra_work_pending'),pending;
- if(old){try{pending=JSON.parse(old);}catch(e){pending=null;}}
- if(!pending||pending.taskId!==ctx.id){pending={id:(typeof crypto!=='undefined'&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+'-'+uid()+'-'+uid(),taskId:ctx.id,payload:{recipient:ctx.expected.to,accountId:v('xw-account'),date:v('xw-date'),tasks:[{id:ctx.id,expected:ctx.expected}]}};crmStorage.setItem('extra_work_pending',JSON.stringify(pending));}
  await finSubmit(async function(){
-  var r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_extra_work_payout',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_id:pending.id,p_payload:pending.payload})});
-  var data=await r.json();if(!r.ok)throw Error(data.message||'Не удалось провести выплату доп. работы ('+r.status+')');
-  extraWorkRpcApply(data);crmStorage.removeItem('extra_work_pending');
-  window.lastPayout={format:'finance',person:pending.payload.recipient,date:pending.payload.date.split('-').reverse().join('.'),lines:[{sum:Number(data.total)||0,label:'доп. работа'}],total:Number(data.total)||0};
+  if(crmStorage.getItem('extra_work_pending'))throw Error('Сначала проверьте предыдущую выплату за доп. работу в разделе выплат.');
+  var payload={recipient:ctx.expected.to,accountId:v('xw-account'),date:v('xw-date'),entries:[],tasks:[{id:ctx.id,expected:ctx.expected}]};
+  var result=await finCommand('extra_work_payout',payload);
+  window.lastPayout=finConfirmedPayoutMessage(payload,result);
   window.extraWorkPayContext=null;
  });
 }
