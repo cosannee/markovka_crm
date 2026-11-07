@@ -69,7 +69,7 @@ begin
   recipient:=btrim(coalesce(p_payload->>'recipient',''));
   acc_id:=p_payload->>'accountId';
   action_date:=coalesce(nullif(p_payload->>'date',''),to_char(now() at time zone 'Europe/Moscow','YYYY-MM-DD'));
-  if recipient='' or action_date !~ '^\d{4}-\d{2}-\d{2}$' then raise exception 'Проверьте получателя и дату'; end if;
+  if recipient='' or action_date !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then raise exception 'Проверьте получателя и дату'; end if;
   perform action_date::date;
   select * into a from public.finance where id=acc_id for update;
   if a.data is null or a.data->>'kind'<>'account' or a.data->>'archived'='true' or a.data->>'type' in ('savings','debt') then
