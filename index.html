@@ -2812,9 +2812,9 @@ function sdekExportList(){
   }).sort(function(a,b){return (a.num||'').localeCompare(b.num||'');});
 }
 var masterSdekRecipients={},masterSdekRecipientsSeen={},masterSdekRecipientsLoaded=false,masterSdekRecipientsLoading=false,masterSdekRecipientsError='';
-function sdekRecipientName(o){return role==='master'?(masterSdekRecipients[o.id]||'ФИО не загружено'):(o.client||'Клиент не указан');}
+function sdekRecipientName(o){if(role==='master'&&!isPreviewMode)return masterSdekRecipients[o.id]||'ФИО не загружено';return o.client||'Клиент не указан';}
 function retryMasterSdekRecipients(){masterSdekRecipientsLoaded=false;masterSdekRecipientsError='';crmLoadMasterSdekRecipients();}
-function masterSdekNamesReady(list){return role!=='master'||(masterSdekRecipientsLoaded&&list.every(function(o){return !!masterSdekRecipients[o.id];}));}
+function masterSdekNamesReady(list){return role!=='master'||(isPreviewMode?list.every(function(o){return !!o.client;}):(masterSdekRecipientsLoaded&&list.every(function(o){return !!masterSdekRecipients[o.id];})));}
 async function crmLoadMasterSdekRecipients(){
  if(role!=='master'||isPreviewMode||masterSdekRecipientsLoaded||masterSdekRecipientsLoading)return;
  masterSdekRecipientsLoading=true;masterSdekRecipientsError='';
