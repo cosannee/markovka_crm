@@ -2187,12 +2187,6 @@ function tplList(){
     +'<input class="search-inp" id="search-field" style="flex:1;min-width:0" placeholder="Поиск по номеру, клиенту..." oninput="updateSearch(this.value)" value="'+uiText(search)+'">'
     +(search?'<button type="button" class="btn btn-sm btn-ghost" aria-label="Показать все заказы" onclick="search=\'\';listShown=LIST_PAGE_SIZE;renderTab(\'list\')">Показать все</button>':'')
     +'</div>';
-  // Кнопки действий для менеджера/директора
-  if(canFinance){
-    var nwCnt=orders.filter(function(o){return o.status==='nextweek';}).length;
-    if(nwCnt)html+='<button class="btn btn-secondary btn-full" style="margin-bottom:10px;justify-content:center;background:var(--blue-bg);color:var(--blue-ink);border-color:var(--blue-ink)" onclick="moveNextWeekToWork()">▶ Перевести «След. неделю» в работу ('+nwCnt+')</button>';
-  }
-
   // Filter bar
   html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;position:relative">';
 
@@ -3130,7 +3124,7 @@ function openSdekExport(){
       +'<div style="font-size:12px;color:var(--gray-ink);margin-top:1px">'+wt+'</div>'
       +'<div style="font-size:12px;margin-top:6px">Коробка: '+sdekBoxSize(o)+'</div>'
       +'<div style="font-size:12px;white-space:pre-line">'+uiText(sdekItemWeights(o))+'</div>'
-      +((!isMaster&&o.phone)?'<div class="sdek-export-phone">Тел.: '+uiText(o.phone)+'</div>':'')
+      +((role!=='master'&&o.phone)?'<div class="sdek-export-phone">Тел.: '+uiText(o.phone)+'</div>':'')
       +'</div></label>';
   }).join('');
   var content=list.length
@@ -7592,7 +7586,10 @@ function tplDashboardSummary(list){
    +'<div id="next-toys-pane" role="tabpanel" aria-labelledby="next-toys-tab" data-next-pane="toys"'+(overviewNextView==='toys'?'':' hidden')+'>';
   if(plan){var pct=totalCap?Math.min(100,assignedKnown/totalCap*100):0;h+='<div class="cap-total"><div><b>'+assignedKnown+' / '+totalCap+'</b><span>игрушек назначено · '+assigned.assignedOrders+' '+pluralZakaz(assigned.assignedOrders)+'</span></div><div><b>'+find+'</b><span>игрушек ещё найти</span></div>'+(assigned.unassignedToys?'<div><b>'+assigned.unassignedToys+'</b><span>игрушек ждут назначения</span></div>':'')+(over?'<div><b>'+over+'</b><span>игрушек сверх плана</span></div>':'')+'</div><div class="cap-overall" role="progressbar" aria-label="Общий план игрушек следующей недели" aria-valuemin="0" aria-valuemax="'+totalCap+'" aria-valuenow="'+Math.min(assignedKnown,totalCap)+'"><i style="width:'+pct+'%"></i></div>';}
   else h+='<p class="cap-empty">Укажите, сколько игрушек готов взять каждый мастер. Сейчас в статусе «След. неделя»: <b>'+assigned.total+' '+pluralIgrushka(assigned.total)+'</b>.</p>';
-  h+='</div><div id="next-finance-pane" role="tabpanel" aria-labelledby="next-finance-tab" data-next-pane="finance"'+(overviewNextView==='finance'?'':' hidden')+'>'+nextWeekFinanceHtml(nextFinance)+'</div></section>';
+  h+='</div><div id="next-finance-pane" role="tabpanel" aria-labelledby="next-finance-tab" data-next-pane="finance"'+(overviewNextView==='finance'?'':' hidden')+'>'+nextWeekFinanceHtml(nextFinance)+'</div>';
+  var nextWeekOrders=orders.filter(function(o){return o.status==='nextweek';});
+  if(canManageOrders()&&nextWeekOrders.length)h+='<button type="button" class="btn btn-primary btn-full" style="margin-top:14px;justify-content:center" onclick="moveNextWeekToWork()">Перевести план в работу · '+nextWeekOrders.length+' '+pluralZakaz(nextWeekOrders.length)+'</button>';
+  h+='</section>';
   h+='<section class="dash-load" aria-label="Загрузка мастеров в игрушках"><div class="overview-toolbar"><h2>Загрузка мастеров</h2><span class="cap-legend"><i></i> готово игрушек из текущего плана</span></div><div class="load-grid">';
   var people=d.people.slice().sort(function(a,b){return MASTERS.indexOf(a.name)-MASTERS.indexOf(b.name);});
   people.forEach(function(p){var nextOrders=assigned.map[p.name]||[],next=finSum(nextOrders,orderQty),limit=Math.max(0,parseInt(caps[p.name])||0),left=Math.max(0,limit-next);
