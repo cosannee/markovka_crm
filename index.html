@@ -1012,7 +1012,7 @@ function sbFetch(url,opts){
 }
 // Чтение одной таблицы Supabase → массив объектов (data-поле каждой строки)
 async function sbSelectTable(table){
-  if(crmProfile&&crmProfile.role==='master'){if(table==='orders')return crmReadMasterOrders();if(table==='finance')return [];}
+  if(crmProfile&&crmProfile.role==='master'){if(table==='orders')return crmReadMasterOrders();if(table==='tasks')return crmReadMasterTasks();if(table==='finance')return [];}
 
   // Сервер может вернуть меньше запрошенного лимита. Идём до пустой страницы,
   // а не до короткой; частичный результат при ошибке никогда не возвращаем.
@@ -2848,6 +2848,7 @@ function tplSdek(){
       +'<div style="font-size:12px;color:var(--text3);margin-top:4px">'+(o.sdekNum?'Накладная '+uiText(o.sdekNum):'Накладная ещё не указана')+'</div>'
       +'<div style="font-size:12px;margin-top:8px">Коробка: '+sdekBoxSize(o)+'</div>'
       +'<div style="font-size:12px;white-space:pre-line">'+uiText(sdekItemWeights(o))+'</div>'
+      +extraWorkTasks(o.master,o.id).filter(function(t){return t.delivery;}).map(function(t){return '<div class="fin-note" style="margin:8px 0 0">Доп. задание к отправлению: '+uiText(t.text)+'</div>';}).join('')
       +'</div>';
   });
   return html;
@@ -2890,7 +2891,8 @@ function sdekOriginText(o){
 function sdekContactText(o){
   return ['Артикул: '+(o.num||'Не указан'),'Наименование игрушки: '+sdekToyName(o),'Откуда отправляем: '+sdekOriginText(o),'Мастер: '+(o.master||'Не назначен'),
     'Получатель: '+(o.client||'Не указан'),'Телефон: '+(o.phone||'Не указан'),
-    'Куда отправляем: '+(o.address||'Не указано'),'Коробка: '+sdekBoxSize(o),sdekItemWeights(o),orderWeight(o)?'Общий вес игрушек: '+orderWeight(o)+' г':''].filter(Boolean).join('\n');
+    'Куда отправляем: '+(o.address||'Не указано'),'Коробка: '+sdekBoxSize(o),sdekItemWeights(o),orderWeight(o)?'Общий вес игрушек: '+orderWeight(o)+' г':'',
+    extraWorkTasks(o.master,o.id).filter(function(t){return t.delivery;}).map(function(t){return 'Доп. задание к отправлению: '+t.text;}).join('\n')].filter(Boolean).join('\n');
 }
 function sdekBoxSize(o){return o.master==='Даша'||o.master==='Дарья'?'60 × 14 × 14 см':'50 × 20 × 20 см';}
 function sdekItemWeights(o){
@@ -2956,6 +2958,7 @@ function tplSdekQueue(){
     html+='<div style="padding:12px;background:var(--bg);border-radius:10px;margin-bottom:12px;font-size:13px">'
       +'<div style="font-weight:600;margin-bottom:6px">Коробка: '+sdekBoxSize(o)+'</div>'
       +'<div style="white-space:pre-line">'+uiText(sdekItemWeights(o))+'</div></div>';
+    extraWorkTasks(o.master,o.id).filter(function(t){return t.delivery;}).forEach(function(t){html+='<div class="fin-note" style="margin:0 0 12px">Доп. задание к отправлению: '+uiText(t.text)+'</div>';});
     if(o.sdek&&!hasSdekNumber(o))html+='<p style="font-size:12px;color:var(--orange-ink);margin-bottom:8px">Есть старая отметка СДЭК. Добавьте номер накладной.</p>';
     html+='<form onsubmit="event.preventDefault();saveSdekNum(this.dataset.oid,this.elements.waybill.value)" data-oid="'+oid+'"><div class="fg"><label>Номер накладной<input name="waybill" style="display:block;width:100%;margin-top:6px" type="text" inputmode="numeric" autocomplete="off" value="'+uiText(o.sdekNum||'')+'" placeholder="Вставьте номер из СДЭК"'+(!canEdit?' disabled':'')+'></label></div>'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'
@@ -3157,6 +3160,8 @@ function sdekExportText(){
     lines.push(sdekItemWeights(o));
     if(toy)lines.push(toy);
     lines.push('Вес: '+wt);
+    var deliveryWork=extraWorkTasks(o.master,o.id).filter(function(t){return t.delivery;});
+    deliveryWork.forEach(function(t){lines.push('Доп. задание к отправлению: '+t.text);});
     if(!isMasterCopy&&o.phone)lines.push('Тел.: '+o.phone);
     lines.push('');
   });
@@ -5518,11 +5523,15 @@ function tplSvetaFinance(){
   var totalGot=myOrders.reduce(function(s,o){
     return s+finPaid(o,'advance')+finPaid(o,'postpay');
   },0);
+  var myExtraWork=extraWorkTasks(masterName);
+  var extraPaidInPeriod=myExtraWork.filter(function(t){return t.done&&inPeriod({created:t.paidAt||t.created});});
+  totalGot+=finSum(extraPaidInPeriod,function(t){return t.amount;});
   // «Ожидается» — невыплаченное по всем заказам в работе/готов/планируется (без фильтра по периоду)
   var pendingOrds=myAll.filter(function(o){return o.status==='work'||o.status==='ready'||o.status==='planned';});
   var totalPending=pendingOrds.reduce(function(s,o){
     return s+remainingPay(o);
   },0);
+  totalPending+=finSum(myExtraWork.filter(function(t){return !t.done;}),function(t){return t.amount;});
 
   // ── Переключатели периода ──
   var html='<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">';
@@ -5614,6 +5623,11 @@ function tplSvetaFinance(){
       +'<div><div style="color:var(--text3)">Ожидается</div><div style="font-weight:700;color:var(--orange-ink)">'+fmt(remainingPay(o))+'</div></div>'
       +'</div></div>';
   });
+  var extraPeriod=myExtraWork.filter(function(t){return inPeriod({created:t.done?(t.paidAt||t.created):t.created});});
+  if(extraPeriod.length){
+    html+='<div class="section-lbl">Доп. работа'+(rangeLabel?' · '+rangeLabel:'')+'</div>';
+    extraPeriod.forEach(function(t){html+='<div class="fin-order-row"><span>'+uiText(t.text)+(t.orderNum?' · '+uiText(t.orderNum):'')+(t.delivery?' · СДЭК':'')+'<small>'+(t.done?'Выплачено':'Ожидается')+'</small></span><b style="color:'+(t.done?'var(--green-ink)':'var(--orange-ink)')+'">'+fmt(t.amount)+'</b></div>';});
+  }
   return html;
 }
 
@@ -5770,6 +5784,12 @@ function tplMaster(){
     return (a.created||0)-(b.created||0);
   });
   var html='';
+  var myExtra=extraWorkTasks(masterName);
+  if(myExtra.length){
+    html+='<section class="card" style="padding:12px 14px;margin-bottom:10px"><div style="font-weight:700;color:var(--accent);margin-bottom:6px">Доп. работа · '+myExtra.filter(function(t){return !t.done;}).length+' к оплате</div>';
+    myExtra.forEach(function(t){html+='<div class="fin-order-row" style="font-size:12px"><span>'+uiText(t.text)+(t.orderNum?' · '+uiText(t.orderNum):'')+(t.delivery?' · СДЭК':'')+'</span><b style="white-space:nowrap;color:'+(t.done?'var(--green-ink)':'var(--accent)')+'">'+fmt(t.amount)+(t.done?' ✓':' · ожидается')+'</b></div>';});
+    html+='</section>';
+  }
   var masterEncouragements=[
     'Спасибо за внимание к каждой детали 🤍',
     'Ваше мастерство видно в каждой игрушке.',
@@ -5961,6 +5981,7 @@ function tplTasks(){
   // Видимость: личные задачи (to=мое имя) видны только мне; остальное видят только Саша/Даша
   const me=myTaskName();
   const visible=tasks.filter(function(t){
+    if(t.kind==='extra_work')return false;
     if(t.kind==='capacity_plan')return false;
     if(t.to===me) return true; // личные видны только мне
     return role!=='master'; // остальное видят только Саша/Даша
@@ -6035,7 +6056,7 @@ function unreadTaskCount(){
   var me=myTaskName();
   var seen=0;try{seen=parseInt(crmStorage.getItem('tasks_seen_'+me))||0;}catch(e){}
   return tasks.filter(function(t){
-    if(t.kind==='capacity_plan')return false;
+    if(t.kind==='capacity_plan'||t.kind==='extra_work')return false;
     if(t.done||t.from===me)return false;
     var forMe=t.to===me||(t.to==='all'&&role!=='master');
     return forMe&&(t.created>seen);
@@ -7043,6 +7064,12 @@ async function crmReadMasterOrders(){
   const next=String(rows[rows.length-1].id);if(next===after)throw Error('Повтор страницы');after=next;
  }
 }
+async function crmReadMasterTasks(){
+ const r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_master_tasks',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:'{}'});
+ if(!r.ok)throw Error('Не удалось загрузить личные задачи: '+r.status);
+ const rows=await r.json();if(!Array.isArray(rows))throw Error('Некорректный список задач');
+ return rows.map(function(row){if(!row.data||String(row.data.id)!==String(row.id))throw Error('Некорректное задание');return row.data;});
+}
 
 </script>
 <script>
@@ -7066,6 +7093,7 @@ function finApply(r){
  [['orders',orders,r.orders],['finance',finance,r.finance]].forEach(function(a){
   (a[2]||[]).forEach(function(row){var old=a[1].find(function(x){return x.id===row.id;});if(old)replaceInPlace(old,row);else a[1].push(row);_sbSnap[a[0]][row.id]=JSON.stringify(row);});
  });
+ (r.tasks||[]).forEach(function(row){var old=tasks.find(function(x){return x.id===row.id;});if(old)replaceInPlace(old,row);else tasks.push(row);_sbSnap.tasks[row.id]=JSON.stringify(row);});
  try{crmStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks,finance:finance}));}catch(e){}
 }
 async function finSend(command){
@@ -7075,7 +7103,8 @@ async function finSend(command){
  finBusy=true;saveInFlight++;saveSeq++;
  try{
   crmStorage.setItem('finance_command_v2',JSON.stringify(command));
-  var r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_finance_action',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_id:command.id,p_action:command.action,p_payload:command.payload})});
+  var extraAction=command.action==='extra_work_payout';
+  var r=await sbFetch(SB_URL+'/rest/v1/rpc/'+(extraAction?'crm_extra_work_payout':'crm_finance_action'),{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify(extraAction?{p_id:command.id,p_payload:command.payload}:{p_id:command.id,p_action:command.action,p_payload:command.payload})});
   var data=await r.json();
   if(!r.ok){if(r.status>=400&&r.status<500)crmStorage.removeItem('finance_command_v2');throw Error([data.message,data.details].filter(Boolean).join(' · ')||'Операция не проведена ('+r.status+')');}
   finApply(data);crmStorage.removeItem('finance_command_v2');return data;
@@ -7086,7 +7115,8 @@ async function finCommand(action,payload){
  return finSend({id:(typeof crypto!=='undefined'&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+'-'+uid()+'-'+uid(),action:action,payload:payload});
 }
 async function finRetry(){try{var p=finPending();if(!p)return;await finSend(p);if(p.action==='bank_import')bankAiDraft=null;finClose();renderTab(tab);toast('Операция подтверждена. Повторного списания нет.');}catch(e){toast(e.message);}}
-function finBanner(){return finPending()?'<div class="fin-alert">Не получено подтверждение последней операции. Проверка использует тот же номер и не создаст дубль.<button class="btn btn-sm btn-secondary" onclick="finRetry()">Повторить проверку</button></div>':'';}
+function finBanner(){var html=finPending()?'<div class="fin-alert">Не получено подтверждение последней операции. Проверка использует тот же номер и не создаст дубль.<button class="btn btn-sm btn-secondary" onclick="finRetry()">Повторить проверку</button></div>':'';var xw=null;try{xw=JSON.parse(crmStorage.getItem('extra_work_pending')||'null');}catch(e){}if(xw)html+='<div class="fin-alert">Выплата за доп. работу ожидает подтверждения.<button class="btn btn-sm btn-secondary" onclick="retryExtraWorkPayout()">Повторить проверку</button></div>';return html;}
+async function retryExtraWorkPayout(){var pending;try{pending=JSON.parse(crmStorage.getItem('extra_work_pending')||'null');}catch(e){}if(!pending)return;try{var r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_extra_work_payout',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_id:pending.id,p_payload:pending.payload})});var data=await r.json();if(!r.ok)throw Error(data.message||'Не удалось подтвердить выплату');extraWorkRpcApply(data);crmStorage.removeItem('extra_work_pending');window.lastPayout={format:'finance',person:pending.payload.recipient,date:pending.payload.date.split('-').reverse().join('.'),lines:[{sum:Number(data.total)||0,label:'доп. работа'}],total:Number(data.total)||0};renderTab('payments');toast('Выплата подтверждена');}catch(e){toast(e.message);}}
 function finAccounts(){return bankAccounts().filter(function(a){return a.type!=='debt'&&a.type!=='savings';});}
 function finAccountSelect(id){return '<select id="'+id+'">'+finAccounts().map(function(a){return '<option value="'+uiText(a.id)+'">'+uiText(a.name)+' · '+fmt(accBalance(a.id))+'</option>';}).join('')+'</select>';}
 function finOpen(title,body,button,handler){
@@ -7103,7 +7133,7 @@ function finSum(a,fn){return a.reduce(function(s,x){return s+Number(fn(x)||0);},
 function finSettlements(person,mode){return finance.filter(function(x){return x.kind==='settlement'&&Number(x.remaining)>0&&(!person||x.recipient===person)&&(!mode||x.mode===mode);});}
 function finCreditBalance(person){var aliases=person==='Александра'?['Александра','Александра — комиссия']:person==='Даша'?['Даша','Дарья — дивиденды']:[person];return finSum(finance.filter(function(x){return x.kind==='settlement'&&x.mode==='credit'&&Number(x.remaining)>0&&aliases.includes(x.recipient);}),function(x){return x.remaining;});}
 function finPeople(){
- var masters=payoutMasters().map(function(m){return {name:m.name,kind:'master',advance:m.name==='Света'?advNeedFor(m.name):[],post:postNeedFor(m.name)};});
+ var masters=payoutMasters().map(function(m){return {name:m.name,kind:'master',advance:m.name==='Света'?advNeedFor(m.name):[],post:postNeedFor(m.name),extra:extraWorkTasks(m.name).filter(function(t){return !t.done;})};});
  var alex=masters.find(function(p){return p.name==='Александра';}),dasha=masters.find(function(p){return p.name==='Даша';});
  masters=masters.filter(function(p){return p.name!=='Александра'&&p.name!=='Даша';});
  if(alex){alex.kind='alexandra';alex.sasha=sashaNeedList();masters.push(alex);}
@@ -7116,6 +7146,7 @@ function finDue(p){
  if(p.kind==='alexandra')total+=finSum(p.sasha||[],function(o){return finOutstanding('sasha',o);});
  if(p.kind==='dasha')total+=finSum(p.dividend||[],function(o){return finOutstanding('dividend',o);});
  if(['sasha','dividend'].includes(p.kind))total+=finSum(p.list||[],function(o){return finOutstanding(p.kind,o);});
+ total+=finSum(p.extra||[],function(t){return t.amount;});
  return total;
 }
 function finChip(text){return '<span class="fin-tag">'+uiText(text)+'</span>';}
@@ -7128,14 +7159,15 @@ function finPayoutMessage(p){
 }
 function finPayoutLineLabel(e){
  var num=e.orderNum?' '+e.orderNum:'';
- return e.type==='advance'?'аванс за заказ'+num:e.type==='postpay'?'за готовый заказ'+num:e.type==='sasha'?'комиссия COO за заказ'+num:'дивиденды за заказ'+num;
+ return e.type==='advance'?'аванс за заказ'+num:e.type==='postpay'?'за готовый заказ'+num:e.type==='sasha'?'комиссия COO за заказ'+num:e.type==='extra_work'?'доп. работа'+(e.description?' · '+e.description:''):'дивиденды за заказ'+num;
 }
 function finPayoutSummaryLines(items){
  var defs=[
   {type:'advance',label:'Авансы за заказы'},
   {type:'postpay',label:'ЗП за готовые заказы'},
   {type:'sasha',label:'Комиссия COO за заказы'},
-  {type:'dividend',label:'Дивиденды'}
+  {type:'dividend',label:'Дивиденды'},
+  {type:'extra_work',label:'Доп. работа'}
  ],out=[];
  defs.forEach(function(d){
   [false,true].forEach(function(canceled){
@@ -7144,7 +7176,7 @@ function finPayoutSummaryLines(items){
    var sum=finSum(rows,function(x){return x.amount;});
    var nums=Array.from(new Set(rows.map(function(x){return x.orderNum;}).filter(Boolean)));
    var label=d.label;
-   if(d.type!=='dividend'&&nums.length)label+=': '+nums.join(', ');
+   if(d.type!=='dividend'&&d.type!=='extra_work'&&nums.length)label+=': '+nums.join(', ');
    if(canceled)label='Отменено · '+label;
    out.push({sum:sum,label:label});
   });
@@ -7155,7 +7187,7 @@ function finPayoutMessageFromTx(t){
  if(!t||t.type!=='expense'||t.voided||t.financeCancellations&&t.financeCancellations.length||!Array.isArray(t.payoutLines)||!t.payoutLines.length)return null;
  var person=t.recipient||anRecipient(t),total=Number(t.amount),credit=Number(t.creditUsed||0),accrued=finSum(t.payoutLines,function(l){return l.amount;});
  if(!person||!/^\d{4}-\d{2}-\d{2}$/.test(t.date||'')||!Number.isFinite(total)||total<0||!Number.isFinite(credit)||credit<0||Math.abs(accrued-credit-total)>.01)return null;
- if(t.payoutLines.some(function(l){return l.canceled||!l.orderNum||!['advance','postpay','sasha','dividend'].includes(l.type)||!Number.isFinite(Number(l.amount))||Number(l.amount)<0;}))return null;
+ if(t.payoutLines.some(function(l){return l.canceled||(!l.orderNum&&l.type!=='extra_work')||!['advance','postpay','sasha','dividend','extra_work'].includes(l.type)||!Number.isFinite(Number(l.amount))||Number(l.amount)<0;}))return null;
  var lines=finPayoutSummaryLines(t.payoutLines);
  if(credit)lines.push({sum:-credit,label:'зачёт ранее выплаченной суммы'});
  return {format:'finance',person:person,date:t.date.split('-').reverse().join('.'),lines:lines,total:total};
@@ -7165,10 +7197,70 @@ function finPayoutMessageCard(){
  var msg=finPayoutMessage(window.lastPayout);
  return '<section class="fin-payout-message" aria-label="Сообщение мастеру о выплате"><div class="fin-payout-message-head"><span>Сообщение о выплате</span><button type="button" aria-label="Скрыть сообщение" onclick="window.lastPayout=null;renderTab(\'payments\')">×</button></div><textarea readonly onclick="this.select()">'+uiText(msg)+'</textarea><button class="btn btn-primary btn-sm" data-val="'+uiText(msg)+'" onclick="copyField(this.dataset.val,this)">Копировать сообщение</button></section>';
 }
+function extraWorkTasks(master,orderId){
+ return tasks.filter(function(t){return t&&t.kind==='extra_work'&&(!master||t.to===master)&&(!orderId||t.orderId===orderId);})
+  .sort(function(a,b){return (b.created||0)-(a.created||0);});
+}
+function extraWorkManagerPanel(){
+ if(!canSeeBank())return '';
+ var open=extraWorkTasks().filter(function(t){return !t.done;});
+ var html='<details class="fin-person" style="margin-bottom:14px"><summary><span class="fin-avatar">+</span><span class="fin-person-name"><b>Доп. работа</b><small>Задания мастерам и отдельные выплаты</small></span><strong>'+open.length+'</strong><span>⌄</span></summary><div class="fin-person-body">'
+  +'<div class="form-grid"><div class="fg"><label for="xw-master">Мастер</label><select id="xw-master">'+USERS.filter(function(u){return u.role==='master';}).map(function(u){return '<option value="'+uiText(u.name)+'">'+uiText(u.name)+'</option>';}).join('')+'</select></div>'
+  +'<div class="fg"><label for="xw-order">Связанный заказ</label><select id="xw-order"><option value="">Без заказа</option>'+orders.filter(function(o){return o.status!=='archived';}).slice().sort(function(a,b){return (b.created||0)-(a.created||0);}).map(function(o){return '<option value="'+uiText(o.id)+'">'+uiText(o.num)+' · '+uiText(o.client||'')+'</option>';}).join('')+'</select></div>'
+  +'<div class="fg span2"><label for="xw-text">Что нужно сделать</label><input id="xw-text" maxlength="180" placeholder="Например: пришить дополнительный декор"></div>'
+  +'<div class="fg"><label for="xw-amount">Оплата, ₽</label><input id="xw-amount" type="number" min="1" step="1" inputmode="numeric" placeholder="0"></div>'
+  +'<div class="fg" style="justify-content:flex-end"><label class="checkbox-row"><input id="xw-delivery" type="checkbox"> Задание с доставкой</label></div></div>'
+  +'<button type="button" class="btn btn-secondary btn-sm" onclick="createExtraWork()">Добавить задание</button>';
+ if(open.length){html+='<div class="fin-section-title">Ожидают оплаты · '+fmt(finSum(open,function(t){return t.amount;}))+'</div>';open.forEach(function(t){html+=extraWorkManagerRow(t,true);});}
+ var paid=extraWorkTasks().filter(function(t){return !!t.done;}).slice(0,8);
+ if(paid.length)html+='<details class="payout-rest"><summary>Недавние выплаты · '+paid.length+'</summary>'+paid.map(function(t){return extraWorkManagerRow(t,false);}).join('')+'</details>';
+ return html+'</div></details>';
+}
+function extraWorkManagerRow(t,canPay){
+ var o=orders.find(function(x){return x.id===t.orderId;});
+ return '<div class="fin-order-row"><div><b>'+uiText(t.to)+'</b> · '+uiText(t.text)+'<small>'+(o?'<button class="fin-link" data-id="'+uiText(o.id)+'" onclick="jumpTo(this.dataset.id)">'+uiText(o.num)+'</button>': 'Без связанного заказа')+(t.delivery?' · задание с доставкой':'')+(t.done?' · выплачено':'')+'</small></div><div class="fin-row-actions"><b>'+fmt(t.amount)+'</b>'+(canPay?'<button type="button" class="btn btn-sm btn-secondary" data-id="'+uiText(t.id)+'" onclick="payExtraWork(this.dataset.id)">Выплатить</button>':'')+'</div></div>';
+}
+async function createExtraWork(){
+ if(!canSeeBank()||isPreviewMode)return;
+ var person=v('xw-master'),orderId=v('xw-order'),text=v('xw-text').trim(),amount=Math.round(Number(v('xw-amount'))),order=orders.find(function(o){return o.id===orderId;}),delivery=!!(document.getElementById('xw-delivery')&&document.getElementById('xw-delivery').checked);
+ if(!person||!text||!Number.isFinite(amount)||amount<=0){toast('Укажите мастера, задачу и сумму');return;}
+ if(delivery&&!order){toast('Для задания с доставкой выберите связанный заказ');return;}
+ var row={id:uid(),kind:'extra_work',text:text,amount:amount,to:person,from:bankAuthor(),orderId:order?order.id:'',orderNum:order?order.num:'',delivery:delivery,done:false,created:Date.now()};
+ var ok=await saveTasks(tasks.concat([row]));
+ if(ok){var inp=document.getElementById('xw-text');if(inp)inp.value='';var amt=document.getElementById('xw-amount');if(amt)amt.value='';var del=document.getElementById('xw-delivery');if(del)del.checked=false;renderTab('payments');toast('Доп. задание добавлено');}
+ else toast('Не удалось сохранить задание. Проверьте связь.');
+}
+function extraWorkRpcApply(data){
+ (data.tasks||[]).forEach(function(row){var old=tasks.find(function(t){return t.id===row.id;});if(old)replaceInPlace(old,row);else tasks.push(row);_sbSnap.tasks[row.id]=JSON.stringify(row);});
+ (data.finance||[]).forEach(function(row){var old=finance.find(function(t){return t.id===row.id;});if(old)replaceInPlace(old,row);else finance.push(row);_sbSnap.finance[row.id]=JSON.stringify(row);});
+ try{crmStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks,finance:finance}));}catch(e){}
+}
+async function payExtraWork(id){
+ if(!canSeeBank()||isPreviewMode)return;
+ var row=tasks.find(function(t){return t.id===id&&t.kind==='extra_work';});
+ if(!row||row.done){toast('Задание уже выплачено или не найдено');return;}
+ if(!finAccounts().length){toast('Сначала создайте расчётный счёт в банке');return;}
+ var accountOptions=finAccountSelect('xw-account'),body='<p class="fin-note">Выплата за доп. работу · <b>'+uiText(row.to)+'</b></p><div class="fin-line"><span>'+uiText(row.text)+(row.orderNum?' · '+uiText(row.orderNum):'')+'</span><b>'+fmt(row.amount)+'</b></div><div class="fg"><label>Счёт списания</label>'+accountOptions+'</div><div class="fg"><label>Дата перевода</label><input id="xw-date" type="date" value="'+todayISO()+'"></div><p class="fin-note">Задание отметится выплаченным одновременно с записью выплаты в банке.</p>';
+ finOpen('Выплатить доп. работу',body,'Провести','confirmExtraWorkPayout()');
+ window.extraWorkPayContext={id:id,expected:finClone(row)};
+}
+async function confirmExtraWorkPayout(){
+ var ctx=window.extraWorkPayContext;if(!ctx)return;
+ var old=crmStorage.getItem('extra_work_pending'),pending;
+ if(old){try{pending=JSON.parse(old);}catch(e){pending=null;}}
+ if(!pending||pending.taskId!==ctx.id){pending={id:(typeof crypto!=='undefined'&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+'-'+uid()+'-'+uid(),taskId:ctx.id,payload:{recipient:ctx.expected.to,accountId:v('xw-account'),date:v('xw-date'),tasks:[{id:ctx.id,expected:ctx.expected}]}};crmStorage.setItem('extra_work_pending',JSON.stringify(pending));}
+ await finSubmit(async function(){
+  var r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_extra_work_payout',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_id:pending.id,p_payload:pending.payload})});
+  var data=await r.json();if(!r.ok)throw Error(data.message||'Не удалось провести выплату доп. работы ('+r.status+')');
+  extraWorkRpcApply(data);crmStorage.removeItem('extra_work_pending');
+  window.lastPayout={format:'finance',person:pending.payload.recipient,date:pending.payload.date.split('-').reverse().join('.'),lines:[{sum:Number(data.total)||0,label:'доп. работа'}],total:Number(data.total)||0};
+  window.extraWorkPayContext=null;
+ });
+}
 function tplPayments(){
  if(!canSeeBank())return '<div class="empty">Раздел доступен руководству</div>';
  var due=finSum(finPeople(),finDue),range=getAnalyticsWeekRange(0),paid=finSum(bankTxAll().filter(function(t){return t.type==='expense'&&(t.source==='payout'||t.payoutLines)&&new Date(t.date+'T12:00:00')>=range.start&&new Date(t.date+'T12:00:00')<=range.end;}),function(t){return t.amount;}),issues=finReconcile().orders.length;
- return finBanner()+finPayoutMessageCard()+'<div class="fin-metrics">'+finMetric('К выплате сейчас',fmt(due),'Начисления по заказам')+finMetric('Переведено за неделю',fmt(paid),'По записям банка')+finMetric('Нужна сверка',issues,'Оплаты клиентов')+'</div>'+finNav()+'<input class="fin-search" aria-label="Поиск в финансах" placeholder="Номер заказа, мастер или клиент" value="'+uiText(finSearch)+'" oninput="finSetSearch(this.value)"><div id="fin-results">'+finViewContent()+'</div>';
+ return finBanner()+finPayoutMessageCard()+'<div class="fin-metrics">'+finMetric('К выплате сейчас',fmt(due),'Заказы и доп. работа')+finMetric('Переведено за неделю',fmt(paid),'По записям банка')+finMetric('Нужна сверка',issues,'Оплаты клиентов')+'</div>'+extraWorkManagerPanel()+finNav()+'<input class="fin-search" aria-label="Поиск в финансах" placeholder="Номер заказа, мастер или клиент" value="'+uiText(finSearch)+'" oninput="finSetSearch(this.value)"><div id="fin-results">'+finViewContent()+'</div>';
 }
 function finMetric(label,value,note){return '<div class="fin-metric"><span>'+label+'</span><strong>'+value+'</strong><small>'+note+'</small></div>';}
 function finViewContent(){return finView==='settlements'?finSettlementView():finView==='reconcile'?finReconcileView():finView==='history'?finHistoryView():finDueView();}
@@ -7176,13 +7268,13 @@ function finDueView(){
  var people=finPeople(),h='';
  people.forEach(function(p,i){
   var masterKind=['master','alexandra','dasha'].includes(p.kind);
-  if(finSearch){if(masterKind)p=Object.assign({},p,{advance:(p.advance||[]).filter(finMatches),post:(p.post||[]).filter(finMatches),sasha:(p.sasha||[]).filter(finMatches),dividend:(p.dividend||[]).filter(finMatches)});else p=Object.assign({},p,{list:p.list.filter(finMatches)});}
+  if(finSearch){if(masterKind)p=Object.assign({},p,{advance:(p.advance||[]).filter(finMatches),post:(p.post||[]).filter(finMatches),sasha:(p.sasha||[]).filter(finMatches),dividend:(p.dividend||[]).filter(finMatches),extra:(p.extra||[]).filter(function(t){return [t.text,t.orderNum,t.to].join(' ').toLowerCase().includes(finSearch.toLowerCase());})});else p=Object.assign({},p,{list:p.list.filter(finMatches)});}
   var own=masterKind?orders.filter(function(o){return o.master===p.name;}):orders.filter(officeEligible);
   var visible=own.filter(finMatches),due=finDue(p);
-  if(finSearch&&!visible.length&&!p.name.toLowerCase().includes(finSearch.toLowerCase()))return;
+  if(finSearch&&!visible.length&&!(p.extra||[]).length&&!p.name.toLowerCase().includes(finSearch.toLowerCase()))return;
   var pList=masterKind?(p.advance||[]).concat(p.post||[],p.sasha||[],p.dividend||[]):p.list;
-  var n=new Set(pList.map(function(o){return o.id;})).size;
-  h+='<details class="fin-person"'+(finSearch?' open':'')+'><summary><span class="fin-avatar">'+uiText(p.name.slice(0,1))+'</span><span class="fin-person-name"><b>'+uiText(p.name)+'</b><small>'+(n?n+' '+pluralZakaz(n)+' к выплате':'Нет текущих начислений')+'</small></span><strong>'+fmt(due)+'</strong><span>⌄</span></summary><div class="fin-person-body">';
+  var n=new Set(pList.map(function(o){return o.id;})).size,extraSum=finSum(p.extra||[],function(t){return t.amount;});
+  h+='<details class="fin-person"'+(finSearch?' open':'')+'><summary><span class="fin-avatar">'+uiText(p.name.slice(0,1))+'</span><span class="fin-person-name"><b>'+uiText(p.name)+'</b><small>'+(n?(n+' '+pluralZakaz(n)):'')+((p.extra||[]).length?((n?' · ':'')+(p.extra.length+' доп. '+pluralZakaz(p.extra.length))):'')+(n||extraSum?' к выплате':'Нет текущих начислений')+'</small></span><strong>'+fmt(due)+'</strong><span>⌄</span></summary><div class="fin-person-body">';
   var credit=finCreditBalance(p.name);if(credit)h+='<div class="fin-note">Есть зачёт '+fmt(credit)+' — его можно использовать при выплате.</div>';
   if(masterKind&&due>0){
    var readyDue=finSum(p.post||[],remainingPay),advanceDue=finSum(p.advance||[],calcAdvance),sashaDue=finSum(p.sasha||[],function(o){return finOutstanding('sasha',o);}),dividendDue=finSum(p.dividend||[],function(o){return finOutstanding('dividend',o);});
@@ -7192,10 +7284,11 @@ function finDueView(){
     h+='<div class="fin-alert" style="margin-top:0"><b>Разбивка выплаты</b>'
      +(readyDue?'<div class="fin-line"><span>ЗП мастера · готовые заказы</span><b>'+fmt(readyDue)+'</b></div>':'')
      +(advanceDue?'<div class="fin-line"><span>Авансы мастера</span><b>'+fmt(advanceDue)+'</b></div>':'')
+     +(extraSum?'<div class="fin-line"><span>Доп. работа</span><b>'+fmt(extraSum)+'</b></div>':'')
      +(sashaDue?'<div class="fin-line"><span>Комиссия COO</span><b>'+fmt(sashaDue)+'</b></div>':'')
      +(dividendDue?'<div class="fin-line"><span>Дивиденды</span><b>'+fmt(dividendDue)+'</b></div>':'')+'</div>';
    }
-   h+='<div class="fin-bulk-actions" style="grid-template-columns:repeat('+bulkColumns+',minmax(0,1fr))"><button class="btn btn-secondary btn-sm" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person,\'ready\')"'+(readyDue>0?'':' disabled')+'>Выплатить за готовые<strong>'+fmt(readyDue)+'</strong></button>'
+   h+='<div class="fin-bulk-actions" style="grid-template-columns:repeat('+bulkColumns+',minmax(0,1fr))"><button class="btn btn-secondary btn-sm" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person,\'ready\')"'+(readyDue+extraSum>0?'':' disabled')+'>'+(extraSum?(readyDue?'Готовые + доп. работа':'Выплатить доп. работу'):'Выплатить за готовые')+'<strong>'+fmt(readyDue+extraSum)+'</strong></button>'
     +(p.name==='Света'?'<button class="btn btn-secondary btn-sm" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person,\'advance\')"'+(advanceDue>0?'':' disabled')+'>Выплатить авансы<strong>'+fmt(advanceDue)+'</strong></button>':'')
     +(canPayAll?'<button class="btn btn-sm fin-pay-all" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person,\'all\')">Выплатить всё<small>'+(p.kind==='master'?'готовые и авансы':'одним переводом, с разбивкой')+'</small><strong>'+fmt(due)+'</strong></button>':'')+'</div>';
   }else if(due>0)h+='<button class="btn btn-primary btn-sm" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person)">Подготовить выплату '+fmt(due)+'</button>';
@@ -7204,6 +7297,7 @@ function finDueView(){
   var shown=finSearch?active:active.slice(0,Math.max(20,n));
   var rowKinds=p.kind==='alexandra'?['advance','postpay','sasha']:p.kind==='dasha'?['advance','postpay','dividend']:p.kind;
   shown.forEach(function(o){h+=finOrderPayRow(o,rowKinds);});
+  (p.extra||[]).forEach(function(t){h+='<div class="fin-order-row"><div><b>Доп. работа</b> · '+uiText(t.text)+'<small>'+(t.orderNum?'<button class="fin-link" data-id="'+uiText(t.orderId)+'" onclick="jumpTo(this.dataset.id)">'+uiText(t.orderNum)+'</button> · ':'')+(t.delivery?'СДЭК · ':'')+'не выплачено</small></div><b>'+fmt(t.amount)+'</b></div>';});
   if(active.length>shown.length)h+='<div class="fin-note">Сначала показаны все заказы к выплате, затем недавние выплаченные. Остальные найдите по номеру в поиске.</div>';
   h+='</div></details>';
  });return h||'<div class="empty">Ничего не найдено</div>';
@@ -7216,23 +7310,25 @@ function finOrderPayRow(o,kind){
   else if(canPay&&finOutstanding(k,o)>0)h+='<button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" data-kind="'+k+'" onclick="markPay(this.dataset.id,this.dataset.kind)">'+FIN_LABEL[k]+' '+fmt(finOutstanding(k,o))+'</button>';
  });return h+'</div></div>';
 }
-function finPayPerson(name,scope){var p=finPeople().find(function(x){return x.name===name;});if(!p)return;var masterKind=['master','alexandra','dasha'].includes(p.kind),es=[];if(masterKind){if(scope==='advance')es=(p.advance||[]).map(function(o){return {o:o,kind:'advance'};});else{if(scope!=='ready')es=es.concat((p.advance||[]).map(function(o){return {o:o,kind:'advance'};}));es=es.concat((p.post||[]).map(function(o){return {o:o,kind:'postpay'};}));if(scope!=='ready'&&p.kind==='alexandra')es=es.concat((p.sasha||[]).map(function(o){return {o:o,kind:'sasha'};}));if(scope!=='ready'&&p.kind==='dasha')es=es.concat((p.dividend||[]).map(function(o){return {o:o,kind:'dividend'};}));}}else es=(p.list||[]).map(function(o){return {o:o,kind:p.kind};});finPayout(name,es.filter(function(e){return finMatches(e.o)&&finOutstanding(e.kind,e.o)>0;}));}
+function finPayPerson(name,scope){var p=finPeople().find(function(x){return x.name===name;});if(!p)return;var masterKind=['master','alexandra','dasha'].includes(p.kind),es=[];if(masterKind){if(scope==='advance')es=(p.advance||[]).map(function(o){return {o:o,kind:'advance'};});else{if(scope!=='ready')es=es.concat((p.advance||[]).map(function(o){return {o:o,kind:'advance'};}));es=es.concat((p.post||[]).map(function(o){return {o:o,kind:'postpay'};}));if(scope!=='ready'&&p.kind==='alexandra')es=es.concat((p.sasha||[]).map(function(o){return {o:o,kind:'sasha'};}));if(scope!=='ready'&&p.kind==='dasha')es=es.concat((p.dividend||[]).map(function(o){return {o:o,kind:'dividend'};}));}}else es=(p.list||[]).map(function(o){return {o:o,kind:p.kind};});var extras=(scope==='advance'?[]:(p.extra||[]).filter(finMatches));finPayout(name,es.filter(function(e){return finMatches(e.o)&&finOutstanding(e.kind,e.o)>0;}),extras);}
 function markPay(id,type){var o=orders.find(function(x){return x.id===id;});if(o)finPayout(type==='sasha'?'Александра — комиссия':type==='dividend'?'Дарья — дивиденды':o.master,[{o:o,kind:type}]);}
 function payOnlyAdvances(m){finPayout(m,advNeedFor(m).map(function(o){return {o:o,kind:'advance'};}));}
 function payOnlyPost(m){finPayout(m,postNeedFor(m).map(function(o){return {o:o,kind:'postpay'};}));}
 function markAllPayments(m){finPayPerson(m);}
 function paySashaAll(){finPayPerson('Александра — комиссия');}
 function payDividendAll(){finPayPerson('Дарья — дивиденды');}
-function finPayout(person,entries){
- if(!canSeeBank()||isPreviewMode)return;if(!entries.length){toast('Нет начислений');return;}if(!finAccounts().length){toast('Сначала создайте расчётный счёт в банке');return;}
+function finPayout(person,entries,extraTasks){
+ extraTasks=extraTasks||[];
+ if(!canSeeBank()||isPreviewMode)return;if(!entries.length&&!extraTasks.length){toast('Нет начислений');return;}if(!finAccounts().length){toast('Сначала создайте расчётный счёт в банке');return;}
  var legacy=entries.filter(function(e){return e.kind==='postpay'&&e.o.advancePaid&&!(e.o.financePayments&&e.o.financePayments.advance);});
  var body='<p class="fin-note">Один перевод, одна запись в банке. Получатель: <b>'+uiText(person)+'</b>.</p><div class="fin-lines">';
  entries.forEach(function(e,i){body+='<div class="fin-line"><span>'+uiText(e.o.num)+' · '+FIN_LABEL[e.kind]+'</span><b id="fin-line-'+i+'">'+fmt(finOutstanding(e.kind,e.o))+'</b></div>';if(legacy.includes(e))body+='<label class="fin-note">Фактически выданный старый аванс по '+uiText(e.o.num)+'<input id="fin-old-'+i+'" type="number" min="0" step="0.01" inputmode="decimal" value="'+finPaid(e.o,'advance')+'" oninput="finPayoutTotal()"></label>';});
+ extraTasks.forEach(function(t,i){body+='<div class="fin-line"><span>Доп. работа'+(t.orderNum?' · '+uiText(t.orderNum):'')+' · '+uiText(t.text)+'</span><b>'+fmt(t.amount)+'</b></div>';});
  body+='</div>'+(legacy.length?'<label class="checkbox-row"><input id="fin-legacy-confirm" type="checkbox"> Проверила суммы старых авансов по переводам</label>':'')+'<div class="fg"><label>Счёт списания</label>'+finAccountSelect('fin-account')+'</div><div class="fg"><label>Дата перевода</label><input id="fin-date" type="date" value="'+todayISO()+'"></div>';
  var credit=finCreditBalance(person);
  if(credit>0)body+='<label class="checkbox-row"><input id="fin-use-credit" type="checkbox" onchange="finPayoutTotal()"> Использовать зачёт до '+fmt(credit)+'</label>';
  body+='<div id="fin-payout-total" class="fin-total"></div><button type="button" id="fin-refresh-payout" class="btn btn-secondary btn-sm" onclick="finRefreshPayout()">Обновить расчёт</button><p class="fin-note">Нажимайте «Провести», когда перевод действительно выполнен. CRM фиксирует движение денег, банковский перевод здесь не выполняется.</p>';
- finOpen('Подтвердить выплату',body,'Провести','finConfirmPayout()');finModalCtx={type:'payout',person:person,entries:entries.map(function(e){return {o:finClone(e.o),kind:e.kind};}),legacy:legacy.length,credit:credit};finPayoutTotal();
+ finOpen('Подтвердить выплату',body,'Провести','finConfirmPayout()');finModalCtx={type:'payout',person:person,entries:entries.map(function(e){return {o:finClone(e.o),kind:e.kind};}),extraTasks:extraTasks.map(finClone),legacy:legacy.length,credit:credit};finPayoutTotal();
 }
 async function finRefreshPayout(){
  var x=finModalCtx;if(!x||x.type!=='payout'||finBusy)return;
@@ -7246,15 +7342,16 @@ async function finRefreshPayout(){
   var data=await loadData(true);
   if(!lastLoadOk||!data)throw Error('Не удалось получить свежие данные из облака. Повторите попытку позже.');
   applyRemote('orders',data.orders||[]);applyRemote('tasks',data.tasks||[]);if(financeTableOk)applyRemote('finance',data.finance||[]);
-  var pend=pendingIds('orders'),fresh=[];
+  var pend=pendingIds('orders'),fresh=[],freshExtras=[];
   x.entries.forEach(function(e){
    var o=orders.find(function(y){return y.id===e.o.id;});if(!o)return;
    if(isLocalDirty('orders',o,pend))throw Error('Заказ '+(o.num||'')+' имеет локальные несохранённые изменения. Дождитесь синхронизации.');
    var eligible=e.kind==='advance'?o.master==='Света'&&PAY_ADV_STATUSES.includes(o.status)&&!o.postpayPaid&&!o.advancePaid:e.kind==='postpay'?postNeedFor(o.master).some(function(y){return y.id===o.id;}):officeEligible(o)&&!o[finFlag(e.kind)];
    if(eligible&&finOutstanding(e.kind,o)>0)fresh.push({o:o,kind:e.kind});
   });
-  if(!fresh.length)throw Error('После обновления начислений к этой выплате не осталось. Проверьте раздел выплат.');
-  finPayout(x.person,fresh);
+  (x.extraTasks||[]).forEach(function(t){var current=tasks.find(function(y){return y.id===t.id;});if(current&&!current.done&&JSON.stringify(current)===JSON.stringify(t))freshExtras.push(current);});
+  if(!fresh.length&&!freshExtras.length)throw Error('После обновления начислений к этой выплате не осталось. Проверьте раздел выплат.');
+  finPayout(x.person,fresh,freshExtras);
   if(keep.account&&finAccounts().some(function(a){return a.id===keep.account;}))document.getElementById('fin-account').value=keep.account;
   if(keep.date)document.getElementById('fin-date').value=keep.date;
   var credit=document.getElementById('fin-use-credit');if(credit)credit.checked=keep.useCredit;
@@ -7263,19 +7360,19 @@ async function finRefreshPayout(){
   finPayoutTotal();toast('Расчёт обновлён по актуальным данным');
  }catch(e){var currentError=document.getElementById('fin-error');if(currentError)currentError.textContent=e.message;else toast(e.message);var currentButton=document.getElementById('fin-refresh-payout');if(currentButton){currentButton.disabled=false;currentButton.textContent='Обновить расчёт';}}
 }
-function finPayoutPayload(){var x=finModalCtx;return {recipient:x.person,accountId:v('fin-account'),date:v('fin-date'),useCredit:!!(document.getElementById('fin-use-credit')&&document.getElementById('fin-use-credit').checked),entries:x.entries.map(function(e,i){var n=document.getElementById('fin-old-'+i),old=n?Number(n.value):null;var out={orderId:e.o.id,kind:e.kind,expected:finFP(e.o),amount:n?Math.max(0,calcMasterPay(e.o)-old):finOutstanding(e.kind,e.o)};if(n)out.legacyAdvance=old;return out;})};}
-function finPayoutTotal(){if(!finModalCtx)return;var p=finPayoutPayload(),sum=finSum(p.entries,function(e){return e.amount;}),credit=p.useCredit?Math.min(sum,finModalCtx.credit):0;p.entries.forEach(function(e,i){var el=document.getElementById('fin-line-'+i);if(el)el.textContent=fmt(e.amount);});document.getElementById('fin-payout-total').textContent='Начислено '+fmt(sum)+(credit?' · зачёт '+fmt(credit):'')+' · перевод '+fmt(sum-credit);}
+function finPayoutPayload(){var x=finModalCtx;var extra=(x.extraTasks||[]).map(function(t){return {id:t.id,expected:t};});return {recipient:x.person,accountId:v('fin-account'),date:v('fin-date'),useCredit:!!(document.getElementById('fin-use-credit')&&document.getElementById('fin-use-credit').checked),entries:x.entries.map(function(e,i){var n=document.getElementById('fin-old-'+i),old=n?Number(n.value):null;var out={orderId:e.o.id,kind:e.kind,expected:finFP(e.o),amount:n?Math.max(0,calcMasterPay(e.o)-old):finOutstanding(e.kind,e.o)};if(n)out.legacyAdvance=old;return out;}),extraTasks:extra,tasks:extra};}
+function finPayoutTotal(){if(!finModalCtx)return;var p=finPayoutPayload(),orderSum=finSum(p.entries,function(e){return e.amount;}),extraSum=finSum(p.extraTasks||[],function(t){return t.expected.amount;}),sum=orderSum+extraSum,credit=p.useCredit?Math.min(orderSum,finModalCtx.credit):0;p.entries.forEach(function(e,i){var el=document.getElementById('fin-line-'+i);if(el)el.textContent=fmt(e.amount);});document.getElementById('fin-payout-total').textContent='Начислено '+fmt(sum)+(credit?' · зачёт '+fmt(credit):'')+' · перевод '+fmt(sum-credit);}
 function finConfirmedPayoutMessage(p,r){
- var tx=(r.finance||[]).find(function(t){return t.kind==='tx'&&t.source==='finance_v2'&&t.recipient===p.recipient;});
+ var tx=(r.finance||[]).find(function(t){return t.kind==='tx'&&t.recipient===p.recipient;});
  var recorded=tx&&Array.isArray(tx.payoutLines)?tx.payoutLines:[];
  var items=recorded.length?recorded:p.entries.map(function(e){var o=orders.find(function(x){return x.id===e.orderId;});return {type:e.kind,orderNum:o&&o.num||'',amount:e.amount};});
  var lines=finPayoutSummaryLines(items);
  var credit=Math.max(0,Number(r.total||0)-Number(r.cash||0));
  if(credit)lines.push({sum:-credit,label:'зачёт ранее выплаченной суммы'});
  var date=/^\d{4}-\d{2}-\d{2}$/.test(p.date)?p.date.split('-').reverse().join('.'):payoutDate();
- return {format:'finance',person:p.recipient,date:date,lines:lines,total:Number(r.cash)||0};
+ return {format:'finance',person:p.recipient,date:date,lines:lines,total:Number(r.cash==null?r.total:r.cash)||0};
 }
-function finConfirmPayout(){finSubmit(async function(){if(finModalCtx.legacy&&!document.getElementById('fin-legacy-confirm').checked)throw Error('Подтвердите фактические старые авансы');var p=finPayoutPayload();var r=await finCommand('payout',p);window.lastPayout=finConfirmedPayoutMessage(p,r);});}
+function finConfirmPayout(){finSubmit(async function(){if(finModalCtx.legacy&&!document.getElementById('fin-legacy-confirm').checked)throw Error('Подтвердите фактические старые авансы');var p=finPayoutPayload();var r=await finCommand(p.tasks.length?'extra_work_payout':'payout',p);window.lastPayout=finConfirmedPayoutMessage(p,r);});}
 function undoPay(id,type){finCancel(id,type);}
 function openAdvanceUndo(id){finCancel(id,'advance');}
 function finCancel(id,kind){
