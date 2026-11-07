@@ -92,6 +92,9 @@ body{font-family:'Golos Text',-apple-system,BlinkMacSystemFont,sans-serif;backgr
 .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
 .main{padding:14px;flex:1;max-width:600px;width:100%;margin:0 auto}
 .card{background:var(--card);border-radius:var(--r2);box-shadow:var(--sh);overflow:hidden}
+.order-quick-edit{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px!important;padding:10px 16px 8px!important}
+.order-quick-edit label{min-width:0;font-size:11px;color:var(--text3);display:flex;flex-direction:column;align-items:stretch!important;gap:4px!important}
+.order-quick-edit select{width:100%;min-width:0;max-width:none!important;padding:8px 9px;border:1px solid var(--border);border-radius:9px;background:var(--bg);color:var(--text1);font:600 13px 'Golos Text',-apple-system,BlinkMacSystemFont,sans-serif}
 .card+.card{margin-top:10px}
 .card.urgent{box-shadow:inset 3px 0 0 var(--red),var(--sh)}
 .card-head{padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
@@ -2433,6 +2436,14 @@ function orderCard(o){
   html+='<div style="display:flex;align-items:center;gap:4px;flex-shrink:0">'+noteInd+'<div id="arr-'+o.id+'" style="font-size:20px;color:var(--text3);line-height:1">'+(isExpanded?'⌃':'⌄')+'</div></div>';
   html+='</div>';
 
+  if(canEdit){
+    var quickMasters=assignableMasters();if(o.master&&quickMasters.indexOf(o.master)<0)quickMasters=quickMasters.concat([o.master]);
+    html+='<div class="order-quick-edit" aria-label="Быстрое изменение заказа">'
+      +'<label>Мастер<select data-oid="'+uiText(o.id)+'" onchange="quickSetMaster(this.dataset.oid,this.value)"><option value="" disabled'+(!o.master?' selected':'')+'>Не назначен</option>'+quickMasters.map(function(m){return '<option value="'+uiText(m)+'"'+(m===o.master?' selected':'')+'>'+uiText(m)+'</option>';}).join('')+'</select></label>'
+      +'<label>Статус<select data-oid="'+uiText(o.id)+'" onchange="quickSetStatus(this.dataset.oid,this.value)">'+(o.status==='archived'?['archived']:orderStatusOptions(o.status)).map(function(k){var lock=shipBlocked(o,k)||!canChangeOrderStatus(o,k);return '<option value="'+k+'"'+(o.status===k?' selected':'')+(lock?' disabled':'')+'>'+uiText(STATUSES[k].label)+'</option>';}).join('')+'</select></label>'
+      +'</div>';
+  }
+
   html+='<div class="order-card-body'+(canFinance?' has-finance':'')+'"><div class="order-card-content">';
   // Бейджи
   html+='<div class="order-badges" data-toggle-id="'+o.id+'" onclick="toggleCard(this.dataset.toggleId)" style="cursor:pointer;display:flex;flex-wrap:wrap;gap:4px">'+badges+'</div>';
@@ -2592,6 +2603,32 @@ function setStatus(id,val){
   renderTab(tab);
   toast('Статус: '+STATUSES[o.status].label);
   saveOrders(orders);
+}
+async function quickSetMaster(id,name){
+ if(!canManageOrders()||isPreviewMode)return;
+ var o=orders.find(function(x){return x.id===id;});if(!o)return;
+ if(name===o.master)return;
+ if(o.advancePaid||o.postpayPaid){toast('Сначала оформите отмену выплат прежнему мастеру в разделе «Выплаты»');renderTab(tab);return;}
+ if(!assignableMasters().includes(name)){toast('Выберите мастера из списка');renderTab(tab);return;}
+ var previous=o.master;o.master=name;o.varRate=masterCfg(name).varRate;syncSdekReady(o);
+ renderTab(tab);toast('Мастер изменён: '+previous+' → '+name);
+ var saved=await saveOrders(orders);if(!saved)toast('Изменение мастера пока не синхронизировано');
+}
+async function quickSetStatus(id,status){
+ if(!canManageOrders()||isPreviewMode)return;
+ var o=orders.find(function(x){return x.id===id;});if(!o||status===o.status)return;
+ if(!canChangeOrderStatus(o,status)){toast(statusPermissionMessage());renderTab(tab);return;}
+ if(shipBlocked(o,status)){toast(shipBlockedMsg(o));renderTab(tab);return;}
+ var previous=o.status;
+ o.status=status;
+ syncSdekReady(o);
+ stampReady(o,previous);
+ if(status==='sent'&&!o.closedAt)o.closedAt=Date.now();
+ if(status!=='sent'&&o.trackSent)delete o.trackSent;
+ renderTab(tab);
+ var saved=await saveOrders(orders);
+ if(saved)toast('Статус: '+STATUSES[status].label);
+ else toast('Статус сохранён на устройстве и ждёт синхронизации');
 }
 // Закрыть заказ: клиент полностью оплатил. Ставим флаг closed, дату закрытия и полную оплату.
 // Выплата мастеру (Свете) — отдельно, во вкладке «Выплаты».
