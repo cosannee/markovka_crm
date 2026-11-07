@@ -165,6 +165,12 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}
 .checkbox-row{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:6px 0}
 .checkbox-row input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
 .fg .checkbox-row input[type=checkbox]{width:16px;height:16px;min-width:16px;padding:0;margin:0;flex:0 0 16px;-webkit-appearance:auto;appearance:auto}
+.xw-delivery-toggle{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;box-sizing:border-box;padding:9px 12px;border:1px solid var(--border2);border-radius:12px;background:var(--bg2);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s,color .15s;user-select:none;-webkit-tap-highlight-color:transparent}
+.xw-delivery-toggle:has(input:checked){background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.xw-delivery-toggle:has(input:focus-visible){outline:3px solid var(--accent-bg);outline-offset:2px}
+.fg .xw-delivery-toggle input[type=checkbox]{appearance:none;-webkit-appearance:none;position:relative;display:block;box-sizing:border-box;width:21px;height:21px;min-width:21px;padding:0;margin:0;flex:0 0 21px;border:1.5px solid var(--border2);border-radius:6px;background:var(--card);cursor:pointer}
+.fg .xw-delivery-toggle input[type=checkbox]:checked{border-color:var(--card);background:var(--card)}
+.fg .xw-delivery-toggle input[type=checkbox]:checked:after{content:'✓';position:absolute;inset:-1px;display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:16px;font-weight:800;line-height:1}
 .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .stat-card{background:var(--card);border-radius:var(--r2);padding:14px;box-shadow:var(--sh)}
 .stat-val{font-weight:700;letter-spacing:-.4px;font-size:24px;color:var(--accent)}
@@ -7219,7 +7225,7 @@ function extraWorkManagerPanel(){
   +'<div class="fg"><label for="xw-order-search">Связанный заказ · найдите по номеру или имени</label><input id="xw-order-search" type="search" autocomplete="off" placeholder="Например, И315 или фамилия клиента" oninput="searchExtraWorkOrders(this.value)"><input id="xw-order" type="hidden" value=""><div id="xw-order-selected" class="fin-note" style="display:none;margin:6px 0 0"></div><div id="xw-order-results" style="display:none;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--card);margin-top:6px"></div></div>'
   +'<div class="fg span2"><label for="xw-text">Что нужно сделать</label><input id="xw-text" maxlength="180" placeholder="Например: пришить дополнительный декор"></div>'
   +'<div class="fg"><label for="xw-amount">Оплата, ₽</label><input id="xw-amount" type="number" min="1" step="1" inputmode="numeric" placeholder="0"></div>'
-  +'<div class="fg" style="justify-content:flex-end"><label class="checkbox-row"><input id="xw-delivery" type="checkbox"> Задание с доставкой</label></div></div>'
+  +'<div class="fg" style="justify-content:flex-end"><label class="xw-delivery-toggle"><input id="xw-delivery" type="checkbox"><span>Задание с доставкой</span></label></div></div>'
   +'<button type="button" class="btn btn-secondary btn-sm" onclick="createExtraWork()">Добавить задание</button>';
  if(open.length){html+='<div class="fin-section-title">Ожидают оплаты · '+fmt(finSum(open,function(t){return t.amount;}))+'</div>';open.forEach(function(t){html+=extraWorkManagerRow(t,true);});}
  var paid=extraWorkTasks().filter(function(t){return !!t.done;}).slice(0,8);
