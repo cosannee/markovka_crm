@@ -7235,14 +7235,14 @@ function searchExtraWorkOrders(query){
  id.value='';if(selected){selected.style.display='none';selected.innerHTML='';}
  var q=String(query||'').trim().toLowerCase();
  if(q.length<2){box.style.display=q?'block':'none';box.innerHTML=q?'<div class="fin-note" style="margin:8px">Введите ещё хотя бы один символ</div>':'';return;}
- var matches=orders.filter(function(o){return o.status!=='archived'&&[o.num,o.client,o.phone,o.instagram].join(' ').toLowerCase().includes(q);}).sort(function(a,b){var an=String(a.num||'').toLowerCase().startsWith(q)?0:1,bn=String(b.num||'').toLowerCase().startsWith(q)?0:1;return an-bn||(b.created||0)-(a.created||0);}).slice(0,8);
+ var matches=orders.filter(function(o){return [o.num,o.client,o.phone,o.instagram].join(' ').toLowerCase().includes(q);}).sort(function(a,b){var an=String(a.num||'').toLowerCase().startsWith(q)?0:1,bn=String(b.num||'').toLowerCase().startsWith(q)?0:1;return an-bn||(b.created||0)-(a.created||0);}).slice(0,8);
  box.style.display='block';
  box.innerHTML=matches.length?matches.map(function(o){return '<button type="button" class="fin-order-row" style="width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:transparent;padding:9px 12px;cursor:pointer" data-id="'+uiText(o.id)+'" onclick="selectExtraWorkOrder(this.dataset.id)"><span><b>'+uiText(o.num||'Заказ')+'</b><small>'+uiText(o.client||'Клиент не указан')+' · '+uiText((STATUSES[o.status]||STATUSES.new).label)+'</small></span><span aria-hidden="true">Выбрать</span></button>';}).join(''):'<div class="fin-note" style="margin:8px">Совпадений не найдено</div>';
 }
 function selectExtraWorkOrder(orderId){
- var o=orders.find(function(x){return x.id===orderId&&x.status!=='archived';}),id=document.getElementById('xw-order'),input=document.getElementById('xw-order-search'),selected=document.getElementById('xw-order-selected'),box=document.getElementById('xw-order-results');
+ var o=orders.find(function(x){return x.id===orderId;}),id=document.getElementById('xw-order'),input=document.getElementById('xw-order-search'),selected=document.getElementById('xw-order-selected'),box=document.getElementById('xw-order-results');
  if(!o||!id||!input||!selected)return;
- id.value=o.id;input.value=(o.num||'Заказ')+' · '+(o.client||'клиент не указан');selected.innerHTML='Выбран заказ <b>'+uiText(o.num||'')+'</b> · '+uiText(o.client||'')+' <button type="button" class="fin-link" onclick="clearExtraWorkOrder()">Сменить</button>';selected.style.display='block';if(box){box.style.display='none';box.innerHTML='';}
+ id.value=o.id;input.value=(o.num||'Заказ')+' · '+(o.client||'клиент не указан');selected.innerHTML='Выбран заказ <b>'+uiText(o.num||'')+'</b> · '+uiText(o.client||'')+(o.status==='archived'?' · архив':'')+' <button type="button" class="fin-link" onclick="clearExtraWorkOrder()">Сменить</button>';selected.style.display='block';if(box){box.style.display='none';box.innerHTML='';}
 }
 function clearExtraWorkOrder(){var id=document.getElementById('xw-order'),input=document.getElementById('xw-order-search'),selected=document.getElementById('xw-order-selected');if(id)id.value='';if(input){input.value='';input.focus();}if(selected){selected.style.display='none';selected.innerHTML='';}}
 async function createExtraWork(){
