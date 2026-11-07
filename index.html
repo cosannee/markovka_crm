@@ -95,6 +95,12 @@ body{font-family:'Golos Text',-apple-system,BlinkMacSystemFont,sans-serif;backgr
 .order-quick-edit{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px!important;padding:10px 16px 8px!important}
 .order-quick-edit label{min-width:0;font-size:11px;color:var(--text3);display:flex;flex-direction:column;align-items:stretch!important;gap:4px!important}
 .order-quick-edit select{width:100%;min-width:0;max-width:none!important;padding:8px 9px;border:1px solid var(--border);border-radius:9px;background:var(--bg);color:var(--text1);font:600 13px 'Golos Text',-apple-system,BlinkMacSystemFont,sans-serif}
+.order-quick-status{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:11px;color:var(--text3)}
+.order-quick-status-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;padding:6px 8px;border:1px solid var(--border);border-radius:10px;background:var(--bg);cursor:pointer;color:var(--text1)}
+.order-quick-status-trigger .badge{font-size:11px}
+.order-quick-status-trigger .edit-mark{font-size:13px;color:var(--text3);flex:0 0 auto}
+.quick-status-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.quick-status-options .btn{min-height:44px;white-space:normal}
 .card+.card{margin-top:10px}
 .card.urgent{box-shadow:inset 3px 0 0 var(--red),var(--sh)}
 .card-head{padding:12px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
@@ -1941,6 +1947,7 @@ function uiText(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</
 function navigateApp(id){
   if(id==='payments')payMasterView=null;
   if(id==='sdek')sdekFocusId=null;
+  if(id==='sdek'&&role==='master')crmLoadMasterSdekRecipients();
   renderTab(id);
   window.scrollTo({top:0,behavior:'auto'});
 }
@@ -2440,7 +2447,7 @@ function orderCard(o){
     var quickMasters=assignableMasters();if(o.master&&quickMasters.indexOf(o.master)<0)quickMasters=quickMasters.concat([o.master]);
     html+='<div class="order-quick-edit" aria-label="Быстрое изменение заказа">'
       +'<label>Мастер<select data-oid="'+uiText(o.id)+'" onchange="quickSetMaster(this.dataset.oid,this.value)"><option value="" disabled'+(!o.master?' selected':'')+'>Не назначен</option>'+quickMasters.map(function(m){return '<option value="'+uiText(m)+'"'+(m===o.master?' selected':'')+'>'+uiText(m)+'</option>';}).join('')+'</select></label>'
-      +'<label>Статус<select data-oid="'+uiText(o.id)+'" onchange="quickSetStatus(this.dataset.oid,this.value)">'+(o.status==='archived'?['archived']:orderStatusOptions(o.status)).map(function(k){var lock=shipBlocked(o,k)||!canChangeOrderStatus(o,k);return '<option value="'+k+'"'+(o.status===k?' selected':'')+(lock?' disabled':'')+'>'+uiText(STATUSES[k].label)+'</option>';}).join('')+'</select></label>'
+      +'<div class="order-quick-status"><span>Статус</span><button type="button" class="order-quick-status-trigger" data-oid="'+uiText(o.id)+'" onclick="openQuickStatusEdit(this.dataset.oid)" aria-label="Изменить статус заказа '+uiText(o.num)+'"><span class="badge '+(STATUSES[o.status]||STATUSES.new).cls+'">'+uiText((STATUSES[o.status]||STATUSES.new).label)+'</span><span class="edit-mark" aria-hidden="true">✎</span></button></div>'
       +'</div>';
   }
 
@@ -2630,6 +2637,20 @@ async function quickSetStatus(id,status){
  if(saved)toast('Статус: '+STATUSES[status].label);
  else toast('Статус сохранён на устройстве и ждёт синхронизации');
 }
+function openQuickStatusEdit(id){
+ if(!canManageOrders()||isPreviewMode)return;
+ var o=orders.find(function(x){return x.id===id;});if(!o)return;
+ var options=o.status==='archived'?['archived']:orderStatusOptions(o.status),el=document.getElementById('quick-status-modal');
+ if(el)el.remove();
+ el=document.createElement('div');el.id='quick-status-modal';el.className='modal-bg';
+ el.innerHTML='<div class="modal" role="dialog" aria-modal="true" aria-labelledby="quick-status-title">'
+   +'<div id="quick-status-title" class="modal-title">Статус · '+uiText(o.num)+'</div>'
+   +'<p class="fin-note">Выберите этап заказа</p><div class="quick-status-options" role="group" aria-label="Статусы заказа">'
+   +options.map(function(k){var disabled=shipBlocked(o,k)||!canChangeOrderStatus(o,k);return '<button type="button" class="btn '+(k===o.status?'btn-primary':'btn-secondary')+'" data-status="'+uiText(k)+'" data-oid="'+uiText(o.id)+'" onclick="chooseQuickStatus(this.dataset.oid,this.dataset.status)"'+(disabled?' disabled':'')+'>'+uiText(STATUSES[k].label)+(k===o.status?' ✓':'')+'</button>';}).join('')
+   +'</div><div class="modal-actions"><button type="button" class="btn btn-ghost" onclick="document.getElementById(\'quick-status-modal\').remove()">Закрыть</button></div></div>';
+ document.body.appendChild(el);el.addEventListener('click',function(e){if(e.target===el)el.remove();});
+}
+function chooseQuickStatus(id,status){var el=document.getElementById('quick-status-modal');if(el)el.remove();quickSetStatus(id,status);}
 // Закрыть заказ: клиент полностью оплатил. Ставим флаг closed, дату закрытия и полную оплату.
 // Выплата мастеру (Свете) — отдельно, во вкладке «Выплаты».
 async function closeOrder(id){
@@ -2790,18 +2811,38 @@ function sdekExportList(){
     return true; // COO видит все планируемые отправки
   }).sort(function(a,b){return (a.num||'').localeCompare(b.num||'');});
 }
+var masterSdekRecipients={},masterSdekRecipientsSeen={},masterSdekRecipientsLoaded=false,masterSdekRecipientsLoading=false,masterSdekRecipientsError='';
+function sdekRecipientName(o){return role==='master'?(masterSdekRecipients[o.id]||'ФИО не загружено'):(o.client||'Клиент не указан');}
+function retryMasterSdekRecipients(){masterSdekRecipientsLoaded=false;masterSdekRecipientsError='';crmLoadMasterSdekRecipients();}
+function masterSdekNamesReady(list){return role!=='master'||(masterSdekRecipientsLoaded&&list.every(function(o){return !!masterSdekRecipients[o.id];}));}
+async function crmLoadMasterSdekRecipients(){
+ if(role!=='master'||isPreviewMode||masterSdekRecipientsLoaded||masterSdekRecipientsLoading)return;
+ masterSdekRecipientsLoading=true;masterSdekRecipientsError='';
+ try{
+  var r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_master_sdek_recipients',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:'{}'});
+  if(!r.ok)throw Error('HTTP '+r.status);
+  var rows=await r.json();if(!Array.isArray(rows))throw Error('Некорректный ответ');
+  var names={},seen={};rows.forEach(function(row){if(row&&row.order_id){seen[row.order_id]=true;if(typeof row.client_name==='string'&&row.client_name.trim())names[row.order_id]=row.client_name.trim();}});
+  masterSdekRecipients=names;masterSdekRecipientsSeen=seen;masterSdekRecipientsLoaded=true;
+ }catch(e){masterSdekRecipientsError='Не удалось загрузить ФИО получателей. Обновите раздел СДЭК.';console.warn('master SDEK recipients',e);}
+ finally{masterSdekRecipientsLoading=false;if(tab==='sdek')renderTab('sdek');}
+}
 function tplSdek(){
   if(role==='manager'||role==='director')return tplSdekQueue();
   var list=sdekExportList();
+  if(role==='master'&&masterSdekRecipientsLoaded&&!masterSdekRecipientsLoading&&list.some(function(o){return !masterSdekRecipientsSeen[o.id];}))retryMasterSdekRecipients();
   var html='<div class="card" style="padding:18px;margin-bottom:12px">'
     +'<h2 style="margin:0 0 6px;font-size:19px">СДЭК · '+list.length+' '+pluralPosylka(list.length)+'</h2>'
     +'<p style="margin:0;color:var(--text3);font-size:13px">Заказы со статусом «Готов к отправке».</p>';
-  if(list.length)html+='<button type="button" class="btn btn-primary" style="margin-top:14px" onclick="openSdekExport()">Открыть выгрузку</button>';
+  if(role==='master'&&masterSdekRecipientsLoading)html+='<p class="fin-note" role="status">Загружаем ФИО получателей…</p>';
+  if(role==='master'&&masterSdekRecipientsError)html+='<p class="fin-note" role="alert">'+uiText(masterSdekRecipientsError)+' <button type="button" class="btn btn-sm btn-secondary" onclick="retryMasterSdekRecipients()">Повторить</button></p>';
+  if(role==='master'&&masterSdekRecipientsLoaded&&!masterSdekNamesReady(list))html+='<p class="fin-note" role="alert">Не удалось получить ФИО для всех отправлений. <button type="button" class="btn btn-sm btn-secondary" onclick="retryMasterSdekRecipients()">Повторить</button></p>';
+  if(list.length)html+='<button type="button" class="btn btn-primary" style="margin-top:14px" onclick="openSdekExport()"'+(role==='master'&&!masterSdekNamesReady(list)?' disabled':'')+'>Открыть выгрузку</button>';
   html+='</div>';
   if(!list.length)return html+'<div class="card" style="padding:20px;color:var(--text3)">Пока нет заказов для СДЭК</div>';
   list.forEach(function(o){
     html+='<div class="card" id="sdek-card-'+uiText(o.id)+'" style="padding:14px 16px;margin-bottom:8px">'
-      +'<div style="font-weight:700"><button type="button" class="order-reference" data-oid="'+uiText(o.id)+'" onclick="jumpTo(this.dataset.oid)">'+uiText(o.num)+'</button> · '+uiText(o.client||'Клиент не указан')+'</div>'
+      +'<div style="font-weight:700"><button type="button" class="order-reference" data-oid="'+uiText(o.id)+'" onclick="jumpTo(this.dataset.oid)">'+uiText(o.num)+'</button> · '+uiText(sdekRecipientName(o))+'</div>'
       +(role==='manager'?'<div style="font-size:12px;color:var(--text3)">'+uiText(o.master||'—')+'</div>':'')
       +'<div style="font-size:13px;color:var(--text2);margin-top:5px">'+uiText(orderToyLabel(o)||'')+' · '+(orderWeight(o)||'—')+' г</div>'
       +'<div style="font-size:12px;color:var(--text3);margin-top:4px">'+(o.sdekNum?'Накладная '+uiText(o.sdekNum):'Накладная ещё не указана')+'</div>'
@@ -3101,6 +3142,7 @@ function tplWeekOverview(){
 
 function sdekExportText(){
   var list=sdekExportList();
+  if(!masterSdekNamesReady(list))throw Error('ФИО получателей ещё не загружены');
   var now=new Date().toLocaleDateString('ru',{day:'numeric',month:'long'});
   var lines=['СДЭК · '+list.length+' '+pluralPosylka(list.length)+' · '+now,''];
   var isMasterCopy=role==='master';
@@ -3108,7 +3150,7 @@ function sdekExportText(){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
     var nak=o.sdekNum?('НАКЛАДНАЯ № '+o.sdekNum):'НАКЛАДНАЯ — нет!';
     var toy=orderToyLabel(o);
-    lines.push(o.num+' · '+(o.client||'Клиент не указан')+(role==='manager'&&o.master?' ['+o.master+']':''));
+    lines.push(o.num+' · '+sdekRecipientName(o)+(role==='manager'&&o.master?' ['+o.master+']':''));
     lines.push(nak);
     if(role==='manager')lines.push('Откуда отправляем: '+sdekOriginText(o));
     lines.push('Коробка: '+sdekBoxSize(o));
@@ -3148,6 +3190,7 @@ function pluralIgrushka(n){
 }
 function openSdekExport(){
   var list=sdekExportList();
+  if(!masterSdekNamesReady(list)){toast(masterSdekRecipientsLoaded?'Не удалось получить ФИО для всех отправлений. Обновите данные в разделе СДЭК.':'Сначала загрузите данные получателей в разделе СДЭК');return;}
   var now=new Date().toLocaleDateString('ru',{day:'numeric',month:'long'});
   var rows=list.map(function(o){
     var wt=orderWeight(o)?orderWeight(o)+' г':'вес —';
@@ -3155,7 +3198,7 @@ function openSdekExport(){
     return '<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">'
       +'<input type="checkbox" class="sdek-chk" data-oid="'+uiText(o.id)+'" checked style="margin-top:3px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0">'
       +'<div style="flex:1;min-width:0">'
-      +'<div style="font-size:14px;font-weight:700;color:var(--text1)">'+uiText(o.num)+' · '+uiText(o.client||'Клиент не указан')+(role==='manager'&&o.master?' <span style="font-size:11px;font-weight:700;color:var(--purple-ink);background:var(--purple-bg);padding:1px 7px;border-radius:6px">'+uiText(o.master)+'</span>':'')+'</div>'
+      +'<div style="font-size:14px;font-weight:700;color:var(--text1)">'+uiText(o.num)+' · '+uiText(sdekRecipientName(o))+(role==='manager'&&o.master?' <span style="font-size:11px;font-weight:700;color:var(--purple-ink);background:var(--purple-bg);padding:1px 7px;border-radius:6px">'+uiText(o.master)+'</span>':'')+'</div>'
       +(toy?'<div style="font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-bg);display:inline-block;padding:2px 8px;border-radius:6px;margin:2px 0">'+uiText(toy)+'</div>':'')
       +sdekWaybillMarkup(o.sdekNum)
       +'<div style="font-size:12px;color:var(--gray-ink);margin-top:1px">'+wt+'</div>'
@@ -3231,7 +3274,7 @@ async function markSdekSent(btn){
   }
 }
 async function copySdekText(){
-  var txt=sdekExportText();
+  var txt;try{txt=sdekExportText();}catch(e){toast(e.message||'Не удалось подготовить список СДЭК');return;}
   try{await navigator.clipboard.writeText(txt);toast('Скопировано ✓');}
   catch(e){
     // запасной способ
