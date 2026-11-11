@@ -7907,7 +7907,11 @@ function productionTiles(list){
    var qty=Math.max(1,parseInt(it.count)||1);
    for(var k=0;k<qty;k++)rows.push({o:o,index:i,unit:k,name:it.toyType||'Игрушка',due:due,ready:ready,missing:missing,late:!ready&&!!due&&due<today});
   });
- });return rows;
+ });return rows.sort(function(a,b){
+  return (a.due||'9999-12-31').localeCompare(b.due||'9999-12-31')
+   ||String(a.o.num||'').localeCompare(String(b.o.num||''),'ru',{numeric:true})
+   ||String(a.o.id).localeCompare(String(b.o.id))||a.index-b.index||a.unit-b.unit;
+ });
 }
 function productionTileHtml(r){
  var state=r.missing?'Вне плана':r.late?'Срок прошёл':r.ready?'Готово':'В работе';
