@@ -68,6 +68,7 @@ body.has-save-bar .to-top{bottom:76px}
 .archive-back{display:inline-flex;align-items:center;gap:6px;margin-bottom:10px;padding:8px 16px;border:1px solid var(--border2);border-radius:20px;background:var(--bg3);color:var(--text2);font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}
 .save-bar{position:fixed;left:0;right:0;bottom:0;z-index:400;display:flex;align-items:center;justify-content:center;gap:10px;padding:10px 14px;background:var(--red-bg);border-top:1px solid var(--red);box-shadow:0 -2px 12px rgba(44,46,51,.10)}
 .save-bar-txt{font-size:12px;font-weight:700;color:var(--red-ink)}
+.save-bar-reason{display:block;max-width:560px;margin-top:3px;font-size:11px;line-height:1.3;font-weight:500;overflow-wrap:anywhere}
 .save-bar-btn{padding:6px 14px;border:none;border-radius:16px;background:var(--red-ink);color:#fff;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer}
 body{font-family:'Golos Text',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text1);font-size:14px;min-height:100vh;overflow-x:hidden}
 #auth-loading,#login{min-height:92vh;align-items:center;justify-content:center;background:var(--bg)}
@@ -1230,7 +1231,10 @@ function rowLabel(t,o){
 let patchRpcOk=null;   // null — ещё не проверяли
 async function sbPatchRow(t,id,p){
   const r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_secure_patch',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_table:t,p_id:String(id),p_set:p.set,p_unset:p.unset})});
-  if(!r.ok)throw Error('Сохранение отклонено: '+r.status);
+  if(!r.ok){
+    var detail='';try{var body=await r.json();detail=body.message||body.error||body.code||'';}catch(e){}
+    throw Error('Сохранение отклонено: '+r.status+(detail?' · '+String(detail).slice(0,160):''));
+  }
   return await r.json();
 }
 
@@ -1251,7 +1255,7 @@ async function pushDirty(d){
 }
 async function pushDirtyRows(d){
   console.log("Supabase sync");
-  var touched=false,conflicts=[],gone=[];
+  var touched=false,conflicts=[],gone=[],failed=[];
   for(const t of DIRTY_TABLES){
     if(t==='finance'&&!financeTableOk){
       if(Object.keys((d.upserts&&d.upserts.finance)||{}).length||((d.deletes&&d.deletes.finance)||[]).length)
@@ -1266,8 +1270,12 @@ async function pushDirtyRows(d){
       if(baseStr==null){fresh.push({id:id,data:sent});continue;}
       const base=JSON.parse(baseStr);
       const p=rowPatch(base,sent);
-      if(!Object.keys(p.set).length&&!p.unset.length){_sbSnap[t][id]=JSON.stringify(sent);continue;}
-      const res=await sbPatchRow(t,id,p);
+      if(!Object.keys(p.set).length&&!p.unset.length){_sbSnap[t][id]=JSON.stringify(sent);delete ups[id];delete bases[id];continue;}
+      var res;
+      try{res=await sbPatchRow(t,id,p);}catch(e){failed.push(rowLabel(t,sent)+': '+(e&&e.message||e));continue;}
+      // Сразу убираем подтверждённую сервером строку из очереди. Если следующая
+      // строка завершится ошибкой, повтор не должен снова отправлять эту правку.
+      delete ups[id];delete bases[id];
       var arr=getTable(t),i=arr.findIndex(function(x){return x&&x.id===id;});
       if(!res){
         // Строку удалили с другого устройства, пока здесь её правили
@@ -1294,7 +1302,7 @@ async function pushDirtyRows(d){
         body:JSON.stringify(fresh)
       });
       if(!r.ok)throw new Error('upsert '+t+' '+r.status);
-      fresh.forEach(function(u){_sbSnap[t][u.id]=JSON.stringify(u.data);});
+      fresh.forEach(function(u){_sbSnap[t][u.id]=JSON.stringify(u.data);delete ups[u.id];delete bases[u.id];});
     }
     // Удаляем СТРОГО по явному списку (pendingDeletes) — см. комментарий у его объявления.
     const dels=((d.deletes&&d.deletes[t])||[]).slice();
@@ -1306,12 +1314,14 @@ async function pushDirtyRows(d){
       });
       if(!r.ok)throw new Error('delete '+t+' '+r.status);
       dels.forEach(function(id){delete _sbSnap[t][id];});
+      d.deletes[t]=((d.deletes&&d.deletes[t])||[]).filter(function(id){return dels.indexOf(id)<0;});
       pendingDeletes[t]=(pendingDeletes[t]||[]).filter(function(id){return dels.indexOf(id)<0;});
     }
   }
   if(conflicts.length)toast('Одновременная правка: '+conflicts.join(', ')+' — сохранено ваше значение, проверьте');
   else if(gone.length)toast('Уже удалено с другого устройства: '+gone.join(', '));
   if(touched)refreshAfterRemote();
+  if(failed.length)throw Error(failed.slice(0,3).join('; ')+(failed.length>3?' и ещё '+(failed.length-3):''));
 }
 
 // ═══ НАДЁЖНОЕ СОХРАНЕНИЕ ═══
@@ -1383,6 +1393,7 @@ async function retrySave(manual){
   }catch(e){
     saveState.attempt++;
     saveState.reason=e&&e.message?e.message:'ошибка сети';
+    markUnsaved(st.dirty,saveState.reason);
     if(manual)toast('Пока не получается сохранить — попробуем ещё раз');
     renderSaveBar();
     scheduleRetry();
@@ -1406,6 +1417,7 @@ function renderSaveBar(){
   var when=st?new Date(st.ts).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):'';
   el.innerHTML='<span class="save-bar-txt">'
     +(saveState.busy?'Сохраняем…':'Изменения не сохранены'+(when?' (с '+when+')':''))
+    +(!saveState.busy&&saveState.reason?'<small class="save-bar-reason">'+uiText(saveState.reason)+'</small>':'')
     +'</span>'
     +(saveState.busy?'':'<button class="save-bar-btn" onclick="retrySave(true)">Сохранить сейчас</button>');
 }
