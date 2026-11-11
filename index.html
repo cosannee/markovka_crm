@@ -1084,6 +1084,26 @@ async function restoreBackup(idx){
   }catch(e){toast('Ошибка восстановления');}
 }
 
+// Production dates are independent of the accounting month. Existing deadlines
+// (including incomplete legacy dates) always take precedence over automatic dates.
+function productionNextSaturday(now){
+  var parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Vladivostok',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now||new Date());
+  var values={};parts.forEach(function(p){values[p.type]=p.value;});
+  var day=new Date(Date.UTC(+values.year,+values.month-1,+values.day));
+  var weekday=(day.getUTCDay()+6)%7;
+  day.setUTCDate(day.getUTCDate()-weekday+12);
+  return day.toISOString().slice(0,10);
+}
+function assignMissingProductionDates(list,now){
+  if(!canManageOrders()||isPreviewMode)return;
+  (list||[]).forEach(function(o){
+    if(o.status!=='nextweek'||o.productionDueDate||o.deliveryDay)return;
+    var old=_sbSnap.orders[o.id];
+    if(old&&JSON.parse(old).status==='nextweek')return;
+    o.productionDueDate=productionNextSaturday(now);
+  });
+}
+
 async function saveData(ords,tsks,skipGuard,fins){
   if(!Array.isArray(fins))fins=finance;
   // ЗАЩИТА ОТ ПОТЕРИ ДАННЫХ: не пишем в облако, пока ни разу его не прочитали.
@@ -3120,7 +3140,7 @@ function tplWeekOverview(){
   var html=tplOverviewPersonalTasks()+'<p class="fabric-intro">Текущая работа: «В работе», «Готов» и «Готов к отправке». Новые заказы и план следующей недели сюда не входят.</p>'
     +'<div class="fg" style="margin-bottom:16px"><label for="overview-master">Мастер</label><select id="overview-master" onchange="setOverviewFilter(\'master\',this.value)"><option value="all">Все мастера</option>';
   Array.from(new Set(orders.map(function(o){return o.master;}).filter(Boolean))).sort().forEach(function(m){html+='<option value="'+uiText(m)+'"'+(overviewMaster===m?' selected':'')+'>'+uiText(m)+'</option>';});
-  html+='</select></div>'+tplDashboardSummary(list)+'<div class="overview-toolbar"><h2>Оплаты и отправки</h2></div><div class="overview-grid">';
+  html+='</select></div>'+tplProductionBoard(list)+tplDashboardSummary(list)+'<div class="overview-toolbar"><h2>Оплаты и отправки</h2></div><div class="overview-grid">';
   ['shipping','unpaid','waybill','production'].forEach(function(key){
     html+='<button type="button" class="overview-tile'+(overviewGroup===key?' selected':'')+'" aria-pressed="'+(overviewGroup===key)+'" data-group="'+key+'" onclick="setOverviewFilter(\'group\',this.dataset.group)">'
       +'<span class="overview-count">'+groups[key].length+'</span><span class="overview-label">'+OVERVIEW_GROUPS[key].title+'</span>'
@@ -7862,6 +7882,46 @@ function tplDashboardSummary(list){
   return h;
 }
 
+</script>
+
+<style>
+.production-panel{margin:20px 0;background:var(--card);border:1px solid var(--border);border-radius:18px;padding:18px}.production-panel h2{font-size:20px;margin:0}.production-metrics{display:flex;gap:18px;margin:14px 0;flex-wrap:wrap;font-size:13px}.production-metrics b{font-size:23px;display:block}.production-person{border-top:1px solid var(--border);padding:14px 0}.production-person header{display:flex;justify-content:space-between;gap:10px;margin-bottom:10px;font-size:13px}.production-cells{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:7px}.production-cell{border:1px solid var(--border);border-radius:12px;padding:10px 8px;text-align:left;font:inherit;cursor:pointer;min-height:84px;min-width:0;background:var(--bg2);color:var(--text1)}.production-cell b,.production-cell span,.production-cell small{display:block;overflow-wrap:anywhere}.production-cell b{font-size:14px}.production-cell span{font-size:11px;margin:4px 0}.production-cell small{font-size:10px}.production-cell.ready{background:var(--green-bg);color:var(--green-ink)}.production-cell.work{background:var(--orange-bg);color:var(--orange-ink)}.production-cell.late{background:var(--red-bg);color:var(--red-ink)}.production-empty{font-size:12px;color:var(--text3)}
+</style>
+<script>
+function productionToday(){
+ var p=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Vladivostok',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),v={};p.forEach(function(x){v[x.type]=x.value;});return v.year+'-'+v.month+'-'+v.day;
+}
+function productionExistingDue(o,it){
+ if(it&&it.productionDueDate)return it.productionDueDate;
+ if(o.productionDueDate)return o.productionDueDate;
+ if(o.month&&o.deliveryDay)return o.month+'-'+String(o.deliveryDay).padStart(2,'0');
+ return '';
+}
+function productionTiles(list){
+ var today=productionToday(),rows=[];
+ list.forEach(function(o){
+  if(!['work','ready','planned','new'].includes(o.status))return;
+  getItems(o).forEach(function(it,i){
+   var due=productionExistingDue(o,it),ready=productionReady(o),missing=o.status==='new'&&!!o.master&&!!due&&due<=today;
+   if(o.status==='new'&&!missing)return;
+   var qty=Math.max(1,parseInt(it.count)||1);
+   for(var k=0;k<qty;k++)rows.push({o:o,index:i,unit:k,name:it.toyType||'Игрушка',due:due,ready:ready,missing:missing,late:!ready&&!!due&&due<today});
+  });
+ });return rows;
+}
+function productionTileHtml(r){
+ var state=r.missing?'Вне плана':r.late?'Срок прошёл':r.ready?'Готово':'В работе';
+ return '<button class="production-cell '+(r.missing||r.late?'late':r.ready?'ready':'work')+'" data-oid="'+uiText(r.o.id)+'" onclick="jumpTo(this.dataset.oid)" title="Открыть заказ"><b>'+uiText(r.o.num)+'</b><span>'+uiText(r.name)+' · '+state+'</span><small>'+(r.due?'Сдать '+uiText(r.due.split('-').reverse().join('.')):'Срок не указан')+'</small></button>';
+}
+function tplProductionBoard(list){
+ var rows=productionTiles(list),active=rows.filter(function(r){return !r.missing;}),issues=rows.filter(function(r){return r.missing||r.late;}),ready=active.filter(function(r){return r.ready;}).length;
+ var h='<section class="production-panel"><h2>Текущая неделя</h2><div class="production-metrics"><div><b>'+active.length+'</b>игрушек</div><div><b>'+ready+'</b>готово</div><div><b>'+issues.length+'</b>требуют внимания</div></div>';
+ if(issues.length)h+='<details><summary>Требуют моего решения · '+issues.length+'</summary><div class="production-cells" style="margin:12px 0">'+issues.map(productionTileHtml).join('')+'</div></details>';
+ var names=Array.from(new Set(MASTERS.concat(active.map(function(r){return r.o.master||'Не назначен';}))));
+ names.forEach(function(name){var own=active.filter(function(r){return (r.o.master||'Не назначен')===name;});h+='<article class="production-person"><header><b>'+uiText(name)+'</b><span>'+own.filter(function(r){return r.ready;}).length+' / '+own.length+' готово</span></header>'+(own.length?'<div class="production-cells">'+own.map(productionTileHtml).join('')+'</div>':'<span class="production-empty">В текущем плане нет игрушек</span>')+'</article>';});
+ var missed=rows.filter(function(r){return r.missing;});if(missed.length)h+='<h3>Выпали из плана</h3><div class="production-cells">'+missed.map(productionTileHtml).join('')+'</div>';
+ return h+'<p class="production-empty">Каждая плитка — игрушка. Готовность пока соответствует статусу всего заказа. Указанные ранее сроки сохранены.</p></section>';
+}
 </script>
 </body>
 </html>
