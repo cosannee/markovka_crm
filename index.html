@@ -1267,6 +1267,7 @@ async function sbPatchRow(t,id,p){
 // нельзя: она могла прочитать строки ДО записи, и старая версия затёрла бы новую
 // (так закрытый заказ «сам открывался» обратно).
 var saveSeq=0,saveInFlight=0;
+var rejectedOrderStatuses={};
 async function pushDirty(d){
   if(!d)return;
   saveSeq++;saveInFlight++;
@@ -1292,7 +1293,8 @@ async function pushDirtyRows(d){
       const p=rowPatch(base,sent);
       if(!Object.keys(p.set).length&&!p.unset.length){_sbSnap[t][id]=JSON.stringify(sent);delete ups[id];delete bases[id];continue;}
       var res;
-      try{res=await sbPatchRow(t,id,p);}catch(e){failed.push(rowLabel(t,sent)+': '+(e&&e.message||e));continue;}
+      try{res=await sbPatchRow(t,id,p);}catch(e){if(t==='orders'&&/Forbidden status/.test(e.message||''))rejectedOrderStatuses[id]=true;failed.push(rowLabel(t,sent)+': '+(e&&e.message||e));continue;}
+      if(t==='orders')delete rejectedOrderStatuses[id];
       // Сразу убираем подтверждённую сервером строку из очереди. Если следующая
       // строка завершится ошибкой, повтор не должен снова отправлять эту правку.
       delete ups[id];delete bases[id];
@@ -1439,7 +1441,46 @@ function renderSaveBar(){
     +(saveState.busy?'Сохраняем…':'Изменения не сохранены'+(when?' (с '+when+')':''))
     +(!saveState.busy&&saveState.reason?'<small class="save-bar-reason">'+uiText(saveState.reason)+'</small>':'')
     +'</span>'
-    +(saveState.busy?'':'<button class="save-bar-btn" onclick="retrySave(true)">Сохранить сейчас</button>');
+    +(saveState.busy?'':'<button class="save-bar-btn" onclick="retrySave(true)">Сохранить сейчас</button>')
+    +(!saveState.busy&&role==='master'&&Object.keys(rejectedOrderStatuses).length?'<button class="save-bar-btn" onclick="resolveRejectedStatuses()">Разобрать конфликт статуса</button>':'');
+}
+async function resolveRejectedStatuses(){
+ if(role!=='master'||isPreviewMode||saveState.busy||saveInFlight)return;
+ var initial=readUnsaved();if(!initial||initial.v!==2)return;
+ var fingerprint=JSON.stringify(initial),ids=Object.keys(rejectedOrderStatuses);
+ saveState.busy=true;renderSaveBar();
+ try{
+  var remote=await crmReadMasterOrders();
+  if(JSON.stringify(readUnsaved())!==fingerprint||saveInFlight)throw Error('Правки изменились. Повторите разбор.');
+  for(var id of ids){
+   var st=readUnsaved(),sent=st&&st.dirty.upserts.orders[id],base=st&&st.dirty.bases.orders[id];
+   if(!sent||!base)continue;
+   var actual=remote.find(function(o){return String(o.id)===String(id);});
+   if(!actual){toast('Заказ '+sent.num+' больше не доступен мастеру. Сообщите Александре.');continue;}
+   var label=function(v){return STATUSES[v]?STATUSES[v].label:v;};
+   if(!confirm('Заказ '+sent.num+'\nНа телефоне: '+label(sent.status)+'\nВ базе: '+label(actual.status)+'\n\nОтменить несохранённую смену статуса и этапа этого заказа и принять данные базы? Остальные правки сохранятся. Копия отменённой правки останется на устройстве.'))continue;
+   // Abort if the backup cannot be durably stored. No pending edit is removed first.
+   var key='status_conflict_backups',backups=JSON.parse(crmStorage.getItem(key)||'[]');
+   backups.push({at:Date.now(),id:id,base:JSON.parse(base),local:sent,server:actual});
+   crmStorage.setItem(key,JSON.stringify(backups));
+   var patch=rowPatch(JSON.parse(base),sent),workflow=['status','craftStage','readyAt','sentAt','sdekPreviousStatus'];
+   workflow.forEach(function(k){delete patch.set[k];});patch.unset=patch.unset.filter(function(k){return !workflow.includes(k);});
+   var merged=applyPatch(actual,patch),arrIndex=orders.findIndex(function(o){return String(o.id)===String(id);});
+   if(Object.keys(patch.set).length||patch.unset.length){st.dirty.upserts.orders[id]=merged;st.dirty.bases.orders[id]=JSON.stringify(actual);}
+   else{delete st.dirty.upserts.orders[id];delete st.dirty.bases.orders[id];}
+   // Persist the reduced queue before replacing the visible row.
+   crmStorage.setItem(UNSAVED_KEY,JSON.stringify(st));
+   _sbSnap.orders[id]=JSON.stringify(actual);
+   if(arrIndex>=0)replaceInPlace(orders[arrIndex],merged);
+   delete rejectedOrderStatuses[id];
+  }
+  var remaining=readUnsaved();
+  if(!remaining||!dirtyCount(remaining.dirty))markSaved();
+  else saveState.reason='Остальные правки ожидают сохранения';
+  try{crmStorage.setItem('markovka_data',JSON.stringify({orders:orders,tasks:tasks,finance:finance}));}catch(e){}
+  renderTab(tab);
+ }catch(e){toast('Разбор не завершён: '+(e.message||e));}
+ finally{saveState.busy=false;renderSaveBar();}
 }
 // Восстановление после перезагрузки: если остались неотправленные правки — досылаем
 function resumeUnsaved(){
@@ -3464,7 +3505,7 @@ function cleanAiOrderComment(value){
 function selectedClothesFromText(text){
   var source=String(text||''),found=[];
   // Номер должен стоять непосредственно после названия вещи: числа веса и цены не подходят.
-  var re=/(?:^|[^а-яё])((?:одежд[аы]?|комбинезон[а-яё]*|воротнич[а-яё]*|воротник[а-яё]*|костюм[а-яё]*|ромпер[а-яё]*|шорт[а-яё]*|плать[а-яё]*|сарафан[а-яё]*))[ \t]*(?:(?::|=)[ \t]*(?:(?:из[ \t]+)?ткан[ьяи][ \t]*)?|(?:(?:из[ \t]+)?ткан[ьяи][ \t]*))?(?:(?:№|#|[НH])[ \t]*)?(\d{1,3})(?=$|\D)(?![.,]\d)/gi,m;
+  var re=/(?:^|[^а-яё])((?:наряд[а-яё]*|одежд[аы]?|комбинезон[а-яё]*|воротнич[а-яё]*|воротник[а-яё]*|костюм[а-яё]*|ромпер[а-яё]*|шорт[а-яё]*|плать[а-яё]*|сарафан[а-яё]*))[ \t]*(?:(?::|=)[ \t]*(?:(?:из[ \t]+)?ткан[ьяи][ \t]*)?|(?:(?:из[ \t]+)?ткан[ьяи][ \t]*))?(?:(?:№|#|[НH])[ \t]*)?(\d{1,3})(?=$|\D)(?![.,]\d)/gi,m;
   var colorStart=/^(?:(?:т[её]мно|светло|ярко|бледно|нежно)-)?(?:бел|ч[её]рн|красн|розов|голуб|син|зел[её]н|ж[её]лт|беж|коричн|фисташ|пудров|лаванд|мятн|сер(?:ый|ая|ое|ые|ого|ым|ой|ую)|сирен|молоч|кремов|песоч|персик|бордов|хаки|фиолет|бирюз|шоколад|карамель|серебр|золот)/i;
   var color=/^[ \t,.:—-]*((?:т[её]мно-|светло-|ярко-|бледно-|нежно-)?(?:бел|ч[её]рн|красн|розов|голуб|син|зел[её]н|ж[её]лт|беж|коричн|фисташ|пудров|лаванд|мятн|сер(?:ый|ая|ое|ые|ого|ым|ой|ую)|сирен|молоч|кремов|песоч|персик|бордов|хаки|фиолет|бирюз|шоколад|карамель|серебр|золот)[а-яё]*)/i;
   while((m=re.exec(source))){
@@ -3488,6 +3529,7 @@ function specificAiClothes(value,originalText,allowSourceFallback){
 }
 function normalizeAiOrderItems(items,originalText){
   var source=String(originalText||''),ranges=explicitToyMentionRanges(source),mentions=ranges.map(function(x){return x.type;}),aligned=ranges.length===items.length;
+  var babyBlocks=source.split(/(?:^|\n)[ \t]*Малыш[ \t]+\d+[ \t]*:[ \t]*/i).slice(1);
   var distinct=Array.from(new Set(mentions));
   return items.map(function(item,index){
     var it=Object.assign({},item||{});
@@ -3495,8 +3537,12 @@ function normalizeAiOrderItems(items,originalText){
     else if(mentions.length===items.length)it.toyType=mentions[index];
     else it.toyType='';
     var itemSource=aligned?source.slice(ranges[index].start,index+1<ranges.length?ranges[index+1].start:source.length):(items.length===1?source:'');
+    if(babyBlocks.length===items.length)itemSource=babyBlocks[index];
     it.clothes=itemSource?specificAiClothes('',itemSource,true):specificAiClothes(it.clothes,source,items.length===1);
     if(itemSource){
+      var measures=extractToyMeasures(itemSource);
+      if(measures.heightCm!=null)it.heightCm=measures.heightCm;
+      if(measures.weightG!=null)it.weightG=measures.weightG;
       var embroidery=extractEmbroidery(itemSource,it.embText);
       it.embCount=embroidery.count;it.embText=embroidery.text;
       var toyColor=extractToyColor(itemSource,it.comment);
@@ -3523,8 +3569,15 @@ function hasRequestedAccessory(text,pattern){
   }
   return false;
 }
+function extractToyMeasures(text){
+ var out={},h=String(text).match(/рост\s*[:=—–-]?\s*(\d{2,3}(?:[.,]\d+)?)\s*(?:см)?/i),w=String(text).match(/вес\s*[:=—–-]?\s*(\d+(?:[ .\u00a0\u202f,]\d+)*)\s*(кг|килограмм[а-яё]*|гр?\.?|грамм[а-яё]*)?/i);
+ if(h){var n=Number(h[1].replace(',','.'));if(n>=20&&n<=150)out.heightCm=n;}
+ if(w){var raw=w[1].replace(/[\s\u00a0\u202f]/g,''),kg=/^(кг|килограмм)/i.test(w[2]||''),n;if(kg)n=Number(raw.replace(',','.'))*1000;else if(/^\d{1,2}[.,]\d{3}$/.test(raw))n=Number(raw.replace(/[.,]/g,''));else n=Number(raw.replace(',','.'));if(n>=100&&n<=30000)out.weightG=Math.round(n);}
+ return out;
+}
 function extractEmbroidery(text,aiValue){
   var source=String(text||'');
+  if(/без[ \t]+вышив[а-яё]*|вышив[а-яё]*[ \t]*[:—–-]?[ \t]*(?:нет|не[ \t]+(?:нужна|нужно|надо)|0)(?=$|[^а-яё0-9])/i.test(source))return {count:0,text:''};
   if(!/(?:вышив[а-яё]*|вышить|вышиваем|вышито)/i.test(source))return {count:0,text:''};
   var countMatch=source.match(/(\d+)[ \t]*(?:шт\.?[ \t]*)?вышив[а-яё]*/i)||source.match(/вышив[а-яё]*[ \t]*(?:имени[ \t]*)?(?:×|x|:)?[ \t]*(\d+)/i);
   var count=Math.max(1,parseInt(countMatch&&(countMatch[1]||countMatch[2]))||1),name='';
@@ -6556,7 +6609,8 @@ function txRow(t){
   var color=isTr?'var(--blue-ink)':isBankCorrection(t)?'var(--text3)':(isInc?'var(--green-ink)':'var(--red-ink)');
   var where=isTr?(accName(t.accountId)+' → '+accName(t.toAccountId)):accName(t.accountId);
   var meta=[dLbl(t.date),where];
-  if(t.orderId){var o=orders.find(function(x){return x.id===t.orderId;});if(o)meta.push('заказ '+o.num);}
+  var linkedIds=Array.from(new Set([t.orderId].concat((t.paymentLines||[]).map(function(l){return l.orderId;})).filter(Boolean)));
+  linkedIds.forEach(function(id){var o=orders.find(function(x){return x.id===id;});if(o)meta.push('<button type="button" class="order-reference" data-oid="'+uiText(o.id)+'" onclick="event.stopPropagation();jumpTo(this.dataset.oid)">Заказ '+uiText(o.num)+'</button>');});
   return '<div onclick="openTxForm(\''+t.id+'\')" style="background:var(--card);border-radius:12px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer">'
     +'<div style="min-width:0;flex:1">'
       +'<div style="font-size:13px;font-weight:600;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(t.category||'—')+(t.merchant?' · <span style="color:var(--text3);font-weight:400">'+t.merchant+'</span>':'')+'</div>'
@@ -7913,16 +7967,17 @@ function productionTiles(list){
    ||String(a.o.id).localeCompare(String(b.o.id))||a.index-b.index||a.unit-b.unit;
  });
 }
+function productionShortClient(value){var p=String(value||'').trim().split(/\s+/).filter(Boolean);return p.length?p[0]+(p.length>1?' '+p.slice(1).map(function(x){return x[0]+'.';}).join(''):''):'ФИО не указано';}
 function productionTileHtml(r){
  var state=r.missing?'Вне плана':r.late?'Срок прошёл':r.ready?'Готово':'В работе';
- return '<button class="production-cell '+(r.missing||r.late?'late':r.ready?'ready':'work')+'" data-oid="'+uiText(r.o.id)+'" onclick="jumpTo(this.dataset.oid)" title="Открыть заказ"><b>'+uiText(r.o.num)+'</b><span>'+uiText(r.name)+' · '+state+'</span><small>'+(r.due?'Сдать '+uiText(r.due.split('-').reverse().join('.')):'Срок не указан')+'</small></button>';
+ return '<button class="production-cell '+(r.missing||r.late?'late':r.ready?'ready':'work')+'" data-oid="'+uiText(r.o.id)+'" onclick="jumpTo(this.dataset.oid)" title="Открыть заказ"><b>'+uiText(r.o.num)+'</b><span>'+uiText(r.name)+' · '+state+'</span><span>'+uiText(productionShortClient(r.o.client))+'</span><small>К доплате за заказ: '+fmt(Math.max(0,orderTotal(r.o)-Number(r.o.prepaid||0)))+'</small><small>'+(r.due?'Сдать '+uiText(r.due.split('-').reverse().join('.')):'Срок не указан')+'</small></button>';
 }
 function tplProductionBoard(list){
  var rows=productionTiles(list),active=rows.filter(function(r){return !r.missing;}),issues=rows.filter(function(r){return r.missing||r.late;}),ready=active.filter(function(r){return r.ready;}).length;
  var h='<section class="production-panel"><h2>Текущая неделя</h2><div class="production-metrics"><div><b>'+active.length+'</b>игрушек</div><div><b>'+ready+'</b>готово</div><div><b>'+issues.length+'</b>требуют внимания</div></div>';
  if(issues.length)h+='<details><summary>Требуют моего решения · '+issues.length+'</summary><div class="production-cells" style="margin:12px 0">'+issues.map(productionTileHtml).join('')+'</div></details>';
  var names=Array.from(new Set(MASTERS.concat(active.map(function(r){return r.o.master||'Не назначен';}))));
- names.forEach(function(name){var own=active.filter(function(r){return (r.o.master||'Не назначен')===name;});h+='<article class="production-person"><header><b>'+uiText(name)+'</b><span>'+own.filter(function(r){return r.ready;}).length+' / '+own.length+' готово</span></header>'+(own.length?'<div class="production-cells">'+own.map(productionTileHtml).join('')+'</div>':'<span class="production-empty">В текущем плане нет игрушек</span>')+'</article>';});
+ names.forEach(function(name){var own=active.filter(function(r){return (r.o.master||'Не назначен')===name;}),paid=own.filter(function(r){return isClosed(r.o)&&Number(r.o.prepaid||0)>=orderTotal(r.o);}),visible=own.filter(function(r){return !paid.includes(r);});h+='<article class="production-person"><header><b>'+uiText(name)+'</b><span>'+own.filter(function(r){return r.ready;}).length+' / '+own.length+' готово</span></header>'+(visible.length?'<div class="production-cells">'+visible.map(productionTileHtml).join('')+'</div>':'<span class="production-empty">Нет открытых неоплаченных заказов</span>')+(paid.length?'<details style="margin-top:12px"><summary>Оплачены и закрыты · '+paid.length+' игрушек</summary><div class="production-cells">'+paid.map(productionTileHtml).join('')+'</div></details>':'')+'</article>';});
  var missed=rows.filter(function(r){return r.missing;});if(missed.length)h+='<h3>Выпали из плана</h3><div class="production-cells">'+missed.map(productionTileHtml).join('')+'</div>';
  return h+'<p class="production-empty">Каждая плитка — игрушка. Готовность пока соответствует статусу всего заказа. Указанные ранее сроки сохранены.</p></section>';
 }
