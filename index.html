@@ -562,6 +562,7 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 @media(max-width:480px){.order-passport-grid{grid-template-columns:74px minmax(0,1fr)}.order-passport-title{flex-wrap:wrap}.order-passport-title span{text-align:left}}
 
 </style>
+<style>.bank-client-name{font-size:11px;font-weight:400;color:var(--text3);overflow-wrap:anywhere}.bank-breakdown>summary::-webkit-details-marker{display:none}.bank-breakdown>summary::after{content:"⌄";color:var(--text3);flex-shrink:0}.bank-breakdown[open]>summary::after{content:"⌃"}.bank-breakdown>summary>span:nth-child(2){margin-left:auto;white-space:nowrap}</style>
 </head>
 <body>
 
@@ -6610,7 +6611,7 @@ function txRow(t){
   var where=isTr?(accName(t.accountId)+' → '+accName(t.toAccountId)):accName(t.accountId);
   var meta=[dLbl(t.date),where];
   var linkedIds=Array.from(new Set([t.orderId].concat((t.paymentLines||[]).map(function(l){return l.orderId;})).filter(Boolean)));
-  linkedIds.forEach(function(id){var o=orders.find(function(x){return x.id===id;});if(o)meta.push('<button type="button" class="order-reference" data-oid="'+uiText(o.id)+'" onclick="event.stopPropagation();jumpTo(this.dataset.oid)">Заказ '+uiText(o.num)+'</button>');});
+  linkedIds.forEach(function(id){var o=orders.find(function(x){return x.id===id;});if(o)meta.push('<button type="button" class="order-reference" data-oid="'+uiText(o.id)+'" onclick="event.stopPropagation();jumpTo(this.dataset.oid)">Заказ '+uiText(o.num)+'</button>'+(o.client?' <span class="bank-client-name">'+uiText(o.client)+'</span>':''));});
   return '<div onclick="openTxForm(\''+t.id+'\')" style="background:var(--card);border-radius:12px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer">'
     +'<div style="min-width:0;flex:1">'
       +'<div style="font-size:13px;font-weight:600;color:var(--text1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(t.category||'—')+(t.merchant?' · <span style="color:var(--text3);font-weight:400">'+t.merchant+'</span>':'')+'</div>'
@@ -6623,6 +6624,7 @@ function txRow(t){
 
 // Разбивка по категориям — отдельно доходы и расходы.
 // Строка кликабельна: тап фильтрует ленту по этой категории.
+function rememberBankBreakdown(kind,open){try{crmStorage.setItem('bank_breakdown_'+kind,String(open));}catch(e){}}
 function tplBankBreakdown(scope){
   var out='';
   [['income','Доходы по категориям','var(--green-ink)','var(--green)'],
@@ -6638,11 +6640,12 @@ function tplBankBreakdown(scope){
     var rows=Object.keys(by).map(function(c){return {c:c,v:by[c].sum,n:by[c].n};})
       .sort(function(a,b){return b.v-a.v;});
     var tot=rows.reduce(function(s2,r){return s2+r.v;},0);
-    out+='<div class="card" style="padding:14px;margin-bottom:10px">'
-      +'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">'
+    var expanded=true;try{expanded=crmStorage.getItem('bank_breakdown_'+type)!=='false';}catch(e){}
+    out+='<details class="card bank-breakdown" data-kind="'+type+'" ontoggle="rememberBankBreakdown(this.dataset.kind,this.open)"'+(expanded?' open':'')+' style="padding:14px;margin-bottom:10px">'
+      +'<summary style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;cursor:pointer">'
         +'<span class="section-lbl" style="margin:0">'+cfg[1]+'</span>'
         +'<span style="font-size:13px;font-weight:700;color:'+cfg[2]+'">'+fmt(tot)+'</span>'
-      +'</div>';
+      +'</summary><div style="margin-top:10px">';
     rows.forEach(function(r){
       var pc=tot>0?Math.round(r.v/tot*100):0;
       var on=bankFilterCat===r.c&&bankFilterType===type;
@@ -6656,7 +6659,7 @@ function tplBankBreakdown(scope){
           +'<div style="height:100%;width:'+pc+'%;background:'+cfg[3]+'"></div></div>'
         +'</div>';
     });
-    out+='</div>';
+    out+='</div></details>';
   });
   return out;
 }
