@@ -7971,18 +7971,33 @@ function productionTiles(list){
  });
 }
 function productionShortClient(value){var p=String(value||'').trim().split(/\s+/).filter(Boolean);return p.length?p[0]+(p.length>1?' '+p.slice(1).map(function(x){return x[0]+'.';}).join(''):''):'ФИО не указано';}
+function productionOrderTilesHtml(rows){
+ var groups=new Map();
+ rows.forEach(function(r){
+  var key=String(r.o.id),g=groups.get(key);
+  if(!g){g=Object.assign({},r,{counts:new Map(),quantity:0,dates:new Set()});groups.set(key,g);}
+  g.quantity++;g.counts.set(r.name,(g.counts.get(r.name)||0)+1);
+  g.missing=g.missing||r.missing;g.late=g.late||r.late;g.ready=g.ready&&r.ready;
+  if(r.due){g.dates.add(r.due);if(!g.due||r.due<g.due)g.due=r.due;}
+ });
+ return Array.from(groups.values()).sort(function(a,b){return (a.due||'9999-12-31').localeCompare(b.due||'9999-12-31')||String(a.o.num||'').localeCompare(String(b.o.num||''),'ru',{numeric:true});}).map(function(g){
+  g.name=Array.from(g.counts.entries()).map(function(pair){return pair[0]+(pair[1]>1?' ×'+pair[1]:'');}).join(' + ');
+  g.multipleDates=g.dates.size>1;
+  return productionTileHtml(g);
+ }).join('');
+}
 function productionTileHtml(r){
  var state=r.missing?'Вне плана':r.late?'Срок прошёл':r.ready?'Готово':'В работе';
- return '<button class="production-cell '+(r.missing||r.late?'late':r.ready?'ready':'work')+'" data-oid="'+uiText(r.o.id)+'" onclick="jumpTo(this.dataset.oid)" title="Открыть заказ"><b>'+uiText(r.o.num)+'</b><span>'+uiText(r.name)+' · '+state+'</span><span>'+uiText(productionShortClient(r.o.client))+'</span><small>К доплате за заказ: '+fmt(Math.max(0,orderTotal(r.o)-Number(r.o.prepaid||0)))+'</small><small>'+(r.due?'Сдать '+uiText(r.due.split('-').reverse().join('.')):'Срок не указан')+'</small></button>';
+ return '<button class="production-cell '+(r.missing||r.late?'late':r.ready?'ready':'work')+'" data-oid="'+uiText(r.o.id)+'" onclick="jumpTo(this.dataset.oid)" title="Открыть заказ"><b>'+uiText(r.o.num)+'</b><span>'+uiText(r.name)+' · '+state+'</span><span>'+uiText(productionShortClient(r.o.client))+'</span><small>К доплате за заказ: '+fmt(Math.max(0,orderTotal(r.o)-Number(r.o.prepaid||0)))+'</small><small>'+(r.due?(r.multipleDates?'Ближайшая сдача ':'Сдать ')+uiText(r.due.split('-').reverse().join('.')):'Срок не указан')+'</small></button>';
 }
 function tplProductionBoard(list){
  var rows=productionTiles(list),active=rows.filter(function(r){return !r.missing;}),issues=rows.filter(function(r){return r.missing||r.late;}),ready=active.filter(function(r){return r.ready;}).length;
  var h='<section class="production-panel"><h2>Текущая неделя</h2><div class="production-metrics"><div><b>'+active.length+'</b>игрушек</div><div><b>'+ready+'</b>готово</div><div><b>'+issues.length+'</b>требуют внимания</div></div>';
- if(issues.length)h+='<details><summary>Требуют моего решения · '+issues.length+'</summary><div class="production-cells" style="margin:12px 0">'+issues.map(productionTileHtml).join('')+'</div></details>';
+ if(issues.length)h+='<details><summary>Требуют моего решения · '+issues.length+'</summary><div class="production-cells" style="margin:12px 0">'+productionOrderTilesHtml(issues)+'</div></details>';
  var names=Array.from(new Set(MASTERS.concat(active.map(function(r){return r.o.master||'Не назначен';}))));
- names.forEach(function(name){var own=active.filter(function(r){return (r.o.master||'Не назначен')===name;}),paid=own.filter(function(r){return isClosed(r.o)&&Number(r.o.prepaid||0)>=orderTotal(r.o);}),visible=own.filter(function(r){return !paid.includes(r);});h+='<article class="production-person"><header><b>'+uiText(name)+'</b><span>'+own.filter(function(r){return r.ready;}).length+' / '+own.length+' готово</span></header>'+(visible.length?'<div class="production-cells">'+visible.map(productionTileHtml).join('')+'</div>':'<span class="production-empty">Нет открытых неоплаченных заказов</span>')+(paid.length?'<details style="margin-top:12px"><summary>Оплачены и закрыты · '+paid.length+' игрушек</summary><div class="production-cells">'+paid.map(productionTileHtml).join('')+'</div></details>':'')+'</article>';});
- var missed=rows.filter(function(r){return r.missing;});if(missed.length)h+='<h3>Выпали из плана</h3><div class="production-cells">'+missed.map(productionTileHtml).join('')+'</div>';
- return h+'<p class="production-empty">Каждая плитка — игрушка. Готовность пока соответствует статусу всего заказа. Указанные ранее сроки сохранены.</p></section>';
+ names.forEach(function(name){var own=active.filter(function(r){return (r.o.master||'Не назначен')===name;}),paid=own.filter(function(r){return isClosed(r.o)&&Number(r.o.prepaid||0)>=orderTotal(r.o);}),visible=own.filter(function(r){return !paid.includes(r);});h+='<article class="production-person"><header><b>'+uiText(name)+'</b><span>'+own.filter(function(r){return r.ready;}).length+' / '+own.length+' готово</span></header>'+(visible.length?'<div class="production-cells">'+productionOrderTilesHtml(visible)+'</div>':'<span class="production-empty">Нет открытых неоплаченных заказов</span>')+(paid.length?'<details style="margin-top:12px"><summary>Оплачены и закрыты · '+paid.length+' игрушек</summary><div class="production-cells">'+productionOrderTilesHtml(paid)+'</div></details>':'')+'</article>';});
+ var missed=rows.filter(function(r){return r.missing;});if(missed.length)h+='<h3>Выпали из плана</h3><div class="production-cells">'+productionOrderTilesHtml(missed)+'</div>';
+ return h+'<p class="production-empty">Каждая плитка — заказ со всеми игрушками. К доплате — остаток за весь заказ. Загрузка считается в игрушках.</p></section>';
 }
 </script>
 </body>
