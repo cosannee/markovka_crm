@@ -1,0 +1,52 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+const {PGlite}=await import(process.env.PGLITE_MODULE||'@electric-sql/pglite');
+const db=new PGlite();
+await db.exec(`create role anon;create role authenticated;create role service_role;
+create schema auth;create function auth.uid() returns uuid language sql as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+create table public.crm_profiles(user_id uuid primary key,role text,name text,active boolean);
+create schema storage;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text);
+alter table storage.objects enable row level security;grant usage on schema auth,storage to authenticated;grant select,insert on storage.objects to authenticated;
+create table public.orders(id int,data jsonb);insert into public.orders values(1,'{"sentinel":true}');`);
+await db.exec(fs.readFileSync(new URL('../warehouse/001-warehouse.DRAFT.sql',import.meta.url),'utf8'));
+const manager='11111111-1111-4111-8111-111111111111',master='22222222-2222-4222-8222-222222222222',director='33333333-3333-4333-8333-333333333333';
+await db.query(`insert into public.crm_profiles values ($1,'manager','Александра',true),($2,'master','Вика',true),($3,'director','Даша',true)`,[manager,master,director]);
+async function user(id){await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);await db.exec('set role authenticated');}
+async function read(){return (await db.query('select public.crm_stock_read() as d')).rows[0].d;}
+async function cmd(p,id=crypto.randomUUID()){return (await db.query('select public.crm_stock_command($1,$2) as d',[id,p])).rows[0].d;}
+let passed=0;async function test(name,f){try{await f();console.log('PASS',name);passed++;}catch(e){console.error('FAIL',name,e.message);throw e;}}
+await user(manager);let d=await read(),category=d.categories[0].id,material1,material2,w,s;
+await test('create material',async()=>{material1=(await cmd({op:'material',name:'Ткань тест',category_id:category,sku:'Н1',unit:'м'})).id;material2=(await cmd({op:'material',name:'Пуговица',category_id:category,sku:'П1',unit:'шт.'})).id;});
+await test('SKU normalisation prevents duplicate',async()=>{await assert.rejects(cmd({op:'material',name:'Дубль',category_id:category,sku:' н 1 ',unit:'м'}));});
+await test('assignment leaves balance unknown',async()=>{await cmd({op:'assign',items:[material1,material2].map(id=>({owner_id:master,material_id:id,active:true,minimum:null,version:0}))});d=await read();w=d.warehouses[0];assert.equal(d.balances.length,0);});
+await user(master);
+await test('master cannot create materials or access other profiles',async()=>{await assert.rejects(cmd({op:'category',name:'Запрещено'}),/Нет доступа/);assert.equal((await read()).people.length,1);await assert.rejects(db.query('select * from crm_stock.balances'),/permission denied/);});
+await test('start and resume one session',async()=>{s=(await cmd({op:'start',warehouse_id:w.id})).id;assert.equal((await cmd({op:'start',warehouse_id:w.id})).id,s);});
+const line=(id,q,version=0)=>({material_id:id,quantity:q,version,assignment_version:1,material_version:1});
+await test('partial inventory zero explicit and idempotent',async()=>{const id=crypto.randomUUID(),p={op:'inventory',warehouse_id:w.id,session_id:s,items:[line(material1,0)]};await cmd(p,id);await cmd(p,id);d=await read();assert.equal(d.balances[0].quantity,0);assert.equal(d.balances[0].version,1);assert.equal(d.sessions[0].completed_at,null);assert.equal(d.history.filter(e=>e.action==='inventory').length,1);await assert.rejects(cmd({...p,items:[line(material1,1)]},id),/другими данными/);});
+await test('conflicting stale version blocked',async()=>{await assert.rejects(cmd({op:'inventory',warehouse_id:w.id,session_id:s,items:[line(material1,5)]}),/другом устройстве/);});
+await test('negative, null, fractional pieces blocked',async()=>{for(const q of [-1,null,1.2])await assert.rejects(cmd({op:'inventory',warehouse_id:w.id,session_id:s,items:[line(material2,q)]}));});
+await test('transaction rollback if later line conflicts',async()=>{await assert.rejects(cmd({op:'inventory',warehouse_id:w.id,session_id:s,items:[line(material2,2),line(material1,2)]}));assert.equal((await read()).balances.length,1);});
+await test('full session only after all positions checked',async()=>{await cmd({op:'inventory',warehouse_id:w.id,session_id:s,items:[line(material2,3)]});assert.ok((await read()).sessions[0].completed_at);});
+await user(director);
+await test('director has no warehouse admin rights',async()=>{assert.equal((await read()).warehouses.length,0);await assert.rejects(cmd({op:'start',warehouse_id:w.id}),/Нет доступа/);await assert.rejects(cmd({op:'assign',items:[]}),/Нет доступа/);});
+await user(manager);
+await test('unit conversion blocked after quantities exist',async()=>{await assert.rejects(cmd({op:'material',id:material1,version:1,name:'Ткань тест',category_id:category,sku:'Н1',unit:'см'}),/Единица уже/);});
+await test('correction requires reason, retains audit',async()=>{await assert.rejects(cmd({op:'correct',warehouse_id:w.id,items:[line(material1,2,1)]}),/причину/);await cmd({op:'correct',warehouse_id:w.id,reason:'Исправлена опечатка',items:[line(material1,2,1)]});d=await read();assert.equal(d.balances.find(b=>b.material_id===material1).quantity,2);assert.equal(d.history[0].reason,'Исправлена опечатка');});
+await test('archive preserves history and quantities',async()=>{await cmd({op:'material',id:material1,version:1,name:'Ткань тест',category_id:category,sku:'Н1',unit:'м',active:false});d=await read();assert.equal(d.materials.find(m=>m.id===material1).active,false);assert.ok(d.history.some(e=>e.material_id===material1&&e.action==='inventory'));});
+await test('read-only role diagnostic runs and passes',async()=>{await db.exec('reset role');const results=await db.exec(fs.readFileSync(new URL('../warehouse/003-role-check-READ-ONLY.sql',import.meta.url),'utf8'));const report=results.flatMap(r=>r.rows).find(r=>r.warehouse_role_check);assert.equal(JSON.parse(report.warehouse_role_check).passed,true);});
+await user('');
+await test('unauthenticated denied',async()=>{await assert.rejects(read(),/Требуется вход/);});
+await db.exec('reset role');
+await test('production data untouched',async()=>{assert.deepEqual((await db.query('select data from public.orders')).rows,[{data:{sentinel:true}}]);});
+await test('migration refuses an existing warehouse',async()=>{await assert.rejects(db.exec(fs.readFileSync(new URL('../warehouse/001-warehouse.DRAFT.sql',import.meta.url),'utf8')),/уже существует/);await db.exec('rollback');});
+await db.exec('alter schema crm_stock rename to stock_test_existing;alter table storage.objects disable row level security');
+await test('migration refuses unprotected photo storage',async()=>{await assert.rejects(db.exec(fs.readFileSync(new URL('../warehouse/001-warehouse.DRAFT.sql',import.meta.url),'utf8')),/RLS storage.objects/);await db.exec('rollback');});
+await db.exec("alter table storage.objects enable row level security;alter table storage.buckets add column test_required text default 'x' not null;alter table storage.buckets alter column test_required drop default");
+await test('migration refuses missing storage defaults',async()=>{await assert.rejects(db.exec(fs.readFileSync(new URL('../warehouse/001-warehouse.DRAFT.sql',import.meta.url),'utf8')),/обязательные поля/);await db.exec('rollback');});
+const context={};vm.createContext(context);vm.runInContext(fs.readFileSync(new URL('../warehouse/warehouse.js',import.meta.url),'utf8'),context);const api=context.CrmWarehouse;
+await test('client number validation and unknown vs zero',async()=>{assert.equal(api.number('2,125'),2.125);for(const s of ['',-1,'abc','1.2345'])assert.throws(()=>api.number(s));assert.equal(api.status(null,{minimum:2},14),'unknown');assert.equal(api.status({quantity:0,checked_at:new Date().toISOString()},{minimum:2},14),'low');assert.equal(api.status({quantity:0,checked_at:new Date().toISOString()},{minimum:null},14),'ok');});
+for(const s of fs.readFileSync(new URL('../index.html',import.meta.url),'utf8').matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g))new vm.Script(s[1]);
+console.log(`${passed} tests passed; inline scripts syntax OK`);await db.close();

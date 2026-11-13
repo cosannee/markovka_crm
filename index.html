@@ -563,6 +563,7 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 
 </style>
 <style>.bank-client-name{font-size:11px;font-weight:400;color:var(--text3);overflow-wrap:anywhere}.bank-breakdown>summary::-webkit-details-marker{display:none}.bank-breakdown>summary::after{content:"⌄";color:var(--text3);flex-shrink:0}.bank-breakdown[open]>summary::after{content:"⌃"}.bank-breakdown>summary>span:nth-child(2){margin-left:auto;white-space:nowrap}</style>
+<link rel="stylesheet" href="warehouse/warehouse.css">
 </head>
 <body>
 
@@ -1991,6 +1992,7 @@ const APP_NAV_ICONS={
     week:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2" width="4" height="12" rx="1"/><rect x="6" y="2" width="4" height="7.5" rx="1"/><rect x="10.5" y="2" width="4" height="10" rx="1"/></svg>',
     analytics:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="3" height="5" rx="1"/><rect x="6.5" y="5" width="3" height="9" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></svg>',
   };
+APP_NAV_ICONS.warehouse=APP_NAV_ICONS.bank;
 APP_NAV_ICONS.fabrics=APP_NAV_ICONS.calendar;
 APP_NAV_ICONS.sdek=APP_NAV_ICONS.bank;
 APP_NAV_ICONS.overview=APP_NAV_ICONS.analytics;
@@ -1999,7 +2001,7 @@ function canSeeSharedFabricPalette(){return true;}
 function appNavItems(){
   const canEdit=role==='manager'||role==='director';
   return role==='master'
-    ?[{id:'master',label:'Заказы'},{id:'week',label:'Моя неделя'},{id:'finance',label:'Финансы'},...(sdekExportList().length?[{id:'sdek',label:'СДЭК'}]:[]),{id:'todos',label:'Задачи'},...(canSeeSharedFabricPalette()?[{id:'fabrics',label:'Палитра тканей'}]:[])]
+    ?[{id:'master',label:'Заказы'},{id:'week',label:'Моя неделя'},{id:'finance',label:'Финансы'},...(sdekExportList().length?[{id:'sdek',label:'СДЭК'}]:[]),{id:'warehouse',label:'Склад'},{id:'todos',label:'Задачи'},...(canSeeSharedFabricPalette()?[{id:'fabrics',label:'Палитра тканей'}]:[])]
     :[
       {id:'list',label:'Заказы'},
       // У Даши и Александры, как и у мастеров, есть личная рабочая доска по их заказам как мастера
@@ -2012,7 +2014,7 @@ function appNavItems(){
       ...(role==='manager'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       ...(role==='director'?[{id:'payments',label:'Выплаты'},{id:'bank',label:'Банк'},{id:'stats',label:'Финансы'},{id:'analytics',label:'Аналитика'}]:[]),
       {id:'sdek',label:'СДЭК'},
-      {id:'todos',label:'Задачи'},
+      {id:'warehouse',label:'Склад'},{id:'todos',label:'Задачи'},
       {id:'fabrics',label:'Палитра тканей'},
     ];
 }
@@ -2062,7 +2064,7 @@ function renderTabs(){
 }
 function tplMore(){
   const primary=appPrimaryIds();
-  const descriptions={overview:'Заказы, оплата и отправка — что требует внимания',add:'Создать заказ и назначить мастера',bank:'Счета, доходы и расходы',stats:'Расчёты, ставки и план недели',analytics:'Итоги и прибыль за период',sdek:(role==='manager'||role==='director')?'Оформление накладных и отправка':'Заказы, готовые к отправке',todos:'Переписка и задачи',fabrics:'Образцы тканей №1–16'};
+  const descriptions={warehouse:'Материалы, остатки и инвентаризация',overview:'Заказы, оплата и отправка — что требует внимания',add:'Создать заказ и назначить мастера',bank:'Счета, доходы и расходы',stats:'Расчёты, ставки и план недели',analytics:'Итоги и прибыль за период',sdek:(role==='manager'||role==='director')?'Оформление накладных и отправка':'Заказы, готовые к отправке',todos:'Переписка и задачи',fabrics:'Образцы тканей №1–16'};
   const name=document.getElementById('h-user-name').textContent||masterName||(role==='director'?DIRECTOR_MASTER:'');
   const label=document.getElementById('h-role-lbl').textContent||'';
   let html='<div class="more-profile"><span class="person-avatar">'+uiText(name.slice(0,1))+'</span><div><div class="more-profile-name">'+uiText(name)+'</div><div class="more-profile-role">'+uiText(label)+(isPreviewMode?' · просмотр':'')+'</div></div></div>';
@@ -2165,6 +2167,7 @@ function renderTab(t){
     m.innerHTML='<div class="startup-loading" role="alert"><strong>Данные пока не загрузились</strong><p>Проверьте интернет и повторите загрузку. Пустые заказы вместо ваших данных не показываем.</p><button type="button" class="btn btn-primary" style="margin-top:12px" onclick="retryInitialData()">Повторить</button></div>';
     updateToTop();return;
   }
+  if(t==='warehouse'){m.innerHTML='<section id="warehouse-root"><p role="status">Загружаем склад…</p></section>';import('./warehouse/warehouse.js').then(function(){if(tab==='warehouse')CrmWarehouse.mount();}).catch(function(){if(tab==='warehouse')m.innerHTML='<div class="card">Не удалось загрузить склад. Обновите страницу.</div>';});updateToTop();return;}
   if(t==='todos')markTasksSeen();
   if(t==='list'||t==='master')markOrdersSeen();
   if(t==='payments')markPaymentsSeen();
