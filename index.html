@@ -567,6 +567,15 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 </style>
 <style>.bank-client-name{font-size:11px;font-weight:400;color:var(--text3);overflow-wrap:anywhere}.bank-breakdown>summary::-webkit-details-marker{display:none}.bank-breakdown>summary::after{content:"⌄";color:var(--text3);flex-shrink:0}.bank-breakdown[open]>summary::after{content:"⌃"}.bank-breakdown>summary>span:nth-child(2){margin-left:auto;white-space:nowrap}</style>
 <link rel="stylesheet" href="warehouse/warehouse.css?v=20261114-dialog">
+<style>
+/* Compact overview and consistent native selectors, including warehouse filters. */
+.overview-priority{margin-bottom:18px}.overview-priority .overview-order{padding:12px 14px;margin-bottom:8px}.overview-priority .overview-actions{gap:6px}.overview-priority .overview-actions .btn{padding:8px 12px;font-size:13px}
+.overview-personal{padding:10px 14px;margin-bottom:12px}.overview-personal-head h2{font-size:15px}.overview-personal-item{padding:7px 0;gap:8px}.overview-personal-item>span{flex:1;min-width:0}
+body .production-panel{padding:14px;margin:12px 0}body .production-panel h2{font-size:17px}body .production-metrics{gap:14px;margin:10px 0}body .production-metrics b{display:inline;font-size:16px;margin-right:5px}body .production-person{padding:0}body .production-person>summary{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;min-height:44px;padding:10px 0;font-size:13px}body .production-person>summary span{margin-left:auto;color:var(--text2)}body .production-person>summary:after{content:'›';color:var(--text3)}body .production-person[open]>summary:after{content:'⌄'}body .production-person>summary::-webkit-details-marker{display:none}body .production-person>.production-cells{margin-bottom:12px}
+select:not([multiple]),#warehouse-root select,.wh-dialog select{appearance:none;-webkit-appearance:none;min-height:40px;max-width:100%;border:1px solid var(--border);border-radius:12px;background-color:var(--bg2);color:var(--text2);font-family:inherit;font-size:14px;font-weight:500;padding:9px 34px 9px 12px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%2367756d' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;cursor:pointer}
+select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(pointer:coarse){select:not([multiple]),#warehouse-root select,.wh-dialog select{font-size:16px;min-height:44px}}
+</style>
 </head>
 <body>
 
@@ -3164,13 +3173,13 @@ function tplOverviewPersonalTasks(){
   var me=myTaskName();
   var personal=tasks.filter(function(t){return t&&t.to===me&&t.from===me&&!t.done&&t.kind!=='capacity_plan';})
     .sort(sortTasksByDue);
-  var open=true;try{open=crmStorage.getItem('overview_personal_open')!=='false';}catch(e){}
+  var open=false;try{open=crmStorage.getItem('overview_personal_open')==='true';}catch(e){}
   var html='<details class="overview-personal" aria-label="Мои задачи" ontoggle="rememberOverviewPersonalOpen(this.open)"'+(open?' open':'')+'><summary class="overview-personal-head"><h2>Мои задачи · '+personal.length+'</h2></summary><div class="overview-personal-body">';
   if(!personal.length)html+='<p class="overview-note">Открытых личных задач нет</p>';
-  personal.slice(0,4).forEach(function(t){html+=overviewPersonalTaskRow(t);});
-  if(personal.length>4){
-    html+='<details class="overview-personal-more"><summary>Показать ещё '+(personal.length-4)+'</summary>';
-    personal.slice(4).forEach(function(t){html+=overviewPersonalTaskRow(t);});
+  personal.slice(0,3).forEach(function(t){html+=overviewPersonalTaskRow(t);});
+  if(personal.length>3){
+    html+='<details class="overview-personal-more"><summary>Показать ещё '+(personal.length-3)+'</summary>';
+    personal.slice(3).forEach(function(t){html+=overviewPersonalTaskRow(t);});
     html+='</details>';
   }
   return html+'<button type="button" class="btn btn-sm btn-ghost" onclick="navigateApp(\'todos\')">Все задачи</button></div></details>';
@@ -3212,6 +3221,7 @@ function tplWeekOverview(){
     +'<p class="overview-note">'+overviewDate(bounds.start)+' — '+overviewDate(bounds.end-1)+' · Владивосток</p>'
     +'<div class="overview-totals"><span>Закрыли <b>'+stats.closed+'</b></span><span>Изготовили <b>'+stats.ready+'</b></span><span>Отправили <b>'+stats.sent+'</b></span></div>'
     +'<p class="overview-note">По сохранённым датам событий. Заказ может учитываться в нескольких итогах. Старые события без даты не включаются.'+(stats.missingSent?' Без даты отправки: '+stats.missingSent+'.':'')+'</p></section></details>';
+  var overviewRest=html;html='';
   html+='<div class="overview-toolbar" id="overview-attention"><h2>'+(overviewGroup==='all'?'Требуют внимания':OVERVIEW_GROUPS[overviewGroup].title)+' · '+attention.length+'</h2>'
     +(overviewGroup!=='all'?'<button class="btn btn-sm btn-ghost" onclick="setOverviewFilter(\'group\',\'all\')">Все группы</button>':'')+'</div>';
   if(!attention.length)html+='<div class="empty">Нет заказов, требующих действий</div>';
@@ -3239,7 +3249,7 @@ function tplWeekOverview(){
     html+='<button class="btn btn-ghost" data-oid="'+id+'" onclick="jumpTo(this.dataset.oid)">Карточка заказа</button></div></article>';
   });
   if(attention.length>overviewLimit)html+='<button class="btn btn-secondary btn-full" onclick="overviewLimit+=25;renderTab(\'overview\')">Показать ещё</button>';
-  return html;
+  return '<section class="overview-priority">'+html+'</section>'+overviewRest;
 }
 
 function sdekExportText(){
@@ -5134,6 +5144,14 @@ function calcZpTable(weightG,embCount){
 function calcMasterPay(o){
   // Сумма ЗП по всем игрушкам заказа + надбавка за срочность
   var base=getItems(o).reduce(function(s,it){return s+calcItemMasterPay(it,o.master);},0);
+  var settings=finance.find(function(x){return x.id==='app-settings';});
+  if(o.master==='Александра'&&settings&&settings.alexandraWageV1){
+    if(o.postpayPaid){
+      var payments=o.financePayments||{},actual=o.masterPaidActual||{};
+      if(payments.postpay)return Number(payments.postpay.amount||0)+Number((payments.advance||{}).amount||0);
+      if(actual.postpay!=null)return Number(actual.postpay||0)+Number(actual.advance||0);
+    }else base+=300*orderQty(o);
+  }
   return Math.round(base*(1+urgentBonusPct(o)));
 }
 function calcAdvance(o){
@@ -8010,9 +8028,9 @@ function productionTileHtml(r){
 function tplProductionBoard(list){
  var rows=productionTiles(list),active=rows.filter(function(r){return !r.missing;}),issues=rows.filter(function(r){return r.missing||r.late;}),ready=active.filter(function(r){return r.ready;}).length;
  var h='<section class="production-panel"><h2>Текущая неделя</h2><div class="production-metrics"><div><b>'+active.length+'</b>игрушек</div><div><b>'+ready+'</b>готово</div><div><b>'+issues.length+'</b>требуют внимания</div></div>';
- if(issues.length)h+='<details><summary>Требуют моего решения · '+issues.length+'</summary><div class="production-cells" style="margin:12px 0">'+productionOrderTilesHtml(issues)+'</div></details>';
+ if(issues.length)h+='<details open><summary>Требуют моего решения · '+issues.length+'</summary><div class="production-cells" style="margin:12px 0">'+productionOrderTilesHtml(issues)+'</div></details>';
  var names=Array.from(new Set(MASTERS.concat(active.map(function(r){return r.o.master||'Не назначен';}))));
- names.forEach(function(name){var own=active.filter(function(r){return (r.o.master||'Не назначен')===name;}),paid=own.filter(function(r){return isClosed(r.o)&&Number(r.o.prepaid||0)>=orderTotal(r.o);}),visible=own.filter(function(r){return !paid.includes(r);});h+='<article class="production-person"><header><b>'+uiText(name)+'</b><span>'+own.filter(function(r){return r.ready;}).length+' / '+own.length+' готово</span></header>'+(visible.length?'<div class="production-cells">'+productionOrderTilesHtml(visible)+'</div>':'<span class="production-empty">Нет открытых неоплаченных заказов</span>')+(paid.length?'<details style="margin-top:12px"><summary>Оплачены и закрыты · '+paid.length+' игрушек</summary><div class="production-cells">'+productionOrderTilesHtml(paid)+'</div></details>':'')+'</article>';});
+ names.forEach(function(name){var own=active.filter(function(r){return (r.o.master||'Не назначен')===name;}),paid=own.filter(function(r){return isClosed(r.o)&&Number(r.o.prepaid||0)>=orderTotal(r.o);}),visible=own.filter(function(r){return !paid.includes(r);});if(!own.length)return;h+='<details class="production-person"><summary><b>'+uiText(name)+'</b><span>Готово '+own.filter(function(r){return r.ready;}).length+'/'+own.length+'</span></summary>'+(visible.length?'<div class="production-cells">'+productionOrderTilesHtml(visible)+'</div>':'<span class="production-empty">Нет открытых неоплаченных заказов</span>')+(paid.length?'<details style="margin-top:12px"><summary>Оплачены и закрыты · '+paid.length+' игрушек</summary><div class="production-cells">'+productionOrderTilesHtml(paid)+'</div></details>':'')+'</details>';});
  var missed=rows.filter(function(r){return r.missing;});if(missed.length)h+='<h3>Выпали из плана</h3><div class="production-cells">'+productionOrderTilesHtml(missed)+'</div>';
  return h+'<p class="production-empty">Каждая плитка — заказ со всеми игрушками. К доплате — остаток за весь заказ. Загрузка считается в игрушках.</p></section>';
 }
