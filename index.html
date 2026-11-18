@@ -7679,9 +7679,10 @@ var finHistoryBase=finHistoryView;finHistoryView=function(){
 function finWagePlan(active){
  var names=MASTERS.concat(Array.from(new Set(active.map(function(o){return o.master||'Не назначен';}))).filter(function(n){return !MASTERS.includes(n);}));
  var rows=names.map(function(name){var list=active.filter(function(o){return (o.master||'Не назначен')===name;});return {name:name,n:list.length,plan:finSum(list,calcMasterPay),paid:finSum(list,function(o){return finPaid(o,'advance')+finPaid(o,'postpay');}),left:finSum(list,remainingPay)};}).filter(function(r){return r.n>0;});
- if(active.length&&role!=='director')rows.push({name:'COO — Александра',n:active.length,plan:finSum(active,function(o){return calcCosts(o).sasha;}),paid:finSum(active,function(o){return finPaid(o,'sasha');}),left:finSum(active,function(o){return o.sashaPaid?0:Math.max(0,calcCosts(o).sasha-finPaid(o,'sasha'));})});
+ var cooList=dashboardCooOrders(orders,active);
+ if(cooList.length&&role!=='director')rows.push({name:'COO — Александра',n:cooList.length,plan:finSum(cooList,function(o){return calcCosts(o).sasha;}),paid:finSum(cooList,function(o){return finPaid(o,'sasha');}),left:finSum(cooList,dashboardCooOutstanding)});
  var total={plan:finSum(rows,function(r){return r.plan;}),paid:finSum(rows,function(r){return r.paid;}),left:finSum(rows,function(r){return r.left;})};
- var h='<section class="fin-wage-plan" aria-label="План зарплат текущей недели"><div class="fin-section-title">План зарплат текущей недели</div><p class="fin-note">Если текущий план выполнен на 100%. Заказы «В работе», «Готов» и «Готов к отправке». Следующая неделя сюда не входит.'+(role==='director'?' Показаны только зарплаты мастеров.':' Комиссия COO показана отдельно и включена в итог.')+'</p><div class="fin-wage-head"><span>Получатель</span><span>По плану</span><span>Уже выдано</span><span>Осталось выдать</span></div>';
+ var h='<section class="fin-wage-plan" aria-label="План зарплат текущей недели"><div class="fin-section-title">План зарплат текущей недели</div><p class="fin-note">Мастера: заказы «В работе», «Готов» и «Готов к отправке». Следующая неделя сюда не входит.'+(role==='director'?' Показаны только зарплаты мастеров.':' COO: все ещё не выплаченные комиссии по текущим и уже закрытым заказам.')+'</p><div class="fin-wage-head"><span>Получатель</span><span>По плану</span><span>Уже выдано</span><span>Осталось выдать</span></div>';
  rows.forEach(function(r){h+='<div class="fin-wage-row"><div class="fin-wage-name"><b>'+uiText(r.name==='Александра'?'Александра — мастер':r.name)+'</b><small>'+r.n+' '+pluralZakaz(r.n)+'</small></div><div><small>По плану</small><b>'+fmt(r.plan)+'</b></div><div><small>Уже выдано</small><b>'+fmt(r.paid)+'</b></div><div><small>Осталось выдать</small><b>'+fmt(r.left)+'</b></div></div>';});
  if(!rows.length)h+='<p class="fin-note">В текущем плане пока нет заказов.</p>';
  h+='<div class="fin-wage-row fin-wage-total"><div class="fin-wage-name"><b>Итого</b><small>'+active.length+' '+pluralZakaz(active.length)+'</small></div><div><small>По плану</small><b>'+fmt(total.plan)+'</b></div><div><small>Уже выдано</small><b>'+fmt(total.paid)+'</b></div><div><small>Осталось выдать</small><b>'+fmt(total.left)+'</b></div></div><p class="fin-note">«Осталось выдать» — бюджет до завершения всего плана, с учётом авансов и итоговых выплат. Доступные сейчас выплаты находятся в разделе «Выплаты». По старым отметкам без точной суммы показан расчёт; новые выплаты учитываются по фактически проведённым суммам.</p></section>';
@@ -7691,15 +7692,26 @@ function finWagePlan(active){
 </script>
 <script>
 // Read-only weekly management dashboard. Membership follows workflow status, not created date.
+function dashboardCooOutstanding(o){
+ if(!o||o.sashaPaid)return 0;
+ return Math.max(0,calcCosts(o).sasha-finPaid(o,'sasha'));
+}
+function dashboardCooOrders(list,active){
+ var activeIds=new Set(active.map(function(o){return o.id;}));
+ return list.filter(function(o){return (activeIds.has(o.id)||officeEligible(o))&&dashboardCooOutstanding(o)>0;});
+}
 function dashboardData(list){
  var active=list.filter(function(o){return ['work','ready','planned'].includes(o.status);});
+ var cooOrders=dashboardCooOrders(list,active);
  var names=Array.from(new Set(MASTERS.concat(active.map(function(o){return o.master||'Не назначен';}))));
  var people=names.map(function(name){
   var own=active.filter(function(o){return (o.master||'Не назначен')===name;});
   var stages=[{key:'unmarked',label:'Этап не отмечен'}].concat(CRAFT_STAGES).concat([{key:'ready',label:'Готов'},{key:'planned',label:'Готов к отправке'}]);
   return {name:name,orders:own.length,toys:finSum(own,orderQty),ready:finSum(own.filter(productionReady),orderQty),stages:stages.map(function(s){return {key:s.key,label:s.label,n:finSum(own.filter(function(o){return (o.status==='work'?(CRAFT_STAGES.some(function(c){return c.key===effectiveCraftStage(o);})?effectiveCraftStage(o):'unmarked'):o.status)===s.key;}),orderQty)};})};
  }).sort(function(a,b){return b.orders-a.orders||a.name.localeCompare(b.name,'ru');});
- return {active:active,people:people,toys:finSum(active,orderQty),due:finSum(active,function(o){return Math.max(0,orderTotal(o)-(Number(o.prepaid)||0));}),wages:finSum(active,function(o){return calcMasterPay(o)+calcCosts(o).sasha;}),coo:finSum(active,function(o){return calcCosts(o).sasha;}),left:finSum(active,function(o){return remainingPay(o)+(o.sashaPaid?0:Math.max(0,calcCosts(o).sasha-finPaid(o,'sasha')));})};
+ var coo=finSum(cooOrders,dashboardCooOutstanding);
+ var left=finSum(active,remainingPay)+coo;
+ return {active:active,people:people,toys:finSum(active,orderQty),due:finSum(active,function(o){return Math.max(0,orderTotal(o)-(Number(o.prepaid)||0));}),wages:left,coo:coo,cooOrders:cooOrders,left:left};
 }
 function dashboardMaster(name){
  if(!canSeeOverview())return;
@@ -7712,7 +7724,7 @@ function tplDashboardSummary(list){
  var h='<section class="dash-summary" aria-label="Текущая рабочая неделя"><div class="dash-metrics">'
  +'<div><small>Текущий план</small><strong>'+d.toys+' '+pluralIgrushka(d.toys)+'</strong><span>Заказов: '+d.active.length+'</span></div>'
  +'<div><small>Ждём от клиентов</small><strong>'+fmt(d.due)+'</strong><span>Остаток оплаты по текущему плану</span></div>'
- +'<div><small>Зарплаты при выполнении плана</small><strong>'+fmt(d.wages)+'</strong><span>В том числе COO: '+fmt(d.coo)+'</span></div></div>'
+ +'<div><small>Осталось выплатить по плану</small><strong>'+fmt(d.wages)+'</strong><span>COO не выплачено: '+fmt(d.coo)+' · '+d.cooOrders.length+' '+pluralZakaz(d.cooOrders.length)+'</span></div></div>'
  +'<div class="dash-links"><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'week\')">Моя неделя</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'sdek\')">СДЭК</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'stats\')">Финансы</button></div></section>'
  +'<section class="dash-load" aria-label="Загрузка мастеров"><div class="overview-toolbar"><h2>Загрузка мастеров</h2></div><p class="overview-note">Количество заказов и игрушек, без оценки сложности. Этапы указаны в заказах.</p>';
  var people=overviewMaster==='all'?d.people:d.people.filter(function(p){return p.name===overviewMaster;});
@@ -7922,7 +7934,7 @@ function nextWeekFinanceData(assigned){
     return {name:name,list:list,toys:finSum(list,orderQty),pay:finSum(list,calcMasterPay)};
   }).filter(function(r){return r.list.length;});
   var list=rows.reduce(function(all,r){return all.concat(r.list);},[]);
-  var master=finSum(rows,function(r){return r.pay;}),coo=finSum(list,function(o){return calcCosts(o).sasha;}),clothing=finSum(list,calcNastya);
+  var master=finSum(rows,function(r){return r.pay;}),coo=finSum(list,dashboardCooOutstanding),clothing=finSum(list,calcNastya);
   return {rows:rows,orders:list.length,toys:finSum(list,orderQty),master:master,coo:coo,clothing:clothing,total:master+coo+clothing,unassignedToys:assigned.unassignedToys};
 }
 function nextWeekFinanceHtml(data){
@@ -7957,7 +7969,7 @@ function tplDashboardSummary(list){
   var h='<section class="dash-summary" aria-label="Текущая рабочая неделя"><div class="dash-metrics">'
    +'<div><small>Текущий план</small><strong>'+d.toys+' '+pluralIgrushka(d.toys)+'</strong><span>Заказов: '+d.active.length+'</span></div>'
    +'<div><small>Ждём от клиентов</small><strong>'+fmt(d.due)+'</strong><span>Остаток оплаты</span></div>'
-   +'<div><small>Зарплаты по плану</small><strong>'+fmt(d.wages)+'</strong><span>В том числе COO: '+fmt(d.coo)+'</span></div></div>'
+   +'<div><small>Осталось выплатить по плану</small><strong>'+fmt(d.wages)+'</strong><span>COO не выплачено: '+fmt(d.coo)+' · '+d.cooOrders.length+' '+pluralZakaz(d.cooOrders.length)+'</span></div></div>'
    +'<div class="dash-links"><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'week\')">Моя неделя</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'sdek\')">СДЭК</button><button class="btn btn-sm btn-secondary" onclick="navigateApp(\'stats\')">Финансы</button></div></section>';
   h+='<section id="next-week-panel" class="cap-summary" aria-label="План следующей недели"><div class="cap-head"><div><h2>Следующая неделя</h2><p>'+uiText(w.label)+'</p></div><button class="btn btn-sm btn-secondary" onclick="openCapacityPlan()">'+(plan?'Изменить план':'Настроить план')+'</button></div>'
    +'<div class="next-tabs" role="tablist" aria-label="План следующей недели"><button type="button" role="tab" id="next-toys-tab" aria-controls="next-toys-pane" aria-selected="'+(overviewNextView==='toys')+'" data-next-tab="toys" onclick="setOverviewNextView(\'toys\')">Игрушки</button><button type="button" role="tab" id="next-finance-tab" aria-controls="next-finance-pane" aria-selected="'+(overviewNextView==='finance')+'" data-next-tab="finance" onclick="setOverviewNextView(\'finance\')">Зарплаты · '+fmt(nextFinance.total)+'</button></div>'
