@@ -434,6 +434,25 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .overview-totals{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:14px}
 .overview-order{padding:16px;margin-bottom:10px;overflow-wrap:anywhere}
 .overview-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.overview-priority{margin-bottom:14px}
+.overview-priority-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:10px}
+.overview-priority-title h2{font-size:19px;margin:0 0 3px}.overview-priority-title p{margin:0;font-size:12px;color:var(--text3)}
+.overview-master-filter{min-width:180px}.overview-master-filter label{display:block;font-size:11px;color:var(--text3);margin-bottom:4px}.overview-master-filter select{min-height:38px;padding:7px 32px 7px 10px}
+.attention-filters{display:flex;gap:6px;overflow-x:auto;padding:0 0 9px;scrollbar-width:none}.attention-filters::-webkit-scrollbar{display:none}
+.attention-filter{flex:0 0 auto;min-height:34px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--text2);padding:6px 10px;font:600 12px 'Golos Text',sans-serif;cursor:pointer;white-space:nowrap}
+.attention-filter b{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:5px;padding:0 5px;border-radius:999px;background:var(--bg);color:var(--text1);font-size:11px}
+.attention-filter.selected{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}.attention-filter.selected b{background:var(--card);color:var(--accent)}
+.attention-list{border:1px solid var(--border);border-radius:14px;background:var(--card);overflow:hidden}
+.attention-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(180px,.75fr) auto auto;gap:12px;align-items:center;padding:11px 12px;border-bottom:1px solid var(--border);min-width:0}.attention-row:last-child{border-bottom:0}
+.attention-main,.attention-state{min-width:0}.attention-title{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;font-weight:700}.attention-client{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--text1)}
+.attention-urgent{flex-shrink:0;border-radius:6px;background:var(--red-bg);color:var(--red-ink);padding:3px 5px;font-size:10px;font-weight:700}
+.attention-meta,.attention-state small{display:block;margin-top:3px;color:var(--text3);font-size:11px;line-height:1.35;overflow-wrap:anywhere}.attention-state strong{display:block;color:var(--text1);font-size:12px;line-height:1.35;overflow-wrap:anywhere}
+.attention-primary{min-height:36px;padding:7px 10px;white-space:nowrap}
+.attention-more{position:relative}.attention-more>summary{display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--border);border-radius:9px;background:var(--bg);color:var(--text2);cursor:pointer;list-style:none;font-size:18px;font-weight:700}.attention-more>summary::-webkit-details-marker{display:none}
+.attention-menu{position:absolute;z-index:25;right:0;top:42px;width:220px;padding:6px;border:1px solid var(--border);border-radius:11px;background:var(--card);box-shadow:var(--sh2)}
+.attention-menu button{display:block;width:100%;min-height:38px;border:0;border-radius:8px;background:transparent;color:var(--text1);padding:8px 10px;text-align:left;font:600 12px 'Golos Text',sans-serif;cursor:pointer}.attention-menu button:hover{background:var(--bg)}
+.attention-more-count{margin-top:8px;font-size:12px;color:var(--text3);text-align:center}
+.overview-tools{border:1px solid var(--border);border-radius:14px;background:var(--card);margin:10px 0;overflow:hidden}.overview-tools>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:10px 14px;cursor:pointer;list-style:none;font-size:14px;font-weight:700}.overview-tools>summary::-webkit-details-marker{display:none}.overview-tools>summary small{font-size:11px;font-weight:500;color:var(--text3);text-align:right}.overview-tools>summary::after{content:'›';color:var(--text3);font-size:20px}.overview-tools[open]>summary::after{content:'⌄'}.overview-tools-body{padding:0 14px 14px}.overview-tools-body>.overview-grid{margin-top:6px}
 .startup-loading{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;max-width:560px;color:var(--text2)}
 .startup-loading strong{display:block;color:var(--text1);font-size:15px;margin-bottom:5px}
 .startup-loading p{font-size:13px;line-height:1.5}
@@ -456,6 +475,7 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 .task-due-fields select,.task-due-fields input{min-height:38px;padding:8px 10px;border:1px solid var(--border2);border-radius:9px;background:var(--input-bg);color:var(--text1);font:inherit;max-width:100%}
 @media(max-width:480px){.overview-personal-item{flex-wrap:wrap}.overview-personal-item .task-due-chip{margin-left:28px}.task-due-fields>*{flex:1 1 140px}}
 @media(max-width:360px){.overview-grid{grid-template-columns:1fr}}
+@media(max-width:700px){.overview-priority-head{align-items:stretch;flex-direction:column}.overview-master-filter{min-width:0}.overview-master-filter select{width:100%}.attention-row{grid-template-columns:minmax(0,1fr) auto;gap:8px 6px;padding:10px}.attention-state{grid-column:1/-1;grid-row:2}.attention-primary{grid-column:1;grid-row:3;justify-self:start}.attention-more{grid-column:2;grid-row:3}.attention-menu{position:fixed;left:12px;right:12px;top:auto;bottom:calc(12px + env(safe-area-inset-bottom));width:auto}.overview-tools-body{padding:0 10px 10px}}
 
 /* Compact tracking reminders: identity above, contact and actions below. */
 .track-reminder{padding:8px 0;border-top:1px solid var(--border);min-width:0}
@@ -749,7 +769,7 @@ const PAY_POST_STATUSES=['ready','planned','sent','done'];     // доплата
 //                срочных заказах прибавка тоже растёт на 50%, как и остальная ЗП.
 const MASTER_CFG=[
   {name:'Даша',  varRate:0.25, advancePct:0,   nastya:true,  payouts:true,  tg:'',             color:'#3967E8', ink:'#2755D9', payoutFrom:Date.parse('2026-09-21T00:00:00+10:00'), zpBonus:300},
-  {name:'Света', varRate:0.40, advancePct:0.3, nastya:false, payouts:true,  tg:'@svetashevel', color:'#79C68A', ink:'#4F815A'},
+  {name:'Света', varRate:0.40, advancePct:0,   nastya:false, payouts:true,  tg:'@svetashevel', color:'#79C68A', ink:'#4F815A'},
   {name:'Цветочек',varRate:0.19, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#E68DB1', ink:'#A1637C'},
   {name:'Юлия',  varRate:0.28, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#6E8FE0', ink:'#465FAE'},
   {name:'Вика',  varRate:0.28, advancePct:0.3, nastya:false, payouts:true,  tg:'',             color:'#B07CC6', ink:'#7A4F8C'},
@@ -3079,7 +3099,7 @@ function tplSdekQueue(){
   return html;
 }
 // Обзор руководства: текущие задачи не ограничены выбранной неделей.
-var overviewGroup='all',overviewMaster='all',overviewWeekOffset=0,overviewLimit=25;
+var overviewGroup='all',overviewMaster='all',overviewWeekOffset=0,overviewLimit=5;
 const OVERVIEW_GROUPS={
   shipping:{title:'Можно отправлять',hint:'Готово, оплачено, накладная внесена'},
   unpaid:{title:'Готовы, ждут оплаты',hint:'Связаться с клиентом'},
@@ -3134,7 +3154,7 @@ function setOverviewFilter(key,value){
   if(key==='group')overviewGroup=value==='all'||OVERVIEW_GROUPS[value]?value:'all';
   if(key==='master')overviewMaster=value;
   if(key==='week')overviewWeekOffset=Math.min(0,overviewWeekOffset+Number(value));
-  overviewLimit=25;renderTab('overview');
+  overviewLimit=5;renderTab('overview');
 }
 function openSdekOrder(id){
   var o=orders.find(function(x){return x.id===id;});if(!o)return;
@@ -3208,10 +3228,10 @@ function tplWeekOverview(){
   attention.sort(function(a,b){return priority[overviewBucket(a)]-priority[overviewBucket(b)]||(a.readyAt||a.created||0)-(b.readyAt||b.created||0);});
   var bounds=overviewWeekBounds(),stats=overviewWeekStats(list,bounds),totalDue=groups.unpaid.reduce(function(s,o){return s+Math.max(0,orderTotal(o)-(parseFloat(o.prepaid)||0));},0);
   var productionDue=groups.production.reduce(function(s,o){return s+Math.max(0,orderTotal(o)-(parseFloat(o.prepaid)||0));},0);
-  var html=tplOverviewPersonalTasks()+'<p class="fabric-intro">Текущая работа: «В работе», «Готов» и «Готов к отправке». Новые заказы и план следующей недели сюда не входят.</p>'
-    +'<div class="fg" style="margin-bottom:16px"><label for="overview-master">Мастер</label><select id="overview-master" onchange="setOverviewFilter(\'master\',this.value)"><option value="all">Все мастера</option>';
-  Array.from(new Set(orders.map(function(o){return o.master;}).filter(Boolean))).sort().forEach(function(m){html+='<option value="'+uiText(m)+'"'+(overviewMaster===m?' selected':'')+'>'+uiText(m)+'</option>';});
-  html+='</select></div>'+tplProductionBoard(list)+tplDashboardSummary(list)+'<div class="overview-toolbar"><h2>Оплаты и отправки</h2></div><div class="overview-grid">';
+  var masterOptions='<option value="all">Все мастера</option>';
+  Array.from(new Set(orders.map(function(o){return o.master;}).filter(Boolean))).sort().forEach(function(m){masterOptions+='<option value="'+uiText(m)+'"'+(overviewMaster===m?' selected':'')+'>'+uiText(m)+'</option>';});
+  var html=tplOverviewPersonalTasks()+'<details class="overview-tools"><summary><span>Производство и загрузка</span><small>'+groups.production.length+' в работе</small></summary><div class="overview-tools-body">'+tplProductionBoard(list)+tplDashboardSummary(list)+'</div></details>'
+    +'<details class="overview-tools"><summary><span>Оплаты и отправки</span><small>'+(groups.shipping.length+groups.unpaid.length+groups.waybill.length)+' заказов</small></summary><div class="overview-tools-body"><div class="overview-grid">';
   ['shipping','unpaid','waybill','production'].forEach(function(key){
     html+='<button type="button" class="overview-tile'+(overviewGroup===key?' selected':'')+'" aria-pressed="'+(overviewGroup===key)+'" data-group="'+key+'" onclick="setOverviewFilter(\'group\',this.dataset.group)">'
       +'<span class="overview-count">'+groups[key].length+'</span><span class="overview-label">'+OVERVIEW_GROUPS[key].title+'</span>'
@@ -3219,38 +3239,32 @@ function tplWeekOverview(){
   });
   html+='</div>';
   if(groups.check.length)html+='<button class="btn btn-secondary btn-full" style="margin:12px 0" onclick="setOverviewFilter(\'group\',\'check\')">Проверить данные · '+groups.check.length+'</button>';
+  html+='</div></details>';
   html+='<details class="dash-history"'+(overviewWeekOffset!==0?' open':'')+'><summary>События за календарную неделю</summary><section class="overview-week"><div class="overview-toolbar"><h2>Итоги недели</h2><div style="display:flex;gap:6px"><button class="btn btn-sm btn-secondary" aria-label="Предыдущая неделя" onclick="setOverviewFilter(\'week\',-1)">←</button><button class="btn btn-sm btn-secondary" aria-label="Следующая неделя" onclick="setOverviewFilter(\'week\',1)"'+(overviewWeekOffset===0?' disabled':'')+'>→</button></div></div>'
     +'<p class="overview-note">'+overviewDate(bounds.start)+' — '+overviewDate(bounds.end-1)+' · Владивосток</p>'
     +'<div class="overview-totals"><span>Закрыли <b>'+stats.closed+'</b></span><span>Изготовили <b>'+stats.ready+'</b></span><span>Отправили <b>'+stats.sent+'</b></span></div>'
     +'<p class="overview-note">По сохранённым датам событий. Заказ может учитываться в нескольких итогах. Старые события без даты не включаются.'+(stats.missingSent?' Без даты отправки: '+stats.missingSent+'.':'')+'</p></section></details>';
-  var overviewRest=html;html='';
-  html+='<div class="overview-toolbar" id="overview-attention"><h2>'+(overviewGroup==='all'?'Требуют внимания':OVERVIEW_GROUPS[overviewGroup].title)+' · '+attention.length+'</h2>'
-    +(overviewGroup!=='all'?'<button class="btn btn-sm btn-ghost" onclick="setOverviewFilter(\'group\',\'all\')">Все группы</button>':'')+'</div>';
-  if(!attention.length)html+='<div class="empty">Нет заказов, требующих действий</div>';
+  var overviewRest=html;html='<div class="overview-priority-head" id="overview-attention"><div class="overview-priority-title"><h2>'+(overviewGroup==='all'?'Требуют внимания':OVERVIEW_GROUPS[overviewGroup].title)+' · '+attention.length+'</h2><p>Только заказы, где сейчас нужно действие</p></div><div class="overview-master-filter"><label for="overview-master">Мастер</label><select id="overview-master" onchange="setOverviewFilter(\'master\',this.value)">'+masterOptions+'</select></div></div>';
+  var allAttention=groups.check.length+groups.unpaid.length+groups.waybill.length+groups.shipping.length;
+  var filterDefs=[['all','Все',allAttention],['check','Проверить',groups.check.length],['unpaid','Ждут оплаты',groups.unpaid.length],['waybill','Нужна накладная',groups.waybill.length],['shipping','Можно отправлять',groups.shipping.length],['production','В работе',groups.production.length]];
+  html+='<div class="attention-filters" role="group" aria-label="Фильтр заказов">'+filterDefs.map(function(x){return '<button type="button" class="attention-filter'+(overviewGroup===x[0]?' selected':'')+'" data-group="'+x[0]+'" onclick="setOverviewFilter(\'group\',this.dataset.group)">'+x[1]+'<b>'+x[2]+'</b></button>';}).join('')+'</div>';
+  if(!attention.length)html+='<div class="empty">Сейчас действий не требуется</div>';
+  else html+='<div class="attention-list">';
   attention.slice(0,overviewLimit).forEach(function(o){
     var key=overviewBucket(o),id=uiText(o.id),days=o.readyAt?Math.max(0,Math.floor((Date.now()-o.readyAt)/86400000)):null;
-    html+='<article class="card overview-order"><div style="font-weight:700"><button type="button" class="order-reference" data-oid="'+id+'" onclick="jumpTo(this.dataset.oid)">'+uiText(o.num)+'</button> · '+uiText(o.client||'Клиент не указан')+'</div>'
-      +'<p class="overview-note">'+uiText(o.master||'Мастер не назначен')+' · '+uiText(orderToyLabel(o))+'</p>'
-      +'<div style="margin:8px 0">'+(key==='check'?uiText(overviewIssue(o)):OVERVIEW_GROUPS[key].title)+'</div>';
-    if(key==='unpaid'){
-      html+='<p>К доплате: <b>'+fmt(Math.max(0,orderTotal(o)-(parseFloat(o.prepaid)||0)))+'</b></p>';
-      html+='<p class="overview-note">'+(days==null?'Дата готовности не сохранена':'С готовности прошло дней: '+days)+'</p>';
-      html+='<p class="overview-note">'+(o.paymentReminderAt?'Сообщение отправлено '+overviewDate(o.paymentReminderAt)+' · '+uiText(o.paymentReminderBy||''):'Отправка сообщения ещё не отмечена')+'</p>';
-    }
-    if(key==='production'){
-      var stage=CRAFT_STAGES.find(function(s){return s.key===effectiveCraftStage(o);});
-      html+='<p class="overview-note">Этап: '+uiText(stage?stage.label:'В плане текущей недели')+'</p>'
-        +'<p class="overview-note">'+(isClosed(o)?'Заказ закрыт · оплачен':'Заказ не закрыт · остаток '+fmt(Math.max(0,orderTotal(o)-(parseFloat(o.prepaid)||0))))+'</p>';
-      if(overviewIssue(o))html+='<p class="overview-note">'+uiText(overviewIssue(o))+'</p>';
-    }
-    html+='<div class="overview-actions">';
-    if(key==='unpaid')html+='<button class="btn btn-secondary" data-oid="'+id+'" onclick="showOverviewPayMessage(this.dataset.oid)">Сообщение клиенту</button>'
-      +(!isPreviewMode?'<button class="btn btn-ghost" data-oid="'+id+'" onclick="markOverviewMessageSent(this.dataset.oid)">Сообщение отправлено</button>':'');
-    if(key==='waybill'||key==='shipping')html+='<button class="btn btn-secondary" data-oid="'+id+'" onclick="openOverviewSdek(this.dataset.oid)">'+(key==='waybill'?'Оформить накладную':'Открыть в СДЭК')+'</button>';
-    if((key==='unpaid'||key==='check')&&!isClosed(o)&&!isPreviewMode)html+='<button class="btn btn-secondary" data-oid="'+id+'" onclick="closeOrder(this.dataset.oid)">Закрыть заказ</button>';
-    html+='<button class="btn btn-ghost" data-oid="'+id+'" onclick="jumpTo(this.dataset.oid)">Карточка заказа</button></div></article>';
+    var stage=key==='production'&&CRAFT_STAGES.find(function(s){return s.key===effectiveCraftStage(o);});
+    var stateMain=key==='unpaid'?'Доплата '+fmt(Math.max(0,orderTotal(o)-(parseFloat(o.prepaid)||0))):key==='waybill'?'Нужна накладная':key==='shipping'?'Можно отправлять':key==='production'?(stage?stage.label:'В работе'):'Проверить данные';
+    var stateSub=key==='unpaid'?(o.paymentReminderAt?'Написали '+overviewDate(o.paymentReminderAt):(days==null?'Не отмечена дата готовности':'Готов '+days+' дн.')):key==='check'?overviewIssue(o):key==='production'?(isClosed(o)?'Оплачен':'Остаток '+fmt(Math.max(0,orderTotal(o)-(parseFloat(o.prepaid)||0)))):OVERVIEW_GROUPS[key].hint;
+    var primary=key==='unpaid'?'<button class="btn btn-sm btn-secondary attention-primary" data-oid="'+id+'" onclick="showOverviewPayMessage(this.dataset.oid)">Написать</button>':(key==='waybill'||key==='shipping')?'<button class="btn btn-sm btn-secondary attention-primary" data-oid="'+id+'" onclick="openOverviewSdek(this.dataset.oid)">'+(key==='waybill'?'Накладная':'СДЭК')+'</button>':'<button class="btn btn-sm btn-secondary attention-primary" data-oid="'+id+'" onclick="jumpTo(this.dataset.oid)">Карточка</button>';
+    var menu='';
+    if(key==='unpaid'&&!isPreviewMode)menu+='<button data-oid="'+id+'" onclick="markOverviewMessageSent(this.dataset.oid)">Отметить: сообщение отправлено</button>';
+    if((key==='unpaid'||key==='check')&&!isClosed(o)&&!isPreviewMode)menu+='<button data-oid="'+id+'" onclick="closeOrder(this.dataset.oid)">Закрыть заказ</button>';
+    if(key==='unpaid'||key==='waybill'||key==='shipping')menu+='<button data-oid="'+id+'" onclick="jumpTo(this.dataset.oid)">Открыть карточку</button>';
+    html+='<article class="attention-row"><div class="attention-main"><div class="attention-title"><button type="button" class="order-reference" data-oid="'+id+'" onclick="jumpTo(this.dataset.oid)">'+uiText(o.num)+'</button><span class="attention-client">'+uiText(o.client||'Клиент не указан')+'</span>'+(o.urgent?'<span class="attention-urgent">Срочно</span>':'')+'</div><div class="attention-meta">'+uiText(o.master||'Мастер не назначен')+' · '+uiText(orderToyLabel(o))+'</div></div><div class="attention-state"><strong>'+uiText(stateMain)+'</strong><small>'+uiText(stateSub)+'</small></div>'+primary+(menu?'<details class="attention-more"><summary aria-label="Другие действия">···</summary><div class="attention-menu">'+menu+'</div></details>':'<span></span>')+'</article>';
   });
-  if(attention.length>overviewLimit)html+='<button class="btn btn-secondary btn-full" onclick="overviewLimit+=25;renderTab(\'overview\')">Показать ещё</button>';
+  if(attention.length)html+='</div>';
+  if(attention.length>overviewLimit)html+='<button class="btn btn-secondary btn-full" style="margin-top:8px" onclick="overviewLimit+=5;renderTab(\'overview\')">Показать ещё '+Math.min(5,attention.length-overviewLimit)+'</button>';
+  if(overviewLimit>5&&attention.length<=overviewLimit)html+='<button class="btn btn-ghost btn-full attention-more-count" onclick="overviewLimit=5;renderTab(\'overview\');document.getElementById(\'overview-attention\')?.scrollIntoView({block:\'start\'})">Свернуть список</button>';
   return '<section class="overview-priority">'+html+'</section>'+overviewRest;
 }
 
@@ -7475,8 +7489,8 @@ function finDueView(){
   var credit=finCreditBalance(p.name);if(credit)h+='<div class="fin-note">Есть зачёт '+fmt(credit)+' — его можно использовать при выплате.</div>';
   if(masterKind&&due>0){
    var readyDue=finSum(p.post||[],remainingPay),advanceDue=finSum(p.advance||[],calcAdvance),sashaDue=finSum(p.sasha||[],function(o){return finOutstanding('sasha',o);}),dividendDue=finSum(p.dividend||[],function(o){return finOutstanding('dividend',o);});
-   var canPayAll=p.name==='Света'||p.kind==='alexandra'||p.kind==='dasha';
-   var bulkColumns=(p.name==='Света'||p.kind==='alexandra'||p.kind==='dasha')?2:1;
+   var canPayAll=advanceDue>0||p.kind==='alexandra'||p.kind==='dasha';
+   var bulkColumns=(advanceDue>0||p.kind==='alexandra'||p.kind==='dasha')?2:1;
    if(p.kind==='alexandra'||p.kind==='dasha'){
     h+='<div class="fin-alert" style="margin-top:0"><b>Разбивка выплаты</b>'
      +(readyDue?'<div class="fin-line"><span>ЗП мастера · готовые заказы</span><b>'+fmt(readyDue)+'</b></div>':'')
@@ -7486,8 +7500,8 @@ function finDueView(){
      +(dividendDue?'<div class="fin-line"><span>Дивиденды</span><b>'+fmt(dividendDue)+'</b></div>':'')+'</div>';
    }
    h+='<div class="fin-bulk-actions" style="grid-template-columns:repeat('+bulkColumns+',minmax(0,1fr))"><button class="btn btn-secondary btn-sm" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person,\'ready\')"'+(readyDue+extraSum>0?'':' disabled')+'>'+(extraSum?(readyDue?'Готовые + доп. работа':'Выплатить доп. работу'):'Выплатить за готовые')+'<strong>'+fmt(readyDue+extraSum)+'</strong></button>'
-    +(p.name==='Света'?'<button class="btn btn-secondary btn-sm" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person,\'advance\')"'+(advanceDue>0?'':' disabled')+'>Выплатить авансы<strong>'+fmt(advanceDue)+'</strong></button>':'')
-    +(canPayAll?'<button class="btn btn-sm fin-pay-all" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person,\'all\')">Выплатить всё<small>'+(p.kind==='master'?'готовые и авансы':'одним переводом, с разбивкой')+'</small><strong>'+fmt(due)+'</strong></button>':'')+'</div>';
+    +(advanceDue>0?'<button class="btn btn-secondary btn-sm" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person,\'advance\')">Выплатить авансы<strong>'+fmt(advanceDue)+'</strong></button>':'')
+    +(canPayAll?'<button class="btn btn-sm fin-pay-all" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person,\'all\')">Выплатить всё<small>'+(p.kind==='master'?(advanceDue>0?'готовые и авансы':'готовые заказы'):'одним переводом, с разбивкой')+'</small><strong>'+fmt(due)+'</strong></button>':'')+'</div>';
   }else if(due>0)h+='<button class="btn btn-primary btn-sm" data-person="'+uiText(p.name)+'" onclick="finPayPerson(this.dataset.person)">Подготовить выплату '+fmt(due)+'</button>';
   var dueIds=new Set(pList.map(function(o){return o.id;}));
   var active=visible.filter(function(o){return finSearch||dueIds.has(o.id)||(masterKind?(o.advancePaid||o.postpayPaid||o.sashaPaid||o.dividendPaid):o[finFlag(p.kind)]);}).sort(function(a,b){return Number(dueIds.has(b.id))-Number(dueIds.has(a.id))||(b.created||0)-(a.created||0);});
@@ -7502,7 +7516,7 @@ function finDueView(){
 function finOrderPayRow(o,kind){
  var keys=Array.isArray(kind)?kind:kind==='master'?['advance','postpay']:[kind],h='<div class="fin-order-row"><div><button class="fin-link" data-id="'+uiText(o.id)+'" onclick="jumpTo(this.dataset.id)">'+uiText(o.num)+'</button> '+finChip((STATUSES[o.status]||STATUSES.new).label)+'<small>'+uiText(orderToyLabel(o))+'</small></div><div class="fin-row-actions">';
  keys.forEach(function(k){
-  var paid=finPaid(o,k),canPay=k==='advance'?o.master==='Света'&&PAY_ADV_STATUSES.includes(o.status)&&!o.postpayPaid&&calcAdvance(o)>0:k==='postpay'?postNeedFor(o.master).some(function(x){return x.id===o.id;}):officeEligible(o);
+  var paid=finPaid(o,k),canPay=k==='advance'?masterCfg(o.master).advancePct>0&&o.master==='Света'&&PAY_ADV_STATUSES.includes(o.status)&&!o.postpayPaid&&calcAdvance(o)>0:k==='postpay'?postNeedFor(o.master).some(function(x){return x.id===o.id;}):officeEligible(o);
   if(o[finFlag(k)]&&paid>0)h+='<button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" data-kind="'+k+'" onclick="finCancel(this.dataset.id,this.dataset.kind)">'+FIN_LABEL[k]+' '+fmt(paid)+(!(o.financePayments&&o.financePayments[k])?' (расчёт)':'')+' · отменить</button>';
   else if(canPay&&finOutstanding(k,o)>0)h+='<button class="btn btn-sm btn-secondary" data-id="'+uiText(o.id)+'" data-kind="'+k+'" onclick="markPay(this.dataset.id,this.dataset.kind)">'+FIN_LABEL[k]+' '+fmt(finOutstanding(k,o))+'</button>';
  });return h+'</div></div>';
@@ -7543,7 +7557,7 @@ async function finRefreshPayout(){
   x.entries.forEach(function(e){
    var o=orders.find(function(y){return y.id===e.o.id;});if(!o)return;
    if(isLocalDirty('orders',o,pend))throw Error('Заказ '+(o.num||'')+' имеет локальные несохранённые изменения. Дождитесь синхронизации.');
-   var eligible=e.kind==='advance'?o.master==='Света'&&PAY_ADV_STATUSES.includes(o.status)&&!o.postpayPaid&&!o.advancePaid:e.kind==='postpay'?postNeedFor(o.master).some(function(y){return y.id===o.id;}):officeEligible(o)&&!o[finFlag(e.kind)];
+   var eligible=e.kind==='advance'?masterCfg(o.master).advancePct>0&&o.master==='Света'&&PAY_ADV_STATUSES.includes(o.status)&&!o.postpayPaid&&!o.advancePaid:e.kind==='postpay'?postNeedFor(o.master).some(function(y){return y.id===o.id;}):officeEligible(o)&&!o[finFlag(e.kind)];
    if(eligible&&finOutstanding(e.kind,o)>0)fresh.push({o:o,kind:e.kind});
   });
   (x.extraTasks||[]).forEach(function(t){var current=tasks.find(function(y){return y.id===t.id;});if(current&&!current.done&&JSON.stringify(current)===JSON.stringify(t))freshExtras.push(current);});
@@ -7715,7 +7729,7 @@ function dashboardData(list){
 }
 function dashboardMaster(name){
  if(!canSeeOverview())return;
- overviewMaster=name;overviewGroup='production';overviewLimit=25;
+ overviewMaster=name;overviewGroup='production';overviewLimit=5;
  renderTab('overview');document.getElementById('overview-attention')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function tplDashboardSummary(list){
@@ -7917,7 +7931,7 @@ async function saveCapacityPlan(){
 }
 function dashboardMaster(name,status){
   if(!canSeeOverview())return;
-  overviewMaster=name;overviewGroup=status==='nextweek'?'all':'production';overviewLimit=25;
+  overviewMaster=name;overviewGroup=status==='nextweek'?'all':'production';overviewLimit=5;
   if(status==='nextweek'){fMaster=name;fStatus='nextweek';navigateApp('list');return;}
   renderTab('overview');document.getElementById('overview-attention')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
