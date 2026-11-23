@@ -11,6 +11,8 @@ try{
       {id:'d',kind:'account',name:'Озон Банк Даша',type:'bank',owner:'dasha',startBalance:12000,startDate:'2026-11-01',ord:0,archived:false},
       {id:'s',kind:'account',name:'Озон Банк Саша',type:'bank',owner:'sasha',startBalance:8000,startDate:'2026-11-01',ord:1,archived:false},
       {id:'sb',kind:'account',name:'Сбербанк',type:'bank',owner:'sasha',startBalance:5000,startDate:'2026-11-01',ord:2,archived:false},
+      {id:'debt',kind:'account',name:'Долг — Цветочек',type:'debt',owner:'sasha',startBalance:3000,startDate:'2026-11-01',ord:3,archived:false},
+      {id:'advent',kind:'account',name:'Предоплаты за адвенты',type:'savings',owner:'sasha',startBalance:15000,startDate:'2026-11-01',ord:4,archived:false},
       {id:'td',kind:'tx',date:'2026-11-23',type:'income',amount:1000,accountId:'d',category:'Прочий доход',created:1},
       {id:'ts',kind:'tx',date:'2026-11-23',type:'expense',amount:500,accountId:'s',category:'Материалы',created:2}
     ];
@@ -18,9 +20,9 @@ try{
     renderTab('bank');
     return {visible:bankAccounts().map(a=>a.name),usable:bankUsableAccounts().map(a=>a.name),text:document.body.innerText,overflow:document.documentElement.scrollWidth>innerWidth};
   });
-  assert.deepEqual(state.visible,['Озон Банк Даша','Озон Банк Саша']);
+  assert.deepEqual(state.visible,['Озон Банк Даша','Озон Банк Саша','Сбербанк','Долг — Цветочек','Предоплаты за адвенты']);
   assert.deepEqual(state.usable,['Озон Банк Даша']);
-  assert.match(state.text,/Вы видите оба Озон-счёта/);
+  assert.match(state.text,/Вы видите все счета и их операции/);
   assert.doesNotMatch(state.text,/⇄ Перевод/);
   assert.equal(state.overflow,false);
   await page.screenshot({path:'/private/tmp/markovka-ozon-dasha.png',fullPage:true});
@@ -28,8 +30,8 @@ try{
     role='manager';realRole='manager';crmProfile={id:'ui-test-manager',role:'manager',name:'Александра'};renderTab('bank');
     return {visible:bankAccounts().map(a=>a.name),usable:bankUsableAccounts().map(a=>a.name),text:document.body.innerText};
   });
-  assert.deepEqual(manager.visible,['Озон Банк Даша','Озон Банк Саша','Сбербанк']);
+  assert.deepEqual(manager.visible,['Озон Банк Даша','Озон Банк Саша','Сбербанк','Долг — Цветочек','Предоплаты за адвенты']);
   assert.deepEqual(manager.usable,manager.visible);
   assert.match(manager.text,/⇄ Перевод/);
-  console.log('PASS Dasha sees both Ozon accounts and can use only her own');
+  console.log('PASS Dasha sees every account and can use only her own Ozon account');
 }finally{await browser.close();}

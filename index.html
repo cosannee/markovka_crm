@@ -6412,11 +6412,7 @@ function bankAccountOwner(a){
   return 'sasha';
 }
 function canUseBankAccount(a){return role!=='director'||bankAccountOwner(a)==='dasha';}
-function canViewBankAccount(a){
-  if(role!=='director')return true;
-  var n=String(a&&a.name||'').trim().toLowerCase();
-  return bankAccountOwner(a)==='dasha'||n==='озон банк саша';
-}
+function canViewBankAccount(a){return !!a;}
 
 // Разовая безопасная миграция: старый Озон Банк становится счётом Даши,
 // новый счёт Саши создаётся с нулём. Деньги между ними автоматически не двигаем.
@@ -6589,7 +6585,7 @@ function tplBank(){
   var t=bankTotals();
   var html='<div style="padding:2px">';
   html+='<div class="fin-note" style="margin-bottom:10px">'+(role==='director'
-    ?'Вы видите оба Озон-счёта, но проводить поступления и списания можете только по счёту «Озон Банк Даша».'
+    ?'Вы видите все счета и их операции, но проводить поступления и списания можете только по счёту «Озон Банк Даша».'
     :'Озон-счета разделены: Даша работает только со своим счётом. Деньги между Дашей и Сашей распределяйте переводом между счетами.')+'</div>';
 
   // ── Сводка ──

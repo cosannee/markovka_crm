@@ -7,7 +7,7 @@ const migration=fs.readFileSync('supabase/migrations/015-split-ozon-accounts.sql
 assert.match(source,/{name:'Озон Банк Даша', type:'bank',owner:'dasha'}/,'Dasha Ozon account is a default');
 assert.match(source,/{name:'Озон Банк Саша', type:'bank',owner:'sasha'}/,'Sasha Ozon account is a default');
 assert.match(source,/function canUseBankAccount\(a\)\{return role!=='director'\|\|bankAccountOwner\(a\)==='dasha';\}/,'director transactions are restricted');
-assert.match(source,/bankAccountOwner\(a\)==='dasha'\|\|n==='озон банк саша'/,'director can view Sasha Ozon account');
+assert.match(source,/function canViewBankAccount\(a\)\{return !!a;\}/,'director can view every account');
 assert.match(source,/function bankUsableAccounts\(\)\{return bankAccounts\(\)\.filter\(canUseBankAccount\);\}/,'visible and usable account lists are separate');
 assert.match(source,/role==='manager'\?'<button class="btn btn-secondary btn-sm"[^\n]+⇄ Перевод/,'only Sasha sees the transfer button');
 assert.match(source,/Даше доступен только счёт «Озон Банк Даша»/,'client blocks an inaccessible account');
