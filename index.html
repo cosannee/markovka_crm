@@ -2054,7 +2054,7 @@ function appNavItems(){
       {id:'fabrics',label:'Палитра тканей'},
     ];
 }
-function appPrimaryIds(){return role==='master'?['master','week','finance']:role==='director'?['list','week','payments']:['overview','list','payments'];}
+function appPrimaryIds(){return role==='master'?['master','week','finance']:role==='director'?['list','week']:['overview','list','payments'];}
 function appNavCount(id){
   if(id==='sdek')return role==='manager'?sdekQueueOrders().filter(function(o){return !hasSdekNumber(o);}).length:sdekExportList().length;
   if(id==='todos')return unreadTaskCount();
@@ -2100,7 +2100,7 @@ function renderTabs(){
 }
 function tplMore(){
   const primary=appPrimaryIds();
-  const descriptions={warehouse:'Материалы, остатки и инвентаризация',overview:'Заказы, оплата и отправка — что требует внимания',add:'Создать заказ и назначить мастера',bank:'Счета, доходы и расходы',stats:'Расчёты, ставки и план недели',analytics:'Итоги и прибыль за период',sdek:(role==='manager'||role==='director')?'Оформление накладных и отправка':'Заказы, готовые к отправке',todos:'Переписка и задачи',fabrics:'Образцы тканей №1–16'};
+  const descriptions={warehouse:'Материалы, остатки и инвентаризация',overview:'Заказы, оплата и отправка — что требует внимания',payments:'Выплаты по заказам и сотрудникам',add:'Создать заказ и назначить мастера',bank:'Счета, доходы и расходы',stats:'Расчёты, ставки и план недели',analytics:'Итоги и прибыль за период',sdek:(role==='manager'||role==='director')?'Оформление накладных и отправка':'Заказы, готовые к отправке',todos:'Переписка и задачи',fabrics:'Образцы тканей №1–16'};
   const name=document.getElementById('h-user-name').textContent||masterName||(role==='director'?DIRECTOR_MASTER:'');
   const label=document.getElementById('h-role-lbl').textContent||'';
   let html='<div class="more-profile"><span class="person-avatar">'+uiText(name.slice(0,1))+'</span><div><div class="more-profile-name">'+uiText(name)+'</div><div class="more-profile-role">'+uiText(label)+(isPreviewMode?' · просмотр':'')+'</div></div></div>';
