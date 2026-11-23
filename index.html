@@ -1717,6 +1717,7 @@ async function login(r,userName,userLabel,mName){
     applyRemote('orders',data.orders||[]);
     applyRemote('tasks',data.tasks||[]);
     if(financeTableOk)applyRemote('finance',data.finance||[]);
+    await ensureOzonAccountsSplit();
   }else{
     // Облако НЕдоступно — работаем с локальным кэшем, ничего не записываем
     orders=(cached&&Array.isArray(cached.orders))?cached.orders:[];
@@ -1740,6 +1741,7 @@ async function retryInitialData(){
     applyRemote('orders',data.orders||[]);
     applyRemote('tasks',data.tasks||[]);
     if(financeTableOk)applyRemote('finance',data.finance||[]);
+    await ensureOzonAccountsSplit();
     cloudOrderCount=(data.orders||[]).length;
   }else initialDataError=true;
   initialDataPending=false;renderTab(tab);
@@ -6382,9 +6384,10 @@ const TRANSFER_CATS=['Между счетами','Пополнение вкла�
 
 // Счета, которые создаются при первом открытии раздела
 const DEFAULT_ACCOUNTS=[
-  {name:'Озон Банк',    type:'bank'},
-  {name:'Сбербанк',     type:'bank'},
-  {name:'Вклад Сбербанк',type:'savings'},
+  {name:'Озон Банк Даша', type:'bank',owner:'dasha'},
+  {name:'Озон Банк Саша', type:'bank',owner:'sasha'},
+  {name:'Сбербанк',       type:'bank',owner:'sasha'},
+  {name:'Вклад Сбербанк', type:'savings',owner:'sasha'},
 ];
 
 // Состояние экрана
@@ -6398,13 +6401,63 @@ var bankAiDraft=null;       // распознанные ИИ операции, �
 function canSeeBank(){return role==='manager'||role==='director';}
 function bankAuthor(){return role==='director'?'Даша':(role==='manager'?'Александра':'—');}
 
+// У каждого Озон-счёта есть владелец. Старое название без имени считаем
+// счётом Даши: так её текущий остаток сохраняется при автоматическом разделении.
+function bankAccountOwner(a){
+  if(!a)return '';
+  if(a.owner==='dasha'||a.owner==='sasha')return a.owner;
+  var n=String(a.name||'').trim().toLowerCase();
+  if(n==='озон банк'||n==='озон банк даша')return 'dasha';
+  if(n==='озон банк саша')return 'sasha';
+  return 'sasha';
+}
+function canUseBankAccount(a){return role!=='director'||bankAccountOwner(a)==='dasha';}
+function canViewBankAccount(a){
+  if(role!=='director')return true;
+  var n=String(a&&a.name||'').trim().toLowerCase();
+  return bankAccountOwner(a)==='dasha'||n==='озон банк саша';
+}
+
+// Разовая безопасная миграция: старый Озон Банк становится счётом Даши,
+// новый счёт Саши создаётся с нулём. Деньги между ними автоматически не двигаем.
+var ozonSplitSaving=false;
+async function ensureOzonAccountsSplit(){
+  if(role!=='manager'||isPreviewMode||!lastLoadOk||!financeTableOk||ozonSplitSaving)return false;
+  var next=finance.slice(),changed=false,now=Date.now();
+  var accounts=next.filter(function(r){return r&&r.kind==='account'&&!r.archived;});
+  var dasha=accounts.find(function(a){return String(a.name||'').trim().toLowerCase()==='озон банк даша';});
+  var legacy=accounts.find(function(a){return String(a.name||'').trim().toLowerCase()==='озон банк';});
+  if(!dasha&&legacy){
+    next=next.map(function(r){return r.id===legacy.id?Object.assign({},r,{name:'Озон Банк Даша',owner:'dasha'}):r;});
+    dasha=Object.assign({},legacy,{name:'Озон Банк Даша',owner:'dasha'});changed=true;
+  }else if(dasha&&dasha.owner!=='dasha'){
+    next=next.map(function(r){return r.id===dasha.id?Object.assign({},r,{owner:'dasha'}):r;});changed=true;
+  }
+  if(!dasha){
+    dasha={id:'account_ozon_dasha',kind:'account',name:'Озон Банк Даша',type:'bank',owner:'dasha',startBalance:0,startDate:todayISO(),ord:0,archived:false,created:now};
+    next.push(dasha);changed=true;
+  }
+  var sasha=next.find(function(a){return a&&a.kind==='account'&&!a.archived&&String(a.name||'').trim().toLowerCase()==='озон банк саша';});
+  if(!sasha){
+    var maxOrd=next.filter(function(r){return r&&r.kind==='account';}).reduce(function(m,a){return Math.max(m,Number(a.ord)||0);},0);
+    next.push({id:'account_ozon_sasha',kind:'account',name:'Озон Банк Саша',type:'bank',owner:'sasha',startBalance:0,startDate:todayISO(),ord:maxOrd+1,archived:false,created:now+1});changed=true;
+  }else if(sasha.owner!=='sasha'){
+    next=next.map(function(r){return r.id===sasha.id?Object.assign({},r,{owner:'sasha'}):r;});changed=true;
+  }
+  if(!changed)return false;
+  ozonSplitSaving=true;
+  try{return await saveFinance(next);}finally{ozonSplitSaving=false;}
+}
+
 // ── Выборки ──
 function bankAccounts(){
-  return finance.filter(function(r){return r&&r.kind==='account'&&!r.archived;})
+  return finance.filter(function(r){return r&&r.kind==='account'&&!r.archived&&canViewBankAccount(r);})
     .sort(function(a,b){return (a.ord||0)-(b.ord||0);});
 }
+function bankUsableAccounts(){return bankAccounts().filter(canUseBankAccount);}
 function bankTxAll(){
-  return finance.filter(function(r){return r&&r.kind==='tx';})
+  var allowed=role==='director'?new Set(bankAccounts().map(function(a){return a.id;})):null;
+  return finance.filter(function(r){return r&&r.kind==='tx'&&(!allowed||allowed.has(r.accountId)||allowed.has(r.toAccountId));})
     .sort(function(a,b){
       if(a.date!==b.date)return a.date<b.date?1:-1;   // новые сверху
       return (b.created||0)-(a.created||0);
@@ -6509,10 +6562,11 @@ function dLbl(iso){
 
 // ── Первичная настройка счетов ──
 async function bankSetupDefaults(){
+  if(role!=='manager'||isPreviewMode){toast('Добавлять счета может только Саша');return;}
   if(bankAccounts().length){toast('Счета уже созданы');return;}
   var now=Date.now();
   var accs=DEFAULT_ACCOUNTS.map(function(a,i){
-    return {id:uid(),kind:'account',name:a.name,type:a.type,startBalance:0,startDate:todayISO(),ord:i,archived:false,created:now+i};
+    return {id:uid(),kind:'account',name:a.name,type:a.type,owner:a.owner,startBalance:0,startDate:todayISO(),ord:i,archived:false,created:now+i};
   });
   var ok=await saveFinance(finance.concat(accs));
   if(ok){renderTab('bank');toast('Счета созданы — укажите начальные остатки');}
@@ -6527,13 +6581,16 @@ function tplBank(){
   var accs=bankAccounts();
   if(!accs.length){
     return '<div class="card" style="padding:20px;text-align:center">'
-      +'<div style="font-size:14px;color:var(--text2);margin:8px 0 14px">Счета ещё не заведены</div>'
-      +'<button class="btn btn-primary" onclick="bankSetupDefaults()">Создать: Озон, Сбер, Вклад</button>'
+      +'<div style="font-size:14px;color:var(--text2);margin:8px 0 14px">'+(role==='director'?'Счёт «Озон Банк Даша» ещё не настроен':'Счета ещё не заведены')+'</div>'
+      +(role==='manager'?'<button class="btn btn-primary" onclick="bankSetupDefaults()">Создать счета</button>':'')
       +'</div>';
   }
 
   var t=bankTotals();
   var html='<div style="padding:2px">';
+  html+='<div class="fin-note" style="margin-bottom:10px">'+(role==='director'
+    ?'Вы видите оба Озон-счёта, но проводить поступления и списания можете только по счёту «Озон Банк Даша».'
+    :'Озон-счета разделены: Даша работает только со своим счётом. Деньги между Дашей и Сашей распределяйте переводом между счетами.')+'</div>';
 
   // ── Сводка ──
   html+='<div class="butter-panel" style="padding:16px 18px;margin-bottom:10px">'
@@ -6557,12 +6614,12 @@ function tplBank(){
     var bal=accBalance(a.id);
     var isSav=a.type==='savings';
     var isDebt=a.type==='debt';
-    html+='<div onclick="openAccountEdit(\''+a.id+'\')" style="background:'+((isSav||isDebt)?'var(--bg2)':'var(--card)')+';border-radius:14px;box-shadow:var(--sh);padding:12px;cursor:pointer">'
+    html+='<div '+(role==='manager'?'onclick="openAccountEdit(\''+a.id+'\')"':'')+' style="background:'+((isSav||isDebt)?'var(--bg2)':'var(--card)')+';border-radius:14px;box-shadow:var(--sh);padding:12px;'+(role==='manager'?'cursor:pointer':'')+'">'
       +'<div style="font-size:11px;color:var(--text3);font-weight:700;margin-bottom:4px">'+a.name+'</div>'
       +'<div style="font-size:16px;font-weight:700;color:'+(bal>=0?(isDebt?'var(--orange-ink)':'var(--accent)'):'var(--red-ink)')+'">'+fmt(bal)+(isDebt?' <span style="font-size:10px;font-weight:600;color:var(--text3)">должны</span>':'')+'</div>'
       +'</div>';
   });
-  html+='<div onclick="openAccountEdit(null)" style="border-radius:14px;border:1.5px dashed var(--border2);padding:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;font-weight:700;min-height:56px">+ Счёт</div>';
+  if(role==='manager')html+='<div onclick="openAccountEdit(null)" style="border-radius:14px;border:1.5px dashed var(--border2);padding:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;font-weight:700;min-height:56px">+ Счёт</div>';
   html+='</div>';
 
   // ── ИИ-ввод ──
@@ -6571,7 +6628,7 @@ function tplBank(){
   // ── Кнопки ──
   html+='<div style="display:flex;gap:8px;margin-bottom:14px">'
     +'<button class="btn btn-secondary btn-sm" style="flex:1;justify-content:center" onclick="openTxForm()">+ Операция вручную</button>'
-    +'<button class="btn btn-secondary btn-sm" style="flex:1;justify-content:center" onclick="openTxForm(null,\'transfer\')">⇄ Перевод</button>'
+    +(role==='manager'?'<button class="btn btn-secondary btn-sm" style="flex:1;justify-content:center" onclick="openTxForm(null,\'transfer\')">⇄ Перевод</button>':'')
     +'</div>';
 
   // ── Фильтры ──
@@ -6750,7 +6807,7 @@ function tplBankAi(){
 }
 
 function tplAiDraft(){
-  var accs=bankAccounts();
+  var accs=bankUsableAccounts();
   var html='<div style="margin-top:10px;border-top:1px solid var(--border2);padding-top:10px">'
     +'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Проверьте и подтвердите — до подтверждения ничего не сохранено</div>';
   bankAiDraft.forEach(function(d,i){
@@ -6796,7 +6853,7 @@ function dropAiDraft(i){
 async function parseFinanceWithAI(){
   var text=document.getElementById('fin-ai-input').value.trim();
   if(!text){toast('Опишите операцию');return;}
-  var accs=bankAccounts();
+  var accs=bankUsableAccounts();
   var btn=document.getElementById('fin-ai-btn');
   btn.disabled=true;btn.textContent='Анализирую...';
   var prompt='Ты финансовый ассистент мастерской мягких игрушек «Марковка». Сегодня '+todayISO()+'.\n'
@@ -6817,7 +6874,7 @@ async function parseFinanceWithAI(){
     +'Категории для transfer: '+TRANSFER_CATS.join(' | ')+'\n'
     +'\nПРАВИЛА:\n'
     +'1. Категорию БЕРИ ТОЛЬКО из списка. Ничего не выдумывай. Не подходит — ставь «Прочее» (или «Прочий доход»), а исходные слова положи в merchant.\n'
-    +'2. Различай счёт и продавца: «с озон», «с озон банка», «озоном» = счёт «Озон Банк». «с Озона», «на Озоне», «заказала на озоне» = маркетплейс Ozon, это merchant, а счёт определи из остального текста (по умолчанию «Озон Банк»).\n'
+    +'2. Различай счёт и продавца: «с озон банка» означает один из доступных Озон-счетов выше, а «с Озона», «на Озоне», «заказала на озоне» означает маркетплейс Ozon и записывается в merchant. Если счёт не назван точно, используй первый доступный счёт.\n'
     +'4. Наполнитель, холлофайбер, гранулят, пеллетс — категория «Гранулят». Мех, ткань, фурнитура, глазки, нитки — «Материалы».\n'
     +'5. Перевод на вклад / отложили / накопления = type "transfer", category «Пополнение вклада», toAccount «Вклад Сбербанк». Это НЕ расход.\n'
     +'5а. Дали в долг (заняла на что-то, взяла в долг) = type "transfer", category «Выдача в долг», toAccount — долговой счёт этого человека. Вернула долг / погасила = type "transfer", category «Погашение долга», account — долговой счёт, toAccount — куда пришли деньги. Это НЕ доход и НЕ расход.\n'
@@ -6884,9 +6941,11 @@ async function commitAiDraft(){
 
 // ═══ РУЧНАЯ ФОРМА ═══
 function openTxForm(txId,presetType){
-  var accs=bankAccounts();
+  var accs=bankUsableAccounts();
   if(!accs.length){toast('Сначала создайте счета');return;}
   var t=txId?finance.find(function(x){return x.id===txId;}):null;
+  if(role==='director'&&((t&&t.type==='transfer')||presetType==='transfer')){toast('Переводы между счетами доступны Саше');return;}
+  if(t&&role==='director'&&!canUseBankAccount(accById(t.accountId))){toast('Эта операция относится к другому счёту');return;}
   var isNew=!t;
   var plainAccs=accs.filter(function(a){return a.type!=='debt';});
   var d=t||{type:presetType||'expense',date:todayISO(),amount:'',accountId:(plainAccs[0]||accs[0]).id,toAccountId:(accs[1]||accs[0]).id,category:'',direction:'toys',comment:'',merchant:'',orderId:''};
@@ -6899,7 +6958,7 @@ function openTxForm(txId,presetType){
       +'<button onclick="closeTxModal()" style="background:none;border:none;color:var(--text3);font-size:24px;line-height:1;cursor:pointer">×</button>'
     +'</div>'
     +'<div class="filters" id="tx-type-row">'
-      +[['expense','Расход'],['income','Доход'],['transfer','Перевод']].map(function(x){
+      +(role==='director'?[['expense','Расход'],['income','Доход']]:[['expense','Расход'],['income','Доход'],['transfer','Перевод']]).map(function(x){
         return '<button class="chip '+(d.type===x[0]?'active':'')+'" onclick="txSetType(\''+x[0]+'\')">'+x[1]+'</button>';
       }).join('')
     +'</div>'
@@ -6918,6 +6977,7 @@ function openTxForm(txId,presetType){
 }
 function closeTxModal(){var m=document.getElementById('tx-modal');if(m)m.remove();window._txDraft=null;}
 function txSetType(tp){
+  if(role==='director'&&tp==='transfer'){toast('Переводы между счетами доступны Саше');return;}
   window._txDraft.type=tp;
   window._txDraft.category='';
   document.getElementById('tx-type').value=tp;
@@ -6928,7 +6988,7 @@ function txSetType(tp){
   renderTxFields();
 }
 function renderTxFields(){
-  var d=window._txDraft,accs=bankAccounts(),isTr=d.type==='transfer';
+  var d=window._txDraft,accs=bankUsableAccounts(),isTr=d.type==='transfer';
   // Долговой счёт участвует только в переводах (выдали/вернули долг) — как обычный
   // доход/расход он не бывает, поэтому в этих селектах его нет.
   var accOpts=isTr?accs:accs.filter(function(a){return a.type!=='debt';});
@@ -6986,6 +7046,7 @@ async function deleteTx(id){
 
 // ═══ НАСТРОЙКИ СЧЁТА ═══
 function openAccountEdit(id){
+  if(role!=='manager'||isPreviewMode){toast('Настройки счетов доступны только Саше');return;}
   var isNew=!id;
   var a=isNew?{name:'',startBalance:0,startDate:todayISO(),type:'bank'}:accById(id);
   if(!a)return;
@@ -7055,12 +7116,13 @@ async function applyAccCorrection(id){
   if(ok)toast((diff>0?'Досчитано ':'Списано ')+fmt(Math.abs(diff))+' — баланс исправлен ✓');
 }
 async function saveAccount(id){
+  if(role!=='manager'||isPreviewMode){toast('Настройки счетов доступны только Саше');return;}
   var v=function(x){var e=document.getElementById(x);return e?e.value:'';};
   var name=v('acc-name').trim();
   if(!name){toast('Укажите название');return;}
   var next;
   if(!id){
-    var rec={id:uid(),kind:'account',name:name,type:v('acc-type'),startBalance:parseFloat(v('acc-start'))||0,
+    var rec={id:uid(),kind:'account',name:name,type:v('acc-type'),owner:'sasha',startBalance:parseFloat(v('acc-start'))||0,
       startDate:v('acc-date')||todayISO(),ord:bankAccounts().length,archived:false,created:Date.now()};
     next=finance.concat([rec]);
   }else{
@@ -7075,6 +7137,7 @@ async function saveAccount(id){
   if(ok)toast(id?'Счёт сохранён ✓':'Счёт создан ✓');
 }
 async function archiveAccount(id){
+  if(role!=='manager'||isPreviewMode){toast('Настройки счетов доступны только Саше');return;}
   var n=bankTxAll().filter(function(t){return t.accountId===id||t.toAccountId===id;}).length;
   if(!confirm('Скрыть счёт из списка?'+(n?'\nПо нему уже есть операций: '+n+'. Они останутся в базе, но пропадут из балансов.':'')))return;
   var next=finance.map(function(r){return r.id===id?Object.assign({},r,{archived:true}):r;});
@@ -7315,7 +7378,7 @@ async function finCommand(action,payload){
 async function finRetry(){try{var p=await finReadPending();if(!p)return;await finSend(p);if(p.action==='bank_import')bankAiDraft=null;finClose();renderTab(tab);toast('Операция подтверждена. Повторного списания нет.');}catch(e){toast(e.message);}}
 function finBanner(){var html=finPending()?'<div class="fin-alert">Не получено подтверждение последней операции. Проверка использует тот же номер и не создаст дубль.<button class="btn btn-sm btn-secondary" onclick="finRetry()">Повторить проверку</button></div>':'';var xw=null;try{xw=JSON.parse(crmStorage.getItem('extra_work_pending')||'null');}catch(e){}if(xw)html+='<div class="fin-alert">Выплата за доп. работу ожидает подтверждения.<button class="btn btn-sm btn-secondary" onclick="retryExtraWorkPayout()">Повторить проверку</button></div>';return html;}
 async function retryExtraWorkPayout(){var pending;try{pending=JSON.parse(crmStorage.getItem('extra_work_pending')||'null');}catch(e){}if(!pending)return;try{var r=await sbFetch(SB_URL+'/rest/v1/rpc/crm_extra_work_payout',{method:'POST',headers:Object.assign({},sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_id:pending.id,p_payload:pending.payload})});var data=await r.json();if(!r.ok)throw Error(data.message||'Не удалось подтвердить выплату');extraWorkRpcApply(data);crmStorage.removeItem('extra_work_pending');window.lastPayout={format:'finance',person:pending.payload.recipient,date:pending.payload.date.split('-').reverse().join('.'),lines:[{sum:Number(data.total)||0,label:'доп. работа'}],total:Number(data.total)||0};renderTab('payments');toast('Выплата подтверждена');}catch(e){toast(e.message);}}
-function finAccounts(){return bankAccounts().filter(function(a){return a.type!=='debt'&&a.type!=='savings';});}
+function finAccounts(){return bankUsableAccounts().filter(function(a){return a.type!=='debt'&&a.type!=='savings';});}
 function finAccountSelect(id){return '<select id="'+id+'">'+finAccounts().map(function(a){return '<option value="'+uiText(a.id)+'">'+uiText(a.name)+' · '+fmt(accBalance(a.id))+'</option>';}).join('')+'</select>';}
 function finOpen(title,body,button,handler){
  finClose();var el=document.createElement('div');el.id='finance-dialog';el.className='modal-bg';
@@ -7660,11 +7723,12 @@ function tplStats(){
 }
 function tplBankReconcile(){var r=finReconcile();return '<div class="fin-alert">К сверке: '+r.orders.length+' оплат клиентов · '+r.legacy.length+' выплат без расшифровки. <button class="btn btn-sm btn-secondary" onclick="finSetView(\'reconcile\')">Открыть сверку</button></div>';}
 var finOriginalBank=tplBank;tplBank=function(){return finBanner()+finOriginalBank();};
-var finOriginalTxForm=openTxForm;openTxForm=function(id,type){var t=id&&finance.find(function(x){return x.id===id;});if(t&&(t.source==='finance_v2'||t.source==='payout'||t.paymentLines||t.financeCancellations||t.orderId)){finReceipt(id);return;}finOriginalTxForm(id,type);};
+var finOriginalTxForm=openTxForm;openTxForm=function(id,type){var t=id&&finance.find(function(x){return x.id===id;});if(t&&role==='director'&&!canUseBankAccount(accById(t.accountId))){toast('Счёт Саши доступен Даше только для просмотра');return;}if(t&&(t.source==='finance_v2'||t.source==='payout'||t.paymentLines||t.financeCancellations||t.orderId)){finReceipt(id);return;}finOriginalTxForm(id,type);};
 async function saveTx(){
  var id=v('tx-id'),old=id?finance.find(function(x){return x.id===id;}):null,reason='';
  if(old){reason=prompt('Причина изменения банковской операции:')||'';if(reason.trim().length<3){toast('Укажите причину');return;}}
  var rec={type:v('tx-type'),amount:Number(v('tx-amount')),accountId:v('tx-acc'),toAccountId:v('tx-acc2'),category:v('tx-cat')||'Прочее',comment:v('tx-comment'),orderId:v('tx-order')};
+ if(role==='director'&&(rec.type==='transfer'||!canUseBankAccount(accById(rec.accountId)))){toast('Даше доступен только счёт «Озон Банк Даша»');return;}
  try{await finCommand('bank_tx',{txId:id,expectedTx:old||null,record:rec,date:v('tx-date'),reason:reason});closeTxModal();renderTab('bank');toast('Операция сохранена');}catch(e){toast(e.message);}
 }
 async function deleteTx(id){var t=finance.find(function(x){return x.id===id;});if(!t)return;var reason=prompt('Почему отменяем операцию? История сохранится.');if(!reason)return;try{await finCommand('bank_void',{txId:id,expectedTx:finClone(t),reason:reason});closeTxModal();renderTab('bank');toast('Операция отменена, история сохранена');}catch(e){toast(e.message);}}
@@ -7672,12 +7736,14 @@ async function deleteTx(id){var t=finance.find(function(x){return x.id===id;});i
 async function commitAiDraft(){
  if(!bankAiDraft||!bankAiDraft.length)return;
  var records=finClone(bankAiDraft);
+ if(role==='director'&&records.some(function(r){return r.type==='transfer'||!canUseBankAccount(accById(r.accountId));})){toast('Даше доступен только счёт «Озон Банк Даша»');return;}
  try{await finCommand('bank_import',{records:records});bankAiDraft=null;renderTab('bank');toast('Операций сохранено: '+records.length);}catch(e){toast(e.message);}
 }
 
 function advNeedFor(m){return orders.filter(function(o){return o.master===m&&o.status===ADV_PAY_STATUS&&!o.advancePaid&&!o.postpayPaid&&calcAdvance(o)>0;});}
 
 async function applyAccCorrection(id){
+ if(role!=='manager'||isPreviewMode){toast('Корректировать остатки может только Саша');return;}
  var target=Number(v('acc-correct-val'));if(!Number.isFinite(target)||v('acc-correct-val')===''){toast('Укажите сумму');return;}
  var diff=Math.round((target-accBalance(id))*100)/100;if(!diff){toast('Расхождения нет');return;}
  var reason=prompt('Основание корректировки баланса:')||'';if(reason.trim().length<3){toast('Укажите основание');return;}
