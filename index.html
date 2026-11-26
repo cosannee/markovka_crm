@@ -5189,9 +5189,9 @@ function payMsgText(o){
   var rest=Math.max(0,orderTotal(o)-(o.prepaid||0));
   var qty=orderQty(o);
   var subject=qty>1?'Ваши малыши готовы':((getItems(o)[0]||{}).gender==='girl'?'Ваша малышка готова':'Ваш малыш готов');
-  return 'Здравствуйте! '+subject+', к оплате '+rest.toLocaleString('ru')+'₽,\n\n'
-    +'Пожалуйста, переведите оплату по номеру телефона. '+CLIENT_PAYMENT_DETAILS+'\n\n'
-    +'После оплаты, пожалуйста, пришлите чек.';
+  return 'Здравствуйте! 🤍 '+subject+', к оплате '+rest.toLocaleString('ru')+'₽,\n\n'
+    +'Оплатить можно переводом по номеру телефона. '+CLIENT_PAYMENT_DETAILS+'\n\n'
+    +'После оплаты, пожалуйста, пришлите фото чека.';
 }
 // Сообщение клиенту при статусе «Отправлен» — по гендеру/количеству + ссылка на отслеживание
 function shipMsgText(o){
