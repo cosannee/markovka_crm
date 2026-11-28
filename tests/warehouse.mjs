@@ -33,6 +33,24 @@ await test('full session only after all positions checked',async()=>{await cmd({
 await user(director);
 await test('director has no warehouse admin rights',async()=>{assert.equal((await read()).warehouses.length,0);await assert.rejects(cmd({op:'start',warehouse_id:w.id}),/Нет доступа/);await assert.rejects(cmd({op:'assign',items:[]}),/Нет доступа/);});
 await user(manager);
+await test('independent warehouses save the same material from overlapping snapshots',async()=>{
+ await cmd({op:'assign',items:[{owner_id:director,material_id:material2,active:true,minimum:null,version:0}]});
+ await user(director);
+ const ownWarehouse=(await read()).warehouses[0].id;
+ const directorSession=(await cmd({op:'start',warehouse_id:ownWarehouse})).id;
+ const directorRequest={op:'inventory',warehouse_id:ownWarehouse,session_id:directorSession,items:[line(material2,7)]};
+ await user(master);
+ const masterSession=(await cmd({op:'start',warehouse_id:w.id})).id;
+ const masterVersion=(await read()).balances.find(b=>b.material_id===material2).version;
+ await cmd({op:'inventory',warehouse_id:w.id,session_id:masterSession,items:[line(material2,4,masterVersion)]});
+ await user(director);
+ await cmd(directorRequest);
+ assert.deepEqual((await read()).balances.map(b=>b.quantity),[7]);
+ await user(manager);
+ const both=(await read()).balances.filter(b=>b.material_id===material2);
+ assert.equal(both.find(b=>b.warehouse_id===w.id).quantity,4);
+ assert.equal(both.find(b=>b.warehouse_id===ownWarehouse).quantity,7);
+});
 await test('unit conversion blocked after quantities exist',async()=>{await assert.rejects(cmd({op:'material',id:material1,version:1,name:'Ткань тест',category_id:category,sku:'Н1',unit:'см'}),/Единица уже/);});
 await test('correction requires reason, retains audit',async()=>{await assert.rejects(cmd({op:'correct',warehouse_id:w.id,items:[line(material1,2,1)]}),/причину/);await cmd({op:'correct',warehouse_id:w.id,reason:'Исправлена опечатка',items:[line(material1,2,1)]});d=await read();assert.equal(d.balances.find(b=>b.material_id===material1).quantity,2);assert.equal(d.history[0].reason,'Исправлена опечатка');});
 await test('archive preserves history and quantities',async()=>{await cmd({op:'material',id:material1,version:1,name:'Ткань тест',category_id:category,sku:'Н1',unit:'м',active:false});d=await read();assert.equal(d.materials.find(m=>m.id===material1).active,false);assert.ok(d.history.some(e=>e.material_id===material1&&e.action==='inventory'));});
