@@ -8,6 +8,12 @@ const css=[...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m=>m[1]).
 let admin=true,fail=false,calls=[];
 const d={admin:true,people:[{id:'p1',name:'Вика'},{id:'p2',name:'Даша'}],categories:[{id:'c1',name:'Ткани'}],materials:[{id:'m1',name:'Тёмно-пудровый муслин',category_id:'c1',sku:'Н1',unit:'м',active:true,version:1},{id:'m2',name:'Пуговицы',category_id:'c1',sku:'П2',unit:'шт.',active:true,version:1}],warehouses:[{id:'w1',owner_id:'p1',interval_days:14,version:1}],assignments:[{warehouse_id:'w1',material_id:'m1',active:true,minimum:2,version:1},{warehouse_id:'w1',material_id:'m2',active:true,minimum:null,version:1}],balances:[{warehouse_id:'w1',material_id:'m1',quantity:0,version:1,checked_at:new Date().toISOString()}],sessions:[],lines:[],history:[]};
 await page.route('http://localhost:8324/**',async route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('crm_stock_read'))return route.fulfill({json:{...d,admin}});if(path.endsWith('crm_stock_command')){const body=route.request().postDataJSON();calls.push(body);if(fail)return route.abort();if(body.p_payload.op==='start'&&!d.sessions.length)d.sessions.push({id:'s1',warehouse_id:'w1',required_ids:['m1','m2'],completed_at:null});return route.fulfill({json:{ok:true}});}if(path.endsWith('.js'))return route.fulfill({contentType:'text/javascript',body:fs.readFileSync(new URL('warehouse/warehouse.js',root),'utf8')});if(path.endsWith('.css'))return route.fulfill({contentType:'text/css',body:fs.readFileSync(new URL('warehouse/warehouse.css',root),'utf8')});return route.fulfill({contentType:'text/html',body:`<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><link rel="stylesheet" href="/warehouse.css"></head><body style="padding:16px"><main id="warehouse-root"></main><script>const crmProfile={id:'test-account'},isPreviewMode=false,SB_URL='http://localhost:8324';function sbFetch(...a){return fetch(...a)}function sbHeaders(){return {}}</script><script src="/warehouse.js"></script><script>CrmWarehouse.mount()</script></body></html>`});});
+let uploadedPhoto;
+await page.route('**/storage/v1/object/crm-materials/*',async route=>{
+  const request=route.request();
+  uploadedPhoto={body:request.postDataBuffer(),type:request.headers()['content-type'],name:new URL(request.url()).pathname.split('/').pop()};
+  await route.fulfill({json:{ok:true}});
+});
 await page.goto('http://localhost:8324/');
 for(const viewport of [{width:1470,height:800},{width:430,height:932},{width:390,height:600}]){
  await page.setViewportSize(viewport);
@@ -23,6 +29,37 @@ for(const viewport of [{width:1470,height:800},{width:430,height:932},{width:390
 }
 await page.setViewportSize({width:430,height:932});
 await page.getByRole('button',{name:'Материалы',exact:true}).click();await page.getByRole('button',{name:'+ Добавить материал'}).click();await page.locator('dialog input[name=name]').fill('Тест');await page.locator('dialog input[name=sku]').fill('Н3');await page.locator('dialog button[type=submit]').click();await page.locator('dialog').waitFor({state:'detached'});assert.equal(calls.at(-1).p_payload.name,'Тест');
+const photoBytes=await page.evaluate(()=>{
+  const canvas=document.createElement('canvas');canvas.width=1800;canvas.height=1400;
+  const ctx=canvas.getContext('2d');const image=ctx.createImageData(canvas.width,canvas.height);
+  crypto.getRandomValues(image.data.subarray(0,65536));
+  for(let offset=65536;offset<image.data.length;offset+=65536){
+    crypto.getRandomValues(image.data.subarray(offset,offset+65536));
+  }
+  for(let i=3;i<image.data.length;i+=4)image.data[i]=255;
+  ctx.putImageData(image,0,0);
+  return canvas.toDataURL('image/png').split(',')[1];
+});
+const sourcePhoto=Buffer.from(photoBytes,'base64');
+assert.ok(sourcePhoto.length>5*1024*1024,'input exceeds the old upload limit');
+await page.getByRole('button',{name:'+ Добавить материал'}).click();
+await page.locator('dialog input[name=name]').fill('Тест фото');
+await page.locator('dialog input[name=photo_file]').setInputFiles({name:'material.png',mimeType:'image/png',buffer:sourcePhoto});
+await page.locator('dialog button[type=submit]').click();
+await page.locator('dialog').waitFor({state:'detached'});
+assert.equal(uploadedPhoto.type,'image/jpeg');
+assert.ok(uploadedPhoto.body.length<=250*1024);
+assert.equal(calls.at(-1).p_payload.photo,uploadedPhoto.name);
+assert.match(uploadedPhoto.name,/\.jpg$/);
+const dimensions=await page.evaluate(async bytes=>{
+  const blob=await (await fetch('data:image/jpeg;base64,'+bytes)).blob();
+  const bitmap=await createImageBitmap(blob);
+  const size=[bitmap.width,bitmap.height];
+  bitmap.close();
+  return size;
+},uploadedPhoto.body.toString('base64'));
+assert.ok(dimensions[0]<=1000);
+assert.ok(Math.abs(dimensions[0]/dimensions[1]-1800/1400)<0.01);
 await page.getByRole('button',{name:'По мастерам',exact:true}).click();await page.getByRole('button',{name:'Провести инвентаризацию'}).click();await page.locator('[data-quantity=m1]').fill('1,25');assert.equal(await page.locator('[data-checked=m1]').isChecked(),true);assert.equal(await page.locator('[data-checked=m2]').isChecked(),false);
 await page.screenshot({path:'/private/tmp/markovka-stock-test/warehouse-mobile.png',fullPage:true});
 assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'no mobile horizontal overflow');
