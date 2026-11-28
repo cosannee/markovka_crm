@@ -44,6 +44,7 @@ dialog.wh-dialog{position:fixed;inset:0;margin:auto;width:min(580px,calc(100vw -
 #warehouse-root .wh-material-name{min-height:34px}
 .wh-material-main p,.wh-person-row p,.wh-master-summary p{margin:0;color:var(--text3,#68766e);font-size:12px;line-height:1.4}
 .wh-material-actions,.wh-purchase{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.wh-material>.wh-material-actions{min-width:0}
 #warehouse-root .wh-material-actions .btn:not(.btn-primary),#warehouse-root .wh-stock-body .btn:not(.btn-primary){background:none;color:var(--accent,#365e53);padding:0 5px;font-size:12px;min-height:36px}
 .wh-buy{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 7px;border-radius:8px;background:var(--accent-bg,#dce9e2);color:var(--accent,#365e53);font-weight:750;font-size:12px;text-decoration:none;white-space:nowrap}
 .wh-panel{padding:12px;margin:0 0 12px}
