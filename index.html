@@ -2607,7 +2607,7 @@ function orderCard(o){
       +'<div class="order-pay-head"><span>Стоимость заказа</span><strong>'+fmt(oPrice)+'</strong></div>'
       +'<div class="order-pay-bar" role="progressbar" aria-label="Оплачено '+fmt(paidAmount)+' из '+fmt(oPrice)+'" aria-valuemin="0" aria-valuemax="'+Math.max(1,oPrice)+'" aria-valuenow="'+Math.min(paidAmount,Math.max(1,oPrice))+'"><i style="width:'+paymentPct+'%"></i></div>'
       +'<div class="order-pay-meta"><span>Оплачено <b>'+fmt(paidAmount)+'</b></span><span class="'+(rest?'is-due':'')+'">Осталось <b>'+fmt(rest)+'</b></span></div>';
-    if(margin!==null)html+='<div class="order-margin-inline'+(margin<0?' is-negative':'')+'"><span>Маржа</span><b>'+fmt(margin)+'</b><small>· '+marginPct+'% от стоимости</small></div>';
+    if(margin!==null)html+='<div class="order-margin-inline'+(margin<0?' is-negative':'')+'"><span>Маржа после налога</span><b>'+fmt(margin)+'</b><small>· '+marginPct+'% от стоимости</small></div>';
     if(role==='director'){
       var orderCosts=calcCosts(o),orderDividend=officeEligible(o)?calcDividend(o):0;
       html+='<div class="order-recipient-pay" aria-label="План выплат по заказу"><span class="order-recipient-pay-label">По плану получат:</span>'
@@ -4060,7 +4060,7 @@ function urgentBonusPct(o){
 function urgentBonusLbl(o){var p=urgentBonusPct(o);return p?' · срочный +'+Math.round(p*100)+'%':'';}
 
 const NASTYA_PER_TOY = 350;       // Настя (швея одежды на аутсорсе) — 350₽ за комплект одежды (одна игрушка Даши = один комплект)
-const TAX_PCT = 0;                // налог (0 = не учитываем)
+const TAX_PCT = 0.05;             // расчётный налог от полной стоимости заказа
 const DARYA_DIVIDEND_PCT = 0.15;
 const DARYA_LEGACY_DIVIDEND_PCT = 0.1;
 // Выплаты Александре (комиссия) и Дарье (дивиденды) считаются только с этой даты —
@@ -4070,8 +4070,9 @@ function officeEligible(o){return isClosed(o)&&closedDate(o)>=OFFICE_PAYOUT_FROM
 function calcDividend(o){
   const paid=o.financePayments&&o.financePayments.dividend;
   if(o.dividendPaid&&paid&&paid.amount!=null)return Number(paid.amount)||0;
-  const rate=o.dividendPaid?DARYA_LEGACY_DIVIDEND_PCT:DARYA_DIVIDEND_PCT;
-  return Math.round(Math.max(0,calcCosts(o).profit)*rate);
+  const costs=calcCosts(o);
+  if(o.dividendPaid)return Math.round(Math.max(0,costs.profit+costs.tax)*DARYA_LEGACY_DIVIDEND_PCT);
+  return Math.round(Math.max(0,costs.profit)*DARYA_DIVIDEND_PCT);
 }
 function sashaNeedList(){return orders.filter(function(o){return officeEligible(o)&&!o.sashaPaid&&calcCosts(o).sasha>0;});}
 function dividendNeedList(){return orders.filter(function(o){return officeEligible(o)&&!o.dividendPaid&&calcDividend(o)>0;});}
