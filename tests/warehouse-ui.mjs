@@ -65,5 +65,31 @@ await page.screenshot({path:'/private/tmp/markovka-stock-test/warehouse-mobile.p
 assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'no mobile horizontal overflow');
 fail=true;await page.getByRole('button',{name:'Сохранить проверенные',exact:true}).first().click();await page.getByRole('button',{name:'Повторить сохранение'}).waitFor();const request=calls.at(-1);assert.equal(request.p_payload.items.length,1);assert.equal(request.p_payload.items[0].quantity,1.25);
 page.on('dialog',dlg=>dlg.accept());await page.reload();await page.getByRole('button',{name:'Повторить сохранение'}).waitFor();fail=false;await page.getByRole('button',{name:'Повторить сохранение'}).click();await page.waitForFunction(()=>document.body.textContent.includes('Сохранено на сервере'));assert.deepEqual(calls.at(-1),request,'same persisted request used after reload');
+d.materials[0].name='Н1 · Тёмно-пудровый муслин';
+d.materials[0].description='Wildberries\nhttps://www.wildberries.ru/catalog/123/detail.aspx?size=9';
+d.materials.push(
+ {id:'m10',name:'Н10 · Муслин в точку',category_id:'c1',sku:'Н10',unit:'м',active:true,version:1},
+ {id:'m3',name:'Н3 · Муслин в полоску',category_id:'c1',sku:'Н3',unit:'м',active:true,version:1},
+ {id:'mb',name:'Букле бежевое',category_id:'c2',sku:'Б001',unit:'м',active:true,version:1,description:'Arben · 2 м\nhttps://www.wildberries.ru/catalog/181/detail.aspx\nАйхал · 2 м\nhttps://www.wildberries.ru/catalog/182/detail.aspx'}
+);
+d.categories.push({id:'c2',name:'Букле'});
+d.assignments.push(...['m3','m10','mb'].map(material_id=>({warehouse_id:'w1',material_id,active:true,minimum:null,version:1})));
+d.balances.push({warehouse_id:'w1',material_id:'m3',quantity:2.5,version:1,checked_at:new Date().toISOString()});
+await page.reload();
+await page.getByRole('button',{name:'Материалы',exact:true}).click();
+assert.deepEqual(await page.locator('.wh-group').first().locator('.wh-material-name').allTextContents(),['Н1 · Тёмно-пудровый муслин','Н3 · Муслин в полоску','Н10 · Муслин в точку','Пуговицы']);
+assert.equal(await page.getByRole('link',{name:'Закупить: Букле бежевое · Arben',exact:true}).getAttribute('href'),'https://www.wildberries.ru/catalog/181/detail.aspx');
+assert.equal(await page.getByRole('link',{name:'Закупить: Букле бежевое · Айхал',exact:true}).getAttribute('href'),'https://www.wildberries.ru/catalog/182/detail.aspx');
+assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+await page.screenshot({path:'/private/tmp/markovka-stock-test/catalog-compact.png',fullPage:true});
+await page.getByRole('button',{name:'По мастерам',exact:true}).click();
+const callsBefore=calls.length;
+await page.getByRole('button',{name:'Как видит мастер'}).click();
+await page.getByRole('heading',{name:'Мой склад'}).waitFor();
+assert.equal(await page.getByRole('button',{name:/инвентаризацию$/}).isDisabled(),true);
+assert.equal(await page.getByRole('button',{name:'Исправить',exact:true}).count(),0);
+await page.getByRole('button',{name:'Вернуться'}).click();
+assert.equal(calls.length,callsBefore);
 admin=false;await page.reload();await page.getByRole('heading',{name:'Мой склад'}).waitFor();assert.equal(await page.getByRole('button',{name:'+ Добавить материал'}).count(),0);assert.equal(await page.getByRole('button',{name:'Исправить',exact:true}).count(),0);
+await page.screenshot({path:'/private/tmp/markovka-stock-test/master-compact.png',fullPage:true});
 assert.deepEqual(errors,[]);console.log('PASS mobile layout, material form, explicit checks, partial inventory, persisted retry, master UI');await browser.close();

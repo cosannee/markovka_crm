@@ -586,7 +586,7 @@ body.has-save-bar .page-shell{padding-bottom:calc(var(--nav-height) + env(safe-a
 
 </style>
 <style>.bank-client-name{font-size:11px;font-weight:400;color:var(--text3);overflow-wrap:anywhere}.bank-breakdown>summary::-webkit-details-marker{display:none}.bank-breakdown>summary::after{content:"⌄";color:var(--text3);flex-shrink:0}.bank-breakdown[open]>summary::after{content:"⌃"}.bank-breakdown>summary>span:nth-child(2){margin-left:auto;white-space:nowrap}</style>
-<link rel="stylesheet" href="warehouse/warehouse.css?v=20261114-dialog">
+<link rel="stylesheet" href="warehouse/warehouse.css?v=20261128-catalog">
 <style>
 /* Compact overview and consistent native selectors, including warehouse filters. */
 .overview-priority{margin-bottom:18px}.overview-priority .overview-order{padding:12px 14px;margin-bottom:8px}.overview-priority .overview-actions{gap:6px}.overview-priority .overview-actions .btn{padding:8px 12px;font-size:13px}
@@ -2215,7 +2215,7 @@ function renderTab(t){
     m.innerHTML='<div class="startup-loading" role="alert"><strong>Данные пока не загрузились</strong><p>Проверьте интернет и повторите загрузку. Пустые заказы вместо ваших данных не показываем.</p><button type="button" class="btn btn-primary" style="margin-top:12px" onclick="retryInitialData()">Повторить</button></div>';
     updateToTop();return;
   }
-  if(t==='warehouse'){m.innerHTML='<section id="warehouse-root"><p role="status">Загружаем склад…</p></section>';import('./warehouse/warehouse.js').then(function(){if(tab==='warehouse')CrmWarehouse.mount();}).catch(function(){if(tab==='warehouse')m.innerHTML='<div class="card">Не удалось загрузить склад. Обновите страницу.</div>';});updateToTop();return;}
+  if(t==='warehouse'){m.innerHTML='<section id="warehouse-root"><p role="status">Загружаем склад…</p></section>';import('./warehouse/warehouse.js?v=20261128-catalog').then(function(){if(tab==='warehouse')CrmWarehouse.mount();}).catch(function(){if(tab==='warehouse')m.innerHTML='<div class="card">Не удалось загрузить склад. Обновите страницу.</div>';});updateToTop();return;}
   if(t==='todos')markTasksSeen();
   if(t==='list'||t==='master')markOrdersSeen();
   if(t==='payments')markPaymentsSeen();
