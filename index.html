@@ -4061,12 +4061,18 @@ function urgentBonusLbl(o){var p=urgentBonusPct(o);return p?' · срочный 
 
 const NASTYA_PER_TOY = 350;       // Настя (швея одежды на аутсорсе) — 350₽ за комплект одежды (одна игрушка Даши = один комплект)
 const TAX_PCT = 0;                // налог (0 = не учитываем)
-const DARYA_DIVIDEND_PCT = 0.1;  // дивиденды Дарьи как автора проекта — 10% от чистой прибыли
+const DARYA_DIVIDEND_PCT = 0.15;
+const DARYA_LEGACY_DIVIDEND_PCT = 0.1;
 // Выплаты Александре (комиссия) и Дарье (дивиденды) считаются только с этой даты —
 // иначе при первом включении в сумму попали бы все закрытые заказы с начала CRM.
 const OFFICE_PAYOUT_FROM = Date.parse('2026-08-17T00:00:00+10:00');
 function officeEligible(o){return isClosed(o)&&closedDate(o)>=OFFICE_PAYOUT_FROM;}
-function calcDividend(o){return Math.round(Math.max(0,calcCosts(o).profit)*DARYA_DIVIDEND_PCT);}
+function calcDividend(o){
+  const paid=o.financePayments&&o.financePayments.dividend;
+  if(o.dividendPaid&&paid&&paid.amount!=null)return Number(paid.amount)||0;
+  const rate=o.dividendPaid?DARYA_LEGACY_DIVIDEND_PCT:DARYA_DIVIDEND_PCT;
+  return Math.round(Math.max(0,calcCosts(o).profit)*rate);
+}
 function sashaNeedList(){return orders.filter(function(o){return officeEligible(o)&&!o.sashaPaid&&calcCosts(o).sasha>0;});}
 function dividendNeedList(){return orders.filter(function(o){return officeEligible(o)&&!o.dividendPaid&&calcDividend(o)>0;});}
 
@@ -4582,8 +4588,7 @@ function tplWeeklyAnalytics(){
   var totalSashaPay=closed.reduce(function(s,o){return s+calcCosts(o).sasha;},0);
   var totalNastya=closed.reduce(function(s,o){return s+calcCosts(o).nastya;},0);
   var totalProfit=closed.reduce(function(s,o){return s+calcCosts(o).profit;},0);
-  // Дивиденды Дарьи (автор проекта) — 10% от чистой прибыли; чистая прибыль после дивидендов
-  var totalDividend=Math.round(Math.max(0,totalProfit)*DARYA_DIVIDEND_PCT);
+  var totalDividend=closed.reduce(function(sum,o){return sum+calcDividend(o);},0);
   var netAfterDiv=totalProfit-totalDividend;
   var avgMargin=totalRev>0?Math.round(netAfterDiv/totalRev*100):0;
 
@@ -4641,7 +4646,7 @@ function tplWeeklyAnalytics(){
   var cards=[
     {val:fmt2(totalRev),lbl:'Выручка',color:'var(--accent)'},
     {val:fmt2(netAfterDiv),lbl:'Чистая прибыль (после дивид.)',color:netAfterDiv>=0?'var(--green-ink)':'var(--red-ink)'},
-    {val:fmt2(totalDividend),lbl:'Дивиденды Даши (10%)',color:'var(--orange-ink)'},
+    {val:fmt2(totalDividend),lbl:'Дивиденды Даши',color:'var(--orange-ink)'},
     {val:closed.length+' зак.',lbl:'Закрыто заказов',color:'var(--blue-ink)'},
   ];
   cards.forEach(function(c){
@@ -4670,7 +4675,7 @@ function tplWeeklyAnalytics(){
     {label:'ЗП мастеров',val:totalMasterPay,color:'var(--accent2)'},
     {label:'ЗП Саши (20%)',val:totalSashaPay,color:'var(--orange)'},
     {label:'Настя (одежда)',val:totalNastya,color:'var(--pink)'},
-    {label:'Дивиденды Даши (10%)',val:totalDividend,color:'var(--orange)'},
+    {label:'Дивиденды Даши',val:totalDividend,color:'var(--orange)'},
     {label:'Чистая прибыль (после дивид.)',val:Math.max(0,netAfterDiv),color:'var(--green)'},
   ];
   barRows.forEach(function(row){
@@ -4803,10 +4808,10 @@ function exportAnalyticsCsv(){
   });
   // Итоговая строка с дивидендами Дарьи и чистой прибылью после них
   var totProfit=closed.reduce(function(s,o){return s+calcCosts(o).profit;},0);
-  var totDiv=Math.round(Math.max(0,totProfit)*DARYA_DIVIDEND_PCT);
+  var totDiv=closed.reduce(function(sum,o){return sum+calcDividend(o);},0);
   rows.push([]);
   rows.push(['ИТОГО прибыль до дивидендов','','','','','','','','','','',totProfit,'']);
-  rows.push(['Дивиденды Даши (10%)','','','','','','','','','','',totDiv,'']);
+  rows.push(['Дивиденды Даши','','','','','','','','','','',totDiv,'']);
   rows.push(['Чистая прибыль после дивидендов','','','','','','','','','','',totProfit-totDiv,'']);
   var csv=rows.map(function(r){return r.map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
   var bom='﻿';
@@ -5431,7 +5436,7 @@ async function paySashaAll(){
     renderTab('payments');toast('Выплачено: '+fmt(total)+' ✓');
   });
 }
-// ── Дарья: дивиденды 10% с закрытых заказов ──
+// ── Дарья: дивиденды с закрытых заказов ──
 async function payDividendAll(){
   var list=dividendNeedList();
   if(!list.length){toast('Нечего выплачивать');return;}
@@ -5440,9 +5445,9 @@ async function payDividendAll(){
   openPayoutModal('Дарья — дивиденды','Дивиденды/выводы',total,nums,masterCfg('Даша').tg,async function(accId){
     list.forEach(function(o){o.dividendPaid=true;});
     window.lastPayout={date:payoutDate(),person:'Дарья — дивиденды',tg:masterCfg('Даша').tg,accName:accId?accName(accId):'',
-      lines:[{sum:total,label:'дивиденды 10%',orderNums:nums}]};
+      lines:[{sum:total,label:'дивиденды',orderNums:nums}]};
     await saveOrders(orders);
-    await recordPayoutExpense(accId,'Дивиденды/выводы',total,'Дивиденды 10% · '+nums.join(', '));
+    await recordPayoutExpense(accId,'Дивиденды/выводы',total,'Дивиденды · '+nums.join(', '));
     renderTab('payments');toast('Выплачено: '+fmt(total)+' ✓');
   });
 }
